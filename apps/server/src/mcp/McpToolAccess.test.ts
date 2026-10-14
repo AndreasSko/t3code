@@ -23,6 +23,7 @@ const supervisedThreadId = ThreadId.make("thread:supervised");
 const planThreadId = ThreadId.make("thread:plan");
 const fullAccessThreadId = ThreadId.make("thread:full-access");
 const endedThreadId = ThreadId.make("thread:ended");
+const backgroundThreadId = ThreadId.make("thread:background");
 
 const shells = new Map([
   [supervisedThreadId, liveThreadShell(supervisedThreadId, { runtimeMode: "approval-required" })],
@@ -32,6 +33,13 @@ const shells = new Map([
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
+  [
+    backgroundThreadId,
+    {
+      ...liveThreadShell(backgroundThreadId, { activeRunId: null }),
+      pendingBackgroundTasks: [{ taskId: "task:background", kind: "subagent" as const }],
+    },
+  ],
 ]);
 
 const threadCaller = (threadId: ThreadId): McpInvocationContext.McpInvocationScope => ({
@@ -194,6 +202,8 @@ const supervised = threadCaller(supervisedThreadId);
 const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
+// Its turn ended, but a background subagent it started still runs.
+const background = threadCaller(backgroundThreadId);
 const supervisedClient = clientCaller("approval-required");
 const fullAccessClient = clientCaller("full-access");
 const readOnlyClient = clientCaller("read-only");
@@ -217,11 +227,13 @@ it.effect.each([
   ["reads_as_caller", fullAccessClient, {}, "thread_credential_required"],
   ["acts_as_caller", supervised, {}, "ran"],
   ["acts_as_caller", ended, {}, "parent_not_active"],
+  ["acts_as_caller", background, {}, "ran"],
   ["acts_as_caller", fullAccessClient, {}, "thread_credential_required"],
 
   // Any change needs a thread caller's live turn; a client has none to lose.
   ["writes", supervised, {}, "ran"],
   ["writes", ended, {}, "parent_not_active"],
+  ["writes", background, {}, "ran"],
   ["writes", supervisedClient, {}, "ran"],
   // Uploads, scheduled tasks, projects and settings need a credential that controls threads.
   ["writes", previewOnly, {}, "capability_denied"],

@@ -202,6 +202,15 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
   return new OrchestratorMcpFailure({ code, message });
 }
 
+/**
+ * A background subagent outlives the run that started it and calls tools
+ * with its thread's credential, so the thread's provider still acts while
+ * one runs. The credential is revoked when the provider process goes away.
+ */
+export const hasRunningBackgroundSubagent = (
+  thread: Pick<OrchestrationV2ThreadShell, "pendingBackgroundTasks">,
+) => thread.pendingBackgroundTasks?.some((task) => task.kind === "subagent") ?? false;
+
 function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
   switch (error._tag) {
@@ -1096,16 +1105,31 @@ const make = Effect.gen(function* () {
   const assertLiveCaller = (
     scope: McpInvocationScope,
     parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs">,
-  ) => {
-    const activeRun = ThreadManagementService.latestActiveRun(parent);
-    return parent.thread.archivedAt !== null ||
-      activeRun === undefined ||
-      activeRun.providerInstanceId !== scope.thread?.providerInstanceId
-      ? Effect.fail(
-          failure("parent_not_active", "The calling provider no longer owns an active thread run."),
-        )
-      : Effect.void;
-  };
+  ) =>
+    Effect.gen(function* () {
+      const notActive = failure(
+        "parent_not_active",
+        "The calling provider no longer owns an active thread run.",
+      );
+      if (parent.thread.archivedAt !== null) return yield* notActive;
+      const activeRun = ThreadManagementService.latestActiveRun(parent);
+      if (activeRun !== undefined) {
+        if (activeRun.providerInstanceId !== scope.thread?.providerInstanceId) {
+          return yield* notActive;
+        }
+        return;
+      }
+      const shell = yield* threadManagement
+        .getThreadShell(parent.thread.id)
+        .pipe(Effect.mapError(threadManagementFailure));
+      if (
+        shell === null ||
+        shell.providerInstanceId !== scope.thread?.providerInstanceId ||
+        !hasRunningBackgroundSubagent(shell)
+      ) {
+        return yield* notActive;
+      }
+    });
 
   const loadReadableThread = (scope: McpInvocationScope, threadId: ThreadId) =>
     Effect.gen(function* () {
