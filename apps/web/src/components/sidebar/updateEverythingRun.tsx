@@ -73,8 +73,7 @@ export function saveUpdateEverythingResult(result: UpdateEverythingResult): void
 export function clearSavedUpdateEverythingResult(): void {
   try {
     window.localStorage.removeItem(SAVED_RESULT_KEY);
-  } catch {
-  }
+  } catch {}
 }
 
 function takeSavedUpdateEverythingResult(): UpdateEverythingResult | null {
