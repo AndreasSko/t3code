@@ -69,7 +69,6 @@ function IndexDraftLanding() {
     startingRef.current = true;
     void handleNewThread(projectRef, { replace: true })
       .then((opened) => {
-        // The project was removed while its draft started; land on the next one.
         if (opened === null) {
           startingRef.current = false;
           setStartState((state) => ({ ...state, retryRequest: state.retryRequest + 1 }));

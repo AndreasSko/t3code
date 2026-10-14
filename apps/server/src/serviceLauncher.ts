@@ -30,12 +30,9 @@ import {
 
 const HANDOFF_DELAY_MS = 2_000;
 /**
- * How long a trial has to report prepared. Migrations and the open-time
- * `PRAGMA optimize` count toward it and scale with the database: tens of GB on
- * a cold page cache take minutes. They run synchronously on the child's main
- * thread, so it cannot report progress meanwhile. A missed window rolls back
- * the database, so the next attempt pays the same cost. Crashes are caught at
- * exit; this only bounds a trial that is alive but stuck.
+ * On a cold cache, migrations and `PRAGMA optimize` can take minutes for tens
+ * of GB and block the child's main thread. Timing out rolls the database
+ * back, so the next trial repeats that work; crashes are caught at exit.
  */
 export const PREPARED_TIMEOUT_MS = 30 * 60_000;
 const TERMINATE_GRACE_MS = 5_000;
@@ -120,12 +117,9 @@ function runCp(args: ReadonlyArray<string>): Promise<boolean> {
 }
 
 /**
- * Copies a database file as a copy-on-write clone where the filesystem has
- * them (APFS via `cp -c`, btrfs/XFS reflinks via `cp --reflink=auto`), which
- * takes no extra space and finishes instantly for a database of tens of GB.
- * Node's own clone flag is not used: on macOS `fs.copyFile` falls back to a
- * full copy. Anywhere cloning is unavailable, or `cp` fails, this is a
- * regular copy.
+ * Clones avoid copying tens of GB: APFS uses `cp -c`, btrfs/XFS use
+ * `cp --reflink=auto`. On macOS, Node's `fs.copyFile` clone flag falls back
+ * to a full copy.
  */
 async function copyDatabaseFile(source: string, destination: string): Promise<void> {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
@@ -152,10 +146,6 @@ const GIB = 1024 ** 3;
 const CLONED_BACKUP_MIN_HEADROOM_BYTES = GIB;
 const CLONED_BACKUP_HEADROOM_FRACTION = 0.1;
 
-/**
- * Stats of the database and its existing sidecars, following symlinks. A main
- * file that cannot be read is an error.
- */
 async function statDatabaseFiles(dbPath: string): Promise<ReadonlyArray<NodeFS.Stats>> {
   const stats: Array<NodeFS.Stats> = [];
   for (const suffix of DB_FILE_SUFFIXES) {
@@ -227,10 +217,9 @@ const filesystemBackupSpaceProbe: BackupSpaceProbe = {
 };
 
 /**
- * Returns a client-visible reason when the pre-update database backup cannot
- * fit, or undefined when it can. Runs before the server is stopped so a full
- * disk refuses the update instead of causing an outage and a cold restart.
- * Throws when the database or the filesystem cannot be inspected.
+ * Returns a client-visible backup-space blocker, or undefined if it fits.
+ * Call before stopping the server to avoid an outage and a cold restart.
+ * Throws if the database or filesystem cannot be inspected.
  */
 export async function databaseBackupBlocker(
   baseDir: string,
@@ -303,9 +292,8 @@ async function markDatabaseRestorePending(backupDir: string): Promise<void> {
 }
 
 /**
- * The file a restore writes for `path`: where its symlinks lead, even when the
- * last target is missing, as after a crash between `cp -c` removing a file
- * and cloning over it.
+ * Follows symlinks even if a crash between `cp -c` removal and cloning
+ * left the final target missing.
  */
 async function restoreTarget(path: string): Promise<string> {
   let current = path;
@@ -800,9 +788,8 @@ export class Launcher {
   }
 
   /**
-   * Another server owns the T3 home. Exiting would make systemd or launchd
-   * start another refused server, so stay idle until stopped or restarted.
-   * A pending update fails without restoring its backup: the other owner may
+   * Stay idle so systemd or launchd does not keep restarting a refused server.
+   * Do not restore a pending update's backup: the other T3 home owner may
    * have written to the database since.
    */
   async #idleWhileStateDirOwned(): Promise<void> {

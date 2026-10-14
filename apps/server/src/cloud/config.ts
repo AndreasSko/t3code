@@ -17,10 +17,9 @@ export const RELAY_ISSUER_SECRET = "cloud-relay-issuer";
 export const RELAY_ENVIRONMENT_CREDENTIAL_SECRET = "cloud-relay-environment-credential";
 export const PUBLISH_AGENT_ACTIVITY_SECRET = "cloud-publish-agent-activity";
 export const HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET = "cloud-hold-webhooks-while-offline";
-// Set when the relay rejects this environment's credential (401), as after the
-// environment is deregistered from T3 Connect. The link stays stored; the mark
-// tells `t3 connect status` and clients to offer a relink. Linking, unlinking,
-// or a later successful tunnel registration clears it.
+// A relay credential rejection (401) keeps the link stored but marks it for
+// relinking in `t3 connect status` and clients. Linking, unlinking, or
+// successful tunnel registration clears the mark.
 export const CLOUD_LINK_REVOKED = "cloud-link-revoked";
 
 export const encodeEndpointRuntimeConfigJson = Schema.encodeEffect(

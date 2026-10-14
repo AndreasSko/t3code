@@ -164,11 +164,9 @@ function isThreadHistoryTurnStart(item: HistoryRow["item"]): boolean {
 }
 
 /**
- * Marks the turn starts of a chronological timeline. A wake (PR watch, task
- * completion) starts its run with a notification instead of a user message, so
- * a notification starts a turn when it is its run's first input. One steered
- * into a running turn comes later. ProjectionStore's `run_starts` window query
- * applies the same rule.
+ * Requires chronological input: a wake notification starts a turn only as
+ * its run's first input; later notifications steer the existing turn.
+ * Keep aligned with ProjectionStore's `run_starts` window query.
  */
 export function threadHistoryTurnStarts(
   items: ReadonlyArray<HistoryRow["item"]>,

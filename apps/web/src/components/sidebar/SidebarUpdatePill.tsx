@@ -92,7 +92,6 @@ function resolveSidebarUpdatePresentation({
   readonly action: ReturnType<typeof resolveDesktopUpdateButtonAction>;
   /** Remote work is waiting, and this app is not downloading. */
   readonly showsEverything: boolean;
-  /** The running "update everything" pass. Its state sets the icon. */
   readonly run: UpdateEverythingRun | null;
   readonly isDownloading: boolean;
   readonly showCheckIcon: boolean;
@@ -202,7 +201,6 @@ async function installLocalUpdate(
   }
 }
 
-/** Tooltip lines for a running pass: this app first, then one per machine. */
 function useUpdateRunTooltip(
   run: UpdateEverythingRun | null,
   state: DesktopUpdateState | null,
@@ -312,7 +310,6 @@ function SidebarUpdateControl() {
         ? isDesktopUpdateButtonDisabled(state)
         : !canCheckForUpdate(state);
   const isInteractionDisabled = disabled || isActionPending || isRunningEverything;
-  // During a run the tooltip shows its progress instead of release notes.
   const showReleaseNotesPopover =
     !isRunningEverything && shouldUseSidebarUpdateReleaseNotesPopover(showUpdateDetails, state);
 

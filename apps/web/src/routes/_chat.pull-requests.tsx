@@ -2184,7 +2184,7 @@ function PullRequestsRouteView() {
 }
 
 /** A compact stand-in for one pill group when the header is narrow. */
-/** Lists the projects in the sidebar's order; it re-renders with thread activity, so the page does not. */
+/** Keep thread-activity subscriptions out of the page. */
 function PullRequestFiltersMenuInSidebarOrder(
   props: ComponentProps<typeof PullRequestFiltersMenu>,
 ) {

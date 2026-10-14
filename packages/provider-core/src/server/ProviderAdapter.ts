@@ -555,11 +555,9 @@ export interface ProviderAdapterV2SessionRuntime {
     providerThread: OrchestrationV2ProviderThread,
   ) => Effect.Effect<boolean>;
   /**
-   * Set when every background task this session lists on its provider threads
-   * runs inside the session's own process and ends when it closes. The session
-   * manager then clears those tasks when it releases the session (#15239).
-   * Leave unset when a task can outlive the session, for example on a shared
-   * server, so its thread keeps showing Waiting.
+   * Set only when all listed tasks run inside and end with this session's process.
+   * The manager clears them on release. Leave unset for tasks that can outlive
+   * the session (for example, on a shared server) so their threads stay Waiting.
    */
   readonly backgroundTasksEndWithProcess?: true;
   /**
