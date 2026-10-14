@@ -22,9 +22,7 @@ export function saveSnapShotSetupResume(wasEnabled: boolean): void {
 export function clearSnapShotSetupResume(): void {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Storage may be unavailable.
-  }
+  } catch {}
 }
 
 // Check once per renderer startup so opening System Settings does not redirect

@@ -26,10 +26,7 @@ export class NodePtyModuleLoadError extends Schema.TaggedError<NodePtyModuleLoad
 
 type NodePtyModuleLoader = () => Promise<typeof import("node-pty")>;
 
-// node-pty stays external to the CLI bundle because it dlopens a native
-// addon. Inside a Node single-executable, `import()` cannot load files from
-// disk (only built-ins resolve), while `require` always reads the real
-// filesystem, so both the module and its spawn-helper resolve through it.
+// Node single-executables cannot import external native addons from disk; require resolves node-pty.
 const requireForNodePty = NodeModule.createRequire(import.meta.url);
 
 const loadNodePty: NodePtyModuleLoader = () =>
@@ -84,13 +81,8 @@ const ensureNodePtySpawnHelperExecutable = Effect.fn(function* () {
 });
 
 /**
- * Waits for Windows process creation so the manager receives a valid PID.
- * node-pty defers creation to avoid blocking on named pipes:
+ * node-pty defers Windows creation and has no public readiness event; private ready_datapipe sets pid first.
  * https://github.com/microsoft/node-pty/pull/885
- * T3 adopted that behavior when upgrading from 1.1.0 to 1.2.0-beta.15:
- * https://github.com/pingdotgg/t3code/pull/13748
- * Its public API has no readiness event. The private ready_datapipe handler sets
- * pid before our listener runs.
  */
 const waitForWindowsPid = (
   process: import("node-pty").IPty,
@@ -144,11 +136,7 @@ const waitForWindowsPid = (
     return Effect.sync(cleanup);
   });
 
-/**
- * Cancels Windows startup without waiting for the first output, unlike public kill().
- * The private agent can cancel the pending connection before a child exists.
- * Cleanup failures are logged without replacing the startup failure.
- */
+/** The private Windows agent can cancel a pending connection before public kill() can reach the child. */
 const killStartingWindowsPty = (process: import("node-pty").IPty) =>
   Effect.try(() => {
     if (
@@ -262,9 +250,7 @@ export const make = Effect.fn("NodePtyAdapter.make")(function* () {
   return PtyAdapter.PtyAdapter.of({
     spawn: Effect.fn("NodePtyAdapter.spawn")(function* (input) {
       yield* ensureNodePtySpawnHelperExecutableCached;
-      // node-pty only writes `name` into the child's TERM on the Unix path;
-      // the ConPTY path leaves the environment untouched, so Windows children
-      // inherit a missing or 16-color TERM unless it is set here.
+      // ConPTY ignores node-pty's name setting; supply TERM so Windows children can use 256 colors.
       const env =
         platform === "win32" && input.env["TERM"] === undefined
           ? { ...input.env, TERM: "xterm-256color" }

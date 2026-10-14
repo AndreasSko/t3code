@@ -19,19 +19,13 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { DeviceScreenshotToolkit, DeviceStandardToolkit, DeviceToolkit } from "./tools.ts";
 
-/** The flags that pin every agent-device command to one device. */
 export function agentDeviceTargetArgs(device: DeviceSummary): ReadonlyArray<string> {
   return device.platform === "ios"
     ? ["--platform", "ios", "--udid", device.id]
     : ["--platform", "android", "--serial", device.id];
 }
 
-/**
- * Just-in-time guidance returned from `device_open`. This is the one place
- * the agent learns how to drive the device, so it lives with the tool result
- * rather than in the always-on prompt block; threads that never open a device
- * never pay for it.
- */
+/** Return device-driving guidance on open so other threads do not pay for it in their prompt. */
 export function agentDeviceQuickStart(
   device: DeviceSummary,
   targetArgs = agentDeviceTargetArgs(device),

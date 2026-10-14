@@ -7,10 +7,7 @@ export type PullRequestEnvironmentTarget = {
   readonly host?: string;
 };
 
-/**
- * Another connected environment holding the pull request's repository, for when the one it was
- * opened in is unreachable. Null while the original is connected or no other copy exists.
- */
+/** Finds a connected repository copy when the original environment is unreachable. */
 export function pullRequestFallbackEnvironment(
   target: PullRequestEnvironmentTarget,
   projects: ReadonlyArray<EnvironmentProject>,

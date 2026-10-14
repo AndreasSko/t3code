@@ -69,9 +69,7 @@ export class DesktopTelemetryPublisher extends Context.Service<
       message: DesktopTelemetryControlMessage,
     ) => Effect.Effect<void>;
     readonly removeControlSource: (sourceId: string) => Effect.Effect<void>;
-    /** Sends the report to the attached backend and replays the latest one
-        to backends that attach later (including the one spawned after a
-        relaunch). */
+    /** Replays the latest report to backends that attach after publication, including after relaunch. */
     readonly publishUpdateReport: (report: DesktopUpdateStatusReport) => Effect.Effect<void>;
     /** Update requests received over the control channel. Single consumer. */
     readonly updateRequests: Stream.Stream<DesktopTelemetryRequestDesktopUpdate>;

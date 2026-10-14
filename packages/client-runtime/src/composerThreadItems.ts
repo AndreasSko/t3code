@@ -18,11 +18,7 @@ export interface ComposerThreadItem {
   readonly description: string;
 }
 
-/**
- * Threads the `@` picker offers next to file paths. The agent can only read threads on its
- * own server, so candidates stay within the composer's environment. A query is required:
- * bare `@` stays a file picker.
- */
+/** Requires a query; candidates stay on the composer environment because the agent cannot read other servers. */
 export function matchComposerThreadItems(input: {
   shells: ReadonlyArray<ComposerThreadCandidate>;
   environmentId: EnvironmentId;

@@ -93,13 +93,7 @@ export function presentEnvironmentConnection(
   return presentConnectionState(state);
 }
 
-/**
- * The address an agent outside T3 (Claude Code, Codex) uses to reach this
- * environment's MCP server: the route this device is connected over, since an
- * agent beside this client can reach it too, else the first route in
- * preference order that has an address. SSH connections ride a local forward
- * that disappears with the client, so they have no stable address.
- */
+/** Prefer the connected route for external MCP access; SSH forwards have no stable address. */
 export function environmentMcpUrl(input: {
   readonly entry: ConnectionCatalogEntry;
   readonly relayHttpBaseUrl?: string | undefined;

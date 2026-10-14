@@ -36,23 +36,14 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { evaluatePullRequestWatch, pullRequestWatchMessage } from "./pullRequestWatch.ts";
 
-/**
- * Minutes between passes. Checks take minutes, so a faster pass mostly spends the host's rate
- * limit, which every machine on the same account shares.
- */
+// Checks take minutes; faster sweeps mostly spend rate limits shared by the account.
 const SWEEP_MINUTES = 2;
 /** Reads in a row that failed for a reason other than a rate limit before the watch ends. */
 const READ_FAILURE_LIMIT = 8;
-/**
- * Without a host fingerprint, a pull request with nothing in flight is read again only when its
- * sync snapshot moves, or after this long, for news the snapshot cannot show, such as a bot
- * editing its review.
- */
+// Without fingerprints, reread quiet PRs after this interval to catch edits
+// invisible to sync snapshots, such as a bot changing its review.
 const QUIET_REREAD_MS = 10 * 60_000;
-/**
- * With a host fingerprint, how long until the activity is read again anyway: the fingerprint
- * does not see edits to comments inside review threads.
- */
+// Fingerprints miss review-thread comment edits, so force periodic activity reads.
 const FINGERPRINT_REREAD_MS = 30 * 60_000;
 
 const isProviderError = Schema.is(PullRequestProviderError);
@@ -80,7 +71,6 @@ interface WatchTarget {
   readonly watch: ThreadPullRequestWatch;
 }
 
-/** Every thread of one project that watches one pull request, read once per pass. */
 interface WatchGroup {
   readonly key: string;
   readonly targets: ReadonlyArray<WatchTarget>;
@@ -90,9 +80,7 @@ interface WatchGroup {
 
 /** The last successful read of a pull request, kept in memory: a restart reads each once. */
 interface LastRead {
-  /** When the activity was last read. */
   readonly at: number;
-  /** The sync snapshot this read saw. */
   readonly fingerprint: string;
   /** A check was still running or mergeability unknown, so the detail can move unannounced. */
   readonly inFlight: boolean;
@@ -100,12 +88,10 @@ interface LastRead {
   readonly remarksComplete: boolean;
   /** The watches this read evaluated; a watch started since takes its first look next pass. */
   readonly watches: ReadonlySet<string>;
-  /** The host fingerprint parts these reads answer, when the host gives one. */
   readonly status: string | null;
   readonly remarks: string | null;
 }
 
-/** Which reads a pass makes for one pull request. */
 interface ReadPlan {
   readonly detail: boolean;
   readonly activity: boolean;
@@ -113,10 +99,7 @@ interface ReadPlan {
 
 const watchKey = ({ thread, watch }: WatchTarget) => `${thread.id} ${watch.startedAt}`;
 
-/**
- * Why a watch ended. `stopped` is anything outside this reactor: the agent unwatched, the user
- * pressed Stop, or the thread settled, archived, or was deleted between passes.
- */
+// stopped covers endings outside this reactor, including user Stop and thread settlement.
 type WatchEndReason =
   | "merged"
   | "closed"
@@ -126,17 +109,12 @@ type WatchEndReason =
   | "subagent"
   | "stopped";
 
-/**
- * What one watch did while this server ran, logged once when it ends so we can see how long
- * watches stay quiet. Kept in memory: a watch older than the server process only has partial
- * numbers, and one that ends while the server is down, or starts and ends between two passes,
- * is not logged.
- */
+// In-memory watch lifetime metrics are partial across restarts; watches ending
+// while the server is down or between passes cannot be logged.
 interface WatchLife {
   readonly threadId: string;
   readonly pullRequest: string;
   readonly startedAt: number;
-  /** The head commit the last successful read saw. */
   readonly headSha: string | null;
   /** When a pass last saw the head commit move, or the start. */
   readonly pushedAt: number;
@@ -165,19 +143,14 @@ const snapshotFingerprint = ({ link }: WatchTarget) => {
       ].join(" ");
 };
 
-/**
- * With a host fingerprint, the detail (1 point on GitHub) is read when anything moved or a check
- * is still running, since check counts by state cannot tell which check finished, and the
- * activity (15 points) only when the remarks moved. Without one, both are read whenever the sync
- * snapshot moved or something is in flight.
- */
+// Detail costs 1 GitHub point; activity costs 15. Use fingerprints to avoid
+// unchanged activity reads, but in-flight checks need detail because counts hide which finished.
 function planRead(
   group: WatchGroup,
   last: LastRead | undefined,
   fingerprint: ProviderChangeRequestWatchFingerprint | null,
   now: number,
 ): ReadPlan {
-  // A watch takes its first look with everything.
   if (last === undefined || group.targets.some((target) => !last.watches.has(watchKey(target)))) {
     return { detail: true, activity: true };
   }
@@ -210,22 +183,12 @@ function watchesEqual(left: ThreadPullRequestWatch, right: ThreadPullRequestWatc
   );
 }
 
-/**
- * Wakes a thread's agent when a pull request it watches (`watch_pull_request`) needs a look:
- * checks finished on the head commit, someone else commented, or the branch started to
- * conflict. A pass every two minutes looks at each watched pull request once for all the threads
- * of a project that watch it. Where the host has a fingerprint, one batched read of those tells
- * the pass which pull requests moved, and only those are read; elsewhere a pull request is read
- * unless its sync snapshot has not moved while nothing is in flight.
- * Settling or archiving a thread ends its watches, and a merged or closed pull request ends
- * its watch. Each ended watch is logged once with why it ended and how long it went without
- * a push, for debugging watches that live too long.
- */
+// Share host reads across watches; fingerprints gate reads to reduce rate-limit cost.
+// Wake for finished checks, outside comments, or new conflicts; settlement, archive, and terminal PRs end watches.
 export class PullRequestWatchReactor extends Context.Service<
   PullRequestWatchReactor,
   {
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
-    /** One pass over every watched pull request. */
     readonly sweep: Effect.Effect<void>;
   }
 >()("t3/orchestration-v2/PullRequestWatchReactor") {}
@@ -292,17 +255,13 @@ export const make = Effect.gen(function* () {
     Map<string, { readonly count: number; readonly comments: ReadonlyArray<PullRequestComment> }>
   >();
 
-  // Host-level identity, with the repository as linked, the way pull request sync reads it.
   const identityOf = (link: ThreadPullRequestLink) => ({
     host: normalizeThreadPullRequestKey(link).host,
     repository: link.repository,
     number: link.number,
   });
 
-  /**
-   * Records what a pass saw, and wakes the agent with it. The orchestrator applies this only
-   * while the same watch is on, so a stop or restart that lands during the host read wins.
-   */
+  // Apply only while the same watch is current, so Stop or restart during the host read wins.
   const record = (
     target: WatchTarget,
     next: ThreadPullRequestWatch | null,
@@ -406,10 +365,8 @@ export const make = Effect.gen(function* () {
       Effect.tap(() => ended(target, "closed")),
     );
 
-  /** Why a watch ends without a host read; the rest are read once per pull request. */
   const endsWithoutRead = ({ thread, link }: WatchTarget): WatchEndReason | undefined =>
-    // A merged pull request cannot reopen. Settling and archiving end watches, and a subagent
-    // cannot start one; a watch left from before those rules ends here.
+    // Merged PRs cannot reopen; settled threads and subagents cannot retain watches.
     link.snapshot?.state === "merged"
       ? "merged"
       : thread.settledOverride === "settled" || thread.settledAt !== null
@@ -418,10 +375,7 @@ export const make = Effect.gen(function* () {
           ? "subagent"
           : undefined;
 
-  /**
-   * Runs one thread's step for each thread in a group, so one refusal does not skip the rest.
-   * Succeeds with whether every step landed.
-   */
+  /** Try every target despite refusals; return whether every update landed. */
   const eachTarget = <E>(
     group: WatchGroup,
     step: (target: WatchTarget) => Effect.Effect<void, E>,
@@ -445,12 +399,8 @@ export const make = Effect.gen(function* () {
     return { projectId: first.thread.projectId, ...identityOf(first.link) };
   };
 
-  /**
-   * The host fingerprint of a watched pull request, read for every group at once so they share
-   * one batched request. Null, for a host without one or one that gave no answer, keeps the
-   * sync-snapshot gating; "paused" skips the pass while the host is rate limited, since every
-   * read would be refused.
-   */
+  // Batch host fingerprints; unsupported hosts use snapshot gating,
+  // while rate-limited hosts skip the pass without more refused reads.
   const fingerprintOf = (group: WatchGroup) =>
     pullRequests.watchFingerprint(referenceOf(group)).pipe(
       Effect.catchCause(
@@ -541,7 +491,6 @@ export const make = Effect.gen(function* () {
       inFlight:
         detail.mergeability === "unknown" ||
         detail.checks.some((check) => check.status === "pending"),
-      // Comments a partial read could not see are read again next pass.
       remarksComplete: plan.activity ? remarks !== null : (last?.remarksComplete ?? false),
       watches: new Set(group.targets.map(watchKey)),
       status: fingerprint?.status ?? null,
@@ -576,7 +525,6 @@ export const make = Effect.gen(function* () {
         link.watch === undefined ? [] : [{ thread, link, watch: link.watch }],
       ),
     );
-    // A watch seen last pass and gone now was ended outside this reactor.
     const present = new Set(targets.map(lifeKey));
     yield* Effect.forEach(
       [...lives].filter(([key]) => !present.has(key)),

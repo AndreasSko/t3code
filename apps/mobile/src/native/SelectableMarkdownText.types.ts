@@ -33,12 +33,7 @@ export interface MarkdownImageRequest {
   readonly title: string | null;
 }
 
-/**
- * App-supplied renderer for markdown images. The module cannot load
- * workspace-relative image paths itself — the host app resolves them (for
- * example through a signed asset URL) and returns the element to show.
- * Returning null keeps Enriched's native media rendering.
- */
+/** Resolve workspace-relative images in the host app; returning null preserves native media rendering. */
 export type MarkdownImageRenderer = (image: MarkdownImageRequest) => import("react").ReactNode;
 
 export type MarkdownImageSourceResolver = (

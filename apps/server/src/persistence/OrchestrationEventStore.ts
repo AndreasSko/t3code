@@ -1,15 +1,4 @@
-/**
- * Historical name for the shared application event store.
- *
- * Owns durable append/replay access for project events and V2 agent-thread
- * events under one global sequence. It does not reduce events into read models
- * or apply command validation rules.
- *
- * Uses Effect `Context.Service` for dependency injection and exposes typed
- * persistence/decode errors for event append and replay operations.
- *
- * @module OrchestrationEventStore
- */
+/** Project and V2 thread events share one globally ordered application log. */
 import {
   ApplicationEventMetadata,
   ApplicationProjectEvent,
@@ -44,37 +33,27 @@ import {
   type OrchestrationEventStoreError,
 } from "./Errors.ts";
 
-/** A project event before the store assigns its sequence. */
 export type UnsequencedProjectEvent = ApplicationProjectEvent extends infer Event
   ? Event extends ApplicationProjectEvent
     ? Omit<Event, "sequence">
     : never
   : never;
 
-/** OrchestrationEventStore - Service tag for the shared application event log. */
 export class OrchestrationEventStore extends Context.Service<
   OrchestrationEventStore,
   {
-    /** Append one project event to the shared application log. */
     readonly appendProjectEvent: (
       event: UnsequencedProjectEvent,
     ) => Effect.Effect<ApplicationProjectEvent, OrchestrationEventStoreError>;
 
-    /** Append V2 agent events to the same globally ordered application log. */
     readonly appendAgentEvents: (input: {
       readonly commandId?: CommandId;
       readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, OrchestrationEventStoreError>;
 
     /**
-     * Read only V2 thread events from the application log.
-     *
-     * Reads in fixed-size sequence pages until the filtered range is exhausted;
-     * `limit` caps raw rows across pages, including skipped unknown types.
-     *
-     * A row whose `event_type` this build does not know fails the read unless
-     * `skipUnknownEventTypes` is set, which logs and drops it instead. Only
-     * client thread replay opts in; anything that builds server state stays strict.
+     * The limit counts raw rows, including skipped unknown types; only client thread replay may skip them.
+     * Server-state reads stay strict so incompatible history cannot silently disappear.
      */
     readonly readAgentEvents: (input?: {
       readonly afterSequence?: number;
@@ -125,11 +104,8 @@ export class OrchestrationEventStore extends Context.Service<
     readonly latestApplicationSequence: Effect.Effect<number, OrchestrationEventStoreError>;
 
     /**
-     * Read the finite retained application-event range `(afterSequence, throughSequence]`.
-     *
-     * A row whose `event_type` this build does not know fails the read unless
-     * `skipUnknownEventTypes` is set, which logs and drops it instead. Only
-     * client shell replay opts in; anything that builds server state stays strict.
+     * Reads (afterSequence, throughSequence]; only client shell replay may skip unknown event types.
+     * Server-state reads stay strict so incompatible history cannot silently disappear.
      */
     readonly readApplicationEvents: (input: {
       readonly afterSequence: number;

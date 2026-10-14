@@ -28,21 +28,12 @@ import {
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
 /** Base64 budget for a single stashed image (~975KB of binary). */
 export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
-/**
- * Ceiling on the *source* file handed to the re-encoder. File size is a
- * proxy for pixel count, and decoding hundreds of megapixels into an
- * ImageBitmap can OOM the tab — beyond this we refuse rather than risk it.
- */
+/** Cap source size before decode because full RGBA buffers can OOM the tab regardless of the output budget. */
 export const MAX_COMPRESSIBLE_SOURCE_BYTES = 50 * 1024 * 1024;
 const MAX_HEIC_DECODE_PIXELS = 64_000_000;
 const MAX_HEIC_METADATA_BYTES = 1024 * 1024;
-/**
- * Quality ladder tried in order until the encoded image fits the budget.
- * The floor stays high enough to avoid visible blocking on UI screenshots;
- * if even that overflows we drop resolution instead of quality.
- */
+/** Keep quality high enough for UI text; if the floor overflows, reduce resolution instead. */
 const QUALITY_STEPS = [0.92, 0.85, 0.78, 0.68] as const;
-/** Extra downscale passes applied when even the lowest quality overflows. */
 const FALLBACK_SCALE_STEPS = [0.75, 0.55] as const;
 const HEIC_IMAGE_MIME_TYPE = /^image\/hei(?:c|f)$/i;
 const HEIC_IMAGE_EXTENSION = /\.(?:heic|heif)$/i;
@@ -54,14 +45,9 @@ export interface CompressedStashImage {
   dataUrl: string;
   mimeType: string;
   sizeBytes: number;
-  /** True when the payload was re-encoded rather than stored verbatim. */
   recompressed: boolean;
 }
 
-/**
- * Why an image could not be compressed. Callers report these differently:
- * "too large" is a budget outcome, "unreadable" is a decode failure.
- */
 export type ImageCompressionFailureReason = "too-large" | "unreadable";
 
 export type CompressStashImageResult =
@@ -175,7 +161,6 @@ function dataUrlLength(blob: Blob): number {
   );
 }
 
-/** Base64 payload of a data URL decoded back into a `File`. */
 export function dataUrlToFile(dataUrl: string, name: string, mimeType: string): File {
   const payload = dataUrl.slice(dataUrl.indexOf(",") + 1);
   const binary = atob(payload);
@@ -186,10 +171,7 @@ export function dataUrlToFile(dataUrl: string, name: string, mimeType: string): 
   return new File([bytes], name, { type: mimeType });
 }
 
-/**
- * Re-encoding changes the container, so a name like `shot.png` would lie
- * about its contents. Swap the extension to match the encoded mime type.
- */
+/** Reencoding changes the container, so change the extension to match its MIME type. */
 function fileNameForMimeType(name: string, mimeType: string): string {
   const extension = mimeType === "image/webp" ? ".webp" : ".jpg";
   const dotIndex = name.lastIndexOf(".");
@@ -225,12 +207,8 @@ function createCanvas(width: number, height: number): Canvas2D | null {
   return { canvas, context };
 }
 
-/**
- * WebP is preferred: at matched visual quality it lands roughly 25-35%
- * smaller than JPEG, so the same budget buys more resolution and detail —
- * and it keeps alpha, so screenshots with transparency survive intact.
- * Browsers that can't encode it silently fall back to JPEG.
- */
+/** Prefer WebP: roughly 25-35% smaller than JPEG at comparable quality, with alpha preserved.
+ * Unsupported encoders fall back to JPEG. */
 async function encodeCanvas(
   canvas: OffscreenCanvas | HTMLCanvasElement,
   quality: number,
@@ -284,10 +262,6 @@ export function createComposerImageThumbnail(file: File): Promise<string | null>
   return thumbnail;
 }
 
-/**
- * Draws `bitmap` scaled to fit `maxDimension` and encodes it, stepping
- * quality down until the data URL fits `budgetChars`.
- */
 async function encodeWithinBudget(
   bitmap: ImageBitmap,
   maxDimension: number,
@@ -328,10 +302,6 @@ type ReencodeResult =
   | { ok: true; blob: Blob; mimeType: string; imageSize: ImageSize }
   | { ok: false; reason: ImageCompressionFailureReason };
 
-/**
- * Shared re-encode loop: decodes `file`, then walks the quality ladder and
- * fallback downscale passes until an encoding fits `budgetChars`.
- */
 async function reencodeWithinBudget(
   file: File,
   budgetChars: number,
@@ -349,10 +319,7 @@ async function reencodeWithinBudget(
   }
 
   try {
-    // Each pass shrinks relative to the *previous target*, capped by
-    // MAX_DIMENSION. Scaling a fixed ceiling instead would be a no-op for
-    // images already smaller than that ceiling — the fallback passes would
-    // all resolve to the source size and never actually reduce resolution.
+    // Scale from the source-capped base dimension; scaling MAX_DIMENSION alone would not shrink smaller sources.
     const baseDimension = Math.min(MAX_DIMENSION, Math.max(bitmap.width, bitmap.height));
     // Tracks whether the *last* attempt threw, so a run of encoder failures
     // is reported as unreadable while a run of merely-too-big results is
@@ -364,12 +331,8 @@ async function reencodeWithinBudget(
       try {
         encoded = await encodeWithinBudget(bitmap, targetDimension, budgetChars, preferredMimeType);
       } catch {
-        // Canvas allocation, drawing, or the codec itself can throw — often
-        // precisely *because* the target is too big (OOM on a large bitmap).
-        // Keep trying the smaller fallback scales rather than giving up: a
-        // reduced pass may well succeed. The exception must never escape,
-        // though, since callers finalize state after this returns and a
-        // throw would strand it (e.g. a stash entry stuck "still saving").
+        // Retry smaller scales after allocation/codec failures. Never throw: callers finalize pending state after
+        // return.
         encodeFailed = true;
         continue;
       }
@@ -390,12 +353,8 @@ async function reencodeWithinBudget(
 }
 
 /**
- * Produces the payload to persist for a stashed image.
- *
- * Small images are stored verbatim (preserving PNG transparency and exact
- * pixels). Anything over budget is downscaled and re-encoded; if it still
- * doesn't fit after the fallback passes, reports a failure so the caller
- * can record it as dropped.
+ * Within-budget images stay verbatim; oversized images reencode, with failure reported for callers to mark
+ * dropped.
  */
 export async function compressImageForStash(
   file: File,
@@ -517,10 +476,7 @@ export async function compressImageToByteLimit(
   };
 }
 
-/**
- * Converts HEIC/HEIF photos to provider-compatible JPEG before applying the
- * attachment size limit. The decoder is loaded only when such a photo arrives.
- */
+/** Decode HEIC/HEIF to provider-compatible JPEG; load the decoder only when needed. */
 export async function prepareImageForAttachment(
   file: File,
   maxBytes: number,

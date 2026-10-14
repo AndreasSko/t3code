@@ -363,11 +363,8 @@ const installWindowsEnvironment = Effect.fn("desktop.shellEnvironment.installWin
   function* (
     config: ShellEnvironmentConfig,
   ): Effect.fn.Return<void, never, ChildProcessSpawner.ChildProcessSpawner> {
-    // Concurrent, not sequential: these two probes are independent (only their
-    // results are combined below) and each spawns its own PowerShell. Run in
-    // series they sit at offset 0 of desktop.startup, before anything else, and
-    // launch traces measured them at 2718ms then 2066ms — the entire 4.8s
-    // startup span, of which desktop.bootstrap is ~30ms.
+    // These independent PowerShell probes measured 2718ms and 2066ms (~4.8s serial startup).
+    // Run them concurrently so their waits overlap.
     const [noProfile, profile] = yield* Effect.all(
       [
         readWindowsEnvironment(["PATH"], { loadProfile: false }),
@@ -475,11 +472,8 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
         }
       }
 
-      // GUI launches inherit no locale from launchd, so spawned agents land in the C
-      // locale and pbcopy decodes their UTF-8 output as MacRoman. Older supported
-      // macOS releases do not provide C.UTF-8, so set only LC_CTYPE to a UTF-8 locale
-      // available on those releases. Leaving LANG unset keeps C-stable collation and
-      // formatting, so output parsing is unaffected.
+      // launchd supplies no GUI locale, so pbcopy can decode agent UTF-8 as MacRoman.
+      // Older macOS lacks C.UTF-8; set only a supported LC_CTYPE and leave LANG unset for C-stable parsing.
       if (LOCALE_ENV_NAMES.every((name) => Option.isNone(trimNonEmpty(config.env[name])))) {
         config.env.LC_CTYPE = FALLBACK_LC_CTYPE;
       }

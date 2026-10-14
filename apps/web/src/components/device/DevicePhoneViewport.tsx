@@ -12,7 +12,7 @@ import { observeResize } from "../../lib/observeResize";
 
 const loadPhoneViewer = () => import("@t3tools/client-runtime/device/phone-viewer");
 
-/** Web shell for the framework-independent viewer. The decoded screen and input connection remain owned by DeviceStreamView. */
+/** DeviceStreamView retains ownership of the decoded screen and input connection. */
 export function DevicePhoneViewport(props: {
   readonly profile: DeviceShapeProfile;
   readonly model: DeviceModelSource | null;

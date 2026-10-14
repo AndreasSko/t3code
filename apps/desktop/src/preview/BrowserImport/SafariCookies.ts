@@ -44,10 +44,7 @@ export class SafariCookieReadError extends Schema.TaggedError<SafariCookieReadEr
   "SafariCookieReadError",
   {
     reason: SafariCookieReadFailure,
-    /**
-     * Which jar the read was for. The parser raises this before a path is in
-     * hand, so it is optional rather than required.
-     */
+    /** Optional because the parser can fail before a database path is known. */
     cookieDatabasePath: Schema.optional(Schema.String),
     /** Kept for the log; never surfaced to the user. */
     cause: Schema.optional(Schema.Defect()),
@@ -62,7 +59,6 @@ export class SafariCookieReadError extends Schema.TaggedError<SafariCookieReadEr
 
 const isSafariCookieReadError = Schema.is(SafariCookieReadError);
 
-/** Reads a NUL-terminated ASCII string at an offset. */
 function readCString(buffer: Buffer, start: number): string {
   const end = buffer.indexOf(0, start);
   return buffer.toString("utf8", start, end === -1 ? buffer.length : end);
@@ -74,11 +70,7 @@ export function parseBinaryCookies(buffer: Buffer): ReadonlyArray<ImportedCookie
   }
 
   const pageCount = buffer.readUInt32BE(4);
-  // Every declared structure is bounds-checked against what the file actually
-  // contains, and a mismatch fails the read. `Buffer.subarray` clamps silently,
-  // so accepting a short page or an overlong record would return a cookie set
-  // that is quietly missing entries or carrying fields read out of the next
-  // record — a partial import the user has no way to notice.
+  // Buffer.subarray silently clamps; reject truncated structures instead of importing missing or cross-record data.
   if (8 + pageCount * 4 > buffer.length) {
     throw new SafariCookieReadError({ reason: "readFailed" });
   }
@@ -103,9 +95,7 @@ export function parseBinaryCookies(buffer: Buffer): ReadonlyArray<ImportedCookie
     if (offsetTableEnd > page.length) {
       throw new SafariCookieReadError({ reason: "readFailed" });
     }
-    // Every record accepted so far, so a later offset cannot point back into
-    // one of them: the page header, the offset table, and earlier records are
-    // all bytes that would otherwise parse as a fabricated cookie.
+    // Reject overlapping records so header, offset-table, or earlier-record bytes cannot become fabricated cookies.
     const accepted: Array<readonly [start: number, end: number]> = [];
     for (let index = 0; index < cookieCount; index += 1) {
       const cookieStart = page.readUInt32LE(8 + index * 4);
@@ -153,9 +143,7 @@ export function parseBinaryCookies(buffer: Buffer): ReadonlyArray<ImportedCookie
         expiry > 0 ? Math.floor(expiry) + APPLE_EPOCH_OFFSET_SECONDS : undefined;
 
       cookies.push({
-        // Safari marks domain cookies with a leading dot like the other
-        // engines, so the shared scope rule applies: host-only cookies keep
-        // `domain` undefined, or Electron widens them to every subdomain.
+        // Safari marks domain cookies with a leading dot; preserve host-only scope when importing into Electron.
         ...cookieScope(domain, path || "/", secure),
         name,
         value,
@@ -163,20 +151,13 @@ export function parseBinaryCookies(buffer: Buffer): ReadonlyArray<ImportedCookie
         secure,
         httpOnly: (flags & FLAG_HTTP_ONLY) !== 0,
         expirationDate,
-        // Bits 3–5 of the flags carry something SameSite-shaped, but no public
-        // description of them agrees and real jars do not match any of them
-        // cleanly. Lax is the modern browser default; claiming "none" would
-        // widen every imported cookie's scope.
+        // Safari's SameSite flag bits are not reliably documented; use Lax rather than widening every cookie to None.
         sameSite: "lax",
       });
     }
   }
 
-  // Safari writes an 8-byte checksum after the pages, then an optional
-  // length-prefixed property list. Anything else past the declared pages —
-  // in particular whole extra pages — means the page table does not describe
-  // the file, and a jar the header lies about is refused rather than
-  // imported with cookies silently missing.
+  // Reject bytes beyond the checksum/property-list trailer; undeclared pages would silently lose cookies.
   const trailer = buffer.length - pageStart;
   // Legal shapes: nothing, the 8-byte checksum alone, or checksum + u32
   // length + exactly that many property-list bytes.
@@ -191,31 +172,13 @@ export function parseBinaryCookies(buffer: Buffer): ReadonlyArray<ImportedCookie
   return cookies;
 }
 
-/**
- * Whether a filesystem error is the OS refusing access.
- *
- * A TCC denial arrives as EPERM, which Effect tags `Unknown` rather than
- * `PermissionDenied` (reserved for EACCES), so the underlying errno is checked
- * too — otherwise a Full Disk Access refusal is reported as a generic read
- * failure and the user is never told what to grant.
- */
+/** TCC denies with EPERM (tagged Unknown); EACCES is a POSIX/ACL failure Full Disk Access cannot fix. */
 export const isPermissionDenied = (error: PlatformError.PlatformError): boolean => {
-  // TCC denies with EPERM, which Effect tags `Unknown` rather than
-  // `PermissionDenied` — so the errno is what identifies it. EACCES (and the
-  // `PermissionDenied` tag it maps to) is an ordinary POSIX permission or
-  // ACL failure that granting Full Disk Access cannot fix, so it stays a plain
-  // read failure rather than sending the user to a grant that won't help.
   const code = (error.reason as { cause?: { code?: unknown } }).cause?.code;
   return code === "EPERM";
 };
 
-/**
- * Whether reading the jar is refused by TCC. `stat` succeeds on the jar
- * inside Safari's container even without Full Disk Access — that is what lets
- * the listing find it — so presence alone cannot tell granted from denied.
- * Opening it for read is what TCC gates: EPERM means the grant is missing.
- * Anything else (including a missing jar) is not a permission answer.
- */
+/** TCC allows stat but gates read: only an EPERM opening the jar proves Full Disk Access is missing. */
 export const safariAccessDenied = Effect.fnUntraced(function* (cookiePath: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.open(cookiePath, { flag: "r" }).pipe(
@@ -241,11 +204,7 @@ export const readSafariCookies = Effect.fn("SafariCookies.readSafariCookies")(fu
   const fileSystem = yield* FileSystem.FileSystem;
   const contents = yield* fileSystem.readFile(cookiePath).pipe(
     Effect.mapError((cause) => {
-      // TCC denies the read even though the file exists — a permission the user
-      // grants in System Settings rather than a missing browser. macOS never
-      // prompts for Full Disk Access, so there is no dialog to wait on; the
-      // read just fails, and it fails with EPERM, which Effect surfaces as an
-      // `Unknown` system error rather than `PermissionDenied` (that is EACCES).
+      // macOS never prompts for Full Disk Access; map TCC refusal to the System Settings grant.
       return new SafariCookieReadError({
         reason: isPermissionDenied(cause) ? "needsFullDiskAccess" : "readFailed",
         cookieDatabasePath: cookiePath,

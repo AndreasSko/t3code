@@ -30,19 +30,15 @@ export interface SelfInvocation {
   /** The binary to spawn: Node, Electron (with `ELECTRON_RUN_AS_NODE`), or the packaged T3. */
   readonly command: string;
   /**
-   * The absolute entrypoint script to place before the subcommand, or
-   * undefined for the packaged binary, which dispatches subcommands from
-   * argv[2] and treats a leading path as the subcommand itself.
+   * An absolute entrypoint script preceding the subcommand, or undefined for
+   * packaged T3, which treats the first argument as the subcommand itself.
    */
   readonly entrypoint: string | undefined;
 }
 
 /**
- * How another process runs this T3 install's CLI, for hidden subcommands the
- * server hands to children such as `acp-mcp-bridge`. `process.execPath` plus
- * `argv[1]` only works for a script run by Node; the single-executable has no
- * entrypoint script (Node repeats the binary at argv[1]), so callers must not
- * assemble the pair themselves.
+ * Use for child CLI invocations: standalone T3 repeats its binary at argv[1], not a script.
+ * Callers must use this pair rather than assembling process.execPath and argv[1].
  */
 export const resolveSelfInvocation = Effect.fn("nodeRuntime.resolveSelfInvocation")(function* () {
   const command = yield* HostProcess.ExecutablePath;

@@ -6,11 +6,8 @@ const RECENT_PROJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_SELECTION_MIN_THREADS = 3;
 
 /**
- * Existing projects still need their agent history imported, so every scan
- * candidate is offered. The default selection is narrower: git repositories
- * active in the last 30 days with enough threads to look like real work.
- * Servers that predate the git scan omit `git`; their candidates are treated
- * as repositories so old computers still get a useful default selection.
+ * Offer every candidate for history import; default-select active repositories. Missing git data from older
+ * servers counts as a repository.
  */
 export function partitionOnboardingProjects<T extends AgentSessionProjectCandidate>(
   candidates: ReadonlyArray<T>,
@@ -31,7 +28,6 @@ export function partitionOnboardingProjects<T extends AgentSessionProjectCandida
 }
 
 export interface OnboardingProjectGroup<T> {
-  /** Stable identity for collapse state and React keys. */
   readonly key: string;
   /** GitHub `owner/name`, or the checkout's folder name when the origin is elsewhere. */
   readonly label: string;
@@ -48,12 +44,8 @@ function latestActivity(left: string | null, right: string | null): string | nul
 }
 
 /**
- * Group scan candidates for the onboarding picker. Clones of one repository
- * share a group keyed by their normalized origin URL. Repositories without an
- * origin get a group each, as do candidates from servers that do not report
- * git identity. Directories that are not git repositories are returned
- * separately so the UI can fold them away by default. Groups sort by most
- * recent activity, newest first.
+ * Group clones by normalized origin; keep unidentifiable repositories separate and non-git directories
+ * foldable.
  */
 export function groupOnboardingProjects<
   T extends Pick<
@@ -135,12 +127,7 @@ export function resolveOnboardingLandingProject<T>(
   return undefined;
 }
 
-/**
- * Splits a scan path into the folder name and the directory above it (with
- * its trailing separator), so a picker row can keep the name visible and let
- * the shared prefix truncate. Handles both separators because candidates
- * come from any environment.
- */
+/** Keep the folder name visible and truncate its prefix; recognize both separators for remote environments. */
 export function splitOnboardingProjectPath(path: string): {
   readonly name: string;
   readonly parent: string;

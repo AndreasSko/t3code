@@ -3,9 +3,8 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
- * Live progress for a thread whose first turn is creating a worktree. The
- * server keeps this in memory only; a client that reconnects mid-setup gets a
- * fresh snapshot, and a finished setup is dropped once its turn starts.
+ * Setup progress is memory-only; reconnect gets a fresh snapshot and
+ * completed setup expires once the turn starts.
  */
 /** Producers clamp free text to these before publishing so encoding never fails. */
 export const WORKTREE_SETUP_DETAIL_MAX_LENGTH = 200;
@@ -65,19 +64,14 @@ export const WorktreeSetupSnapshot = Schema.Struct({
     }),
   ),
   stages: Schema.Array(WorktreeSetupStage),
-  /** Human readable reason when phase is failed. */
   error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(WORKTREE_SETUP_ERROR_MAX_LENGTH))),
   sequence: NonNegativeInt,
 });
 export type WorktreeSetupSnapshot = typeof WorktreeSetupSnapshot.Type;
 
 /**
- * Thread activity that carries a `WorktreeSetupSnapshot` as its payload. The
- * bootstrap writes it under a fixed id once the thread exists (phase running)
- * and again when the setup settles, so the projection always holds the
- * latest known state: a client attaches the live stream while it says
- * running and renders the outcome from it afterwards, on any device or
- * after a reload.
+ * Persist the latest setup under a fixed activity id so reloads and other clients
+ * can render the outcome; attach the live stream while running.
  */
 export const WORKTREE_SETUP_ACTIVITY_KIND = "worktree-setup";
 

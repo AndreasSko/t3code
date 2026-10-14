@@ -18,7 +18,6 @@ export function favoritesFirst(
   return [...favorites, ...others];
 }
 
-/** Match the terms a user can actually see or recognize in the model picker. */
 export function modelMatchesCatalogQuery(input: {
   readonly model: ModelOption;
   readonly providerLabel: string;
@@ -61,10 +60,7 @@ export function canCommitPendingModel(
   );
 }
 
-/**
- * Primary and selected providers start open; all other catalogs start closed.
- * A user's disclosure tap inverts that default until the picker is dismissed.
- */
+/** Disclosure taps invert the provider default until dismissal; narrowed catalogs always expand. */
 export function providerSectionIsCollapsed(input: {
   readonly defaultExpanded: boolean;
   readonly hasExpansionOverride: boolean;

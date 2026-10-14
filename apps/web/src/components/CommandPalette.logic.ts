@@ -52,12 +52,7 @@ export function browseInputEndPaddingClass(input: {
   return "*:data-[slot=autocomplete-input]:pe-24!";
 }
 
-/**
- * The global search overlay hosts three mutually exclusive surfaces: the
- * command palette (⌘K), the project file picker (⌘P), and project content
- * search (⇧⌘F). One reducer owns open/mode state so the surfaces can never
- * stack and re-triggering a mode's shortcut toggles it closed.
- */
+/** One reducer owns every search mode so overlays cannot stack. */
 export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
@@ -138,9 +133,8 @@ export interface CommandPaletteItem {
   readonly searchRecency?: number;
   readonly icon: ReactNode;
   readonly disabled?: boolean;
-  /** Optional content rendered inline before the title text. */
   readonly titleLeadingContent?: ReactNode;
-  /** Optional content rendered inline after the title text (before the timestamp). */
+  /** Before the timestamp. */
   readonly titleTrailingContent?: ReactNode;
   readonly shortcutCommand?: KeybindingCommand;
   /** Sorts after every other match in its group; see `SettingsSearchItem.secondary`. */
@@ -187,11 +181,7 @@ export type CommandPaletteRow =
       readonly itemIndex: number | null;
     };
 
-/**
- * Flattens groups into the rows a virtualized list renders. `itemValues` is the
- * highlightable item order Base UI navigates; `rowIndexByItemIndex` maps a
- * highlight back to its row for scrolling.
- */
+/** Maps Base UI's enabled-item order to virtualized rows for highlight scrolling. */
 export function buildCommandPaletteRows(groups: ReadonlyArray<CommandPaletteGroup>) {
   const rows: CommandPaletteRow[] = [];
   const itemValues: string[] = [];
@@ -245,10 +235,7 @@ export function enumerateCommandPaletteItems(
 
 export type CommandPaletteMode = "root" | "root-browse" | "submenu" | "submenu-browse";
 
-// A project as the palette shows it. `displayName` is the grouped label (for
-// example "owner/repo" when projects are merged across machines). Keep `title`
-// as the real project title: the automatic project icon is derived from it, and
-// every other surface uses the real title, so overriding it desyncs the icon.
+// Keep title as the real project title for consistent icons; displayName carries cross-machine grouping.
 export type CommandPaletteProject = Project & { readonly displayName: string };
 
 export function buildCommandPaletteProjectMetadata(input: {
@@ -319,9 +306,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   projectTitleById: ReadonlyMap<Project["id"], string>;
   sortOrder: SidebarThreadSortOrder;
   icon: ReactNode;
-  /** Optional content rendered inline before the title text per-thread. */
   renderLeadingContent?: (thread: TThread) => ReactNode;
-  /** Optional content rendered inline after the title text per-thread. */
   renderTrailingContent?: (thread: TThread) => ReactNode;
   /** Optional rich description (e.g. favicon + workspace icons). Falls back to text. */
   renderDescription?: (thread: TThread, meta: { projectTitle: string | undefined }) => ReactNode;

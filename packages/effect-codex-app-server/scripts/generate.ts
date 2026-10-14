@@ -140,9 +140,7 @@ const ManualSchemas: Record<string, Schema.Json> = {
   },
 };
 
-// Codex adds plan slugs between our protocol refreshes (0.159 added `promax`).
-// T3 Code only uses the plan for labels, so an unknown slug must not fail the
-// whole `account/read` decode and take the provider down with it.
+// Plan slugs are display labels; unknown Codex slugs must not fail account/read.
 const DefinitionOverrides: Record<string, Schema.Json> = {
   PlanType: { type: "string" },
 };
@@ -294,13 +292,9 @@ function isJsonSchemaNode(value: Schema.Json | undefined): value is JsonSchemaNo
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-// Adapts Codex's JSON Schema to Effect's importer, visiting only schema
-// positions so a field literally named "properties" is left alone:
-// - Effect imports an object without additionalProperties as an open record.
-//   Codex omits it for plain structs, so close objects that list properties.
-// - Effect cannot intersect shared object fields with object alternatives,
-//   which Codex uses for "one of these keys plus shared fields"
-//   (image_url | file_id). Fold the shared fields into each alternative.
+// Visit only schema positions so literal fields named properties stay intact.
+// Codex omits additionalProperties on structs; Effect imports those as open records.
+// Effect cannot import the shared-field/object-alternative intersection; fold fields into each branch.
 function adaptSchemaForEffect(value: Schema.Json): Schema.Json {
   if (!isJsonSchemaNode(value)) {
     return value;
@@ -455,9 +449,7 @@ function resolveResponseTypeName(
     const fromParams = paramsType.replace(/Params$/, "Response");
     try {
       return resolveSchemaTypeName(fromParams, generatedSchemaNames);
-    } catch {
-      // Fall through to method-based lookup.
-    }
+    } catch {}
   }
 
   return resolveSchemaTypeName(`${toPascalCaseMethod(method)}Response`, generatedSchemaNames);

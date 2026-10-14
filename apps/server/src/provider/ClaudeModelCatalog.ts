@@ -62,10 +62,7 @@ function tryResolveClaudeModelCatalog(
 const BUNDLED_CLAUDE_PROVIDER_CATALOG =
   resolveProviderCatalog(BUNDLED_MODEL_MANIFEST, CLAUDE) ?? undefined;
 
-/**
- * Claude's built-in catalog from its manifest entry, falling back to the
- * bundled entry when the current one is missing or has invalid adapters.
- */
+/** Falls back to the bundled catalog when the current entry is missing or has invalid adapters. */
 export function resolveClaudeModelCatalog(
   catalog: ModelCatalog.ProviderCatalog | undefined,
 ): ClaudeModelCatalog {
@@ -81,14 +78,8 @@ export const BUNDLED_CLAUDE_MODEL_CATALOG = resolveClaudeModelCatalog(
   BUNDLED_CLAUDE_PROVIDER_CATALOG,
 );
 
-/**
- * Scope the catalog to one instance's settings: custom model slugs stay opaque
- * (a built-in alias they shadow is dropped, canonical slugs and capabilities
- * are preserved), and custom entries that declare their own capabilities are
- * appended so the adapter resolves effort / fast mode / thinking against the
- * user's descriptors instead of the empty default. Custom entries carry no
- * runtime profile, so option values pass through to Claude Code verbatim.
- */
+/** Custom slugs suppress shadowed aliases while preserving built-ins and explicit capabilities.
+ * Custom entries have no runtime profile, so their option values reach Claude verbatim. */
 export function scopeClaudeModelCatalog(
   catalog: ClaudeModelCatalog,
   customModels: ReadonlyArray<CustomModelSetting>,
@@ -177,10 +168,7 @@ export function resolveClaudeModelsForVersion(
     .map((entry) => entry.model);
 }
 
-/**
- * Current catalog models the installed Claude Code is too old to run, so the
- * picker can show them as "update to use" instead of hiding them.
- */
+/** Keeps models requiring newer Claude visible so the picker can offer "update to use". */
 export function resolveClaudeUpdateRequiredModels(
   catalog: ClaudeModelCatalog,
   version: string | null | undefined,

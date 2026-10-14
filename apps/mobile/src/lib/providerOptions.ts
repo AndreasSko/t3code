@@ -21,11 +21,7 @@ export function resolveProviderOptionDescriptors(input: {
   });
 }
 
-/**
- * Applies one option change (by descriptor id) and returns the full selection
- * list to store on the model selection, or null when the change doesn't match
- * an advertised descriptor / choice.
- */
+/** Returns the full option selection to store, or null for an unadvertised descriptor or choice. */
 export function applyProviderOptionSelection(
   descriptors: ReadonlyArray<ProviderOptionDescriptor>,
   change: ProviderOptionSelection,

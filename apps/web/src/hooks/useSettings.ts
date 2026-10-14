@@ -1,13 +1,6 @@
 /**
- * Environment-scoped settings hooks.
- *
- * Abstracts the split between server-authoritative settings (persisted in
- * `settings.json` on the server, fetched via `server.getConfig`) and
- * client-only settings (persisted in localStorage).
- *
- * Live server settings always require an environment id. Primary-environment
- * access is intentionally named as such so environment-sensitive consumers
- * cannot silently read the wrong server's settings.
+ * Live server-settings reads require an environment id; explicitly named primary access prevents
+ * wrong-server reads.
  */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, use } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
@@ -221,10 +214,8 @@ export function persistClientSettingsPatch(
 }
 
 /**
- * Persists a client-settings update before publishing it to the in-memory
- * snapshot. If another settings write lands while persistence is pending, the
- * updater is reapplied to that newer snapshot and persisted again so neither
- * change is lost.
+ * Persist before publishing; reapply to a newer snapshot if a concurrent write lands so neither change is
+ * lost.
  */
 export async function persistClientSettingsUpdate(
   update: (current: ClientSettings) => ClientSettings,
@@ -245,8 +236,6 @@ export async function persistClientSettingsUpdate(
     }
   });
 }
-
-// ── Key sets for routing patches ─────────────────────────────────────
 
 const SERVER_SETTINGS_KEYS = new Set<string>(Struct.keys(ServerSettings.fields));
 
@@ -269,25 +258,13 @@ function splitPatch(patch: UnifiedSettingsPatch): {
   };
 }
 
-// ── Hooks ────────────────────────────────────────────────────────────
-
-/**
- * Non-hook accessor for the current merged client settings snapshot.
- * Used by non-React code paths (e.g. runtime services) that need the latest
- * settings without subscribing.
- */
 export function getClientSettings(): ClientSettings {
   return getClientSettingsSnapshot();
 }
 
 /**
- * Resolves after settings load or storage confirms no saved settings exist.
- * Failed reads reject and remain retryable. They must not allow defaults to
- * overwrite saved preferences.
- *
- * The pre-hydration snapshot is just the schema defaults, so imperative paths
- * that open a preview must await this or they bake the built-in viewport, zoom
- * and appearance into a tab that never picks up the user's saved values.
+ * Await hydration before imperative mutations or preview creation; defaults must not overwrite saved
+ * preferences or become a tab's permanent viewport/theme. Failed reads remain retryable.
  */
 export function ensureClientSettingsHydrated(): Promise<void> {
   return hydrateClientSettings();
@@ -412,15 +389,7 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
   });
 }
 
-/**
- * Whether the legacy sidebar (Settings → General → Legacy features) replaces
- * the default one.
- *
- * Held at the default sidebar until client settings hydrate: the pre-hydration
- * snapshot is just the schema defaults, so resolving against it could mount one
- * sidebar and then swap it out once persisted settings land — remounting the
- * whole tree for everyone instead of only for legacy opt-ins.
- */
+/** Wait for client hydration before choosing the sidebar to avoid mounting and replacing the entire tree. */
 export function useLegacySidebarEnabled(): boolean {
   const settingsHydrated = useClientSettingsHydrated();
   const legacySidebarEnabled = useClientSettingsValue().legacySidebarEnabled;
@@ -574,7 +543,6 @@ export function usePersistEnvironmentProviderInstanceMutation(environmentId: Env
   );
 }
 
-/** Primary-only settings access for the settings UI and other explicitly global surfaces. */
 export function usePrimarySettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
@@ -590,12 +558,7 @@ export function usePrimarySettings<T = UnifiedSettings>(
 export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
   "This setting is saved on a server, and the hosted app is not anchored to one. Change it from the desktop app or from the server's own address.";
 
-/**
- * Whether primary-scoped server settings have a server to live on. The
- * hosted app connects to every environment as a remote, so it has no primary:
- * `usePrimarySettings` reads schema defaults there and writes have nowhere
- * to go. Desktop and server-served web always have one.
- */
+/** Hosted clients have no primary: primary settings reads use defaults and writes have no destination. */
 export function usePrimarySettingsAvailable(): boolean {
   const primaryEnvironment = usePrimaryEnvironment();
   return primaryEnvironment !== null || !isHostedStaticApp();
@@ -627,13 +590,8 @@ function useSharedSettingsSyncTargetIds(includePending = false): ReadonlyArray<E
 }
 
 /**
- * Returns an updater that routes each key to the correct backing store.
- *
- * Server keys are optimistically patched in atom-backed server state, then
- * persisted via RPC. Shared server keys (see `SHARED_SERVER_SETTING_KEYS`)
- * are written to every eligible sync target, not only the selected target, so
- * a user preference does not silently drift between machines. Client keys go
- * through client persistence.
+ * Write shared server preferences to every eligible sync target to avoid drift; persist client keys
+ * locally.
  */
 function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   // Mount this session even on pages without a visible permission-gated control.

@@ -11,7 +11,6 @@ const REPLAY_VALUES_BY_KEY: Readonly<Record<string, string>> = {
 interface CodexReplayRecordingMachine {
   readonly home: string;
   readonly hostname: string;
-  /** Root of the checkout the recorder runs from; it names the local worktree layout. */
   readonly checkout: string;
 }
 
@@ -56,14 +55,8 @@ function withoutMachineIdentity(
   );
 }
 
-/**
- * Codex supports multiple provider threads in one app-server session, so native
- * fork recording keeps the request ids emitted by that single client. Outbound
- * frames name the recording cwd `<workspace>`, which replay swaps for its own
- * checkpoint workspace. With `machine`, every frame also swaps the checkout
- * path, home directory, hostname, installation id and plan type for neutral
- * values so fixtures carry no local identity; the adapter reads none of them.
- */
+/** Keeps native fork request ids intact and replaces the cwd with <workspace>.
+ * With machine, also scrubs account and installation identity from every frame. */
 export function codexReplayRecordingOutputRecords(
   records: ReadonlyArray<Record<string, unknown>>,
   options: {

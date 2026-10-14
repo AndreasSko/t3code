@@ -39,9 +39,7 @@ export interface EventLoopReadings {
   readonly rssBytes: number;
 }
 
-// Enables the delay histogram for the layer's lifetime. Each read returns the
-// readings since the previous read and resets the histogram. Node skips the first
-// gap after a reset, so a stall right at a sample boundary can be missed.
+// Node skips the first gap after histogram reset, so boundary stalls can be missed.
 const makeNodeSampler = Effect.gen(function* () {
   const histogram = yield* Effect.acquireRelease(
     Effect.sync(() => {
@@ -85,9 +83,8 @@ const makeNodeSampler = Effect.gen(function* () {
  */
 export const stallMs = ({ delayMaxNs, activeMs }: EventLoopReadings) => {
   const delayMs = Math.round(delayMaxNs / 1e6) - RESOLUTION_MS;
-  // A stall is time the loop spent running code, so it counts as active time. libuv's
-  // clock keeps running while the system sleeps on macOS and Windows, so a sleep also
-  // reads as delay, but the loop spent it idle in poll.
+  // libuv clocks run during macOS/Windows sleep, but idle poll time is not
+  // a code stall; require enough active time to corroborate the delay.
   if (delayMs <= STALL_THRESHOLD_MS || activeMs < delayMs) return undefined;
   return delayMs;
 };
@@ -163,10 +160,8 @@ export const layerWith = (
         }
       });
       const wait = Effect.sleep(SAMPLE_INTERVAL);
-      // The layer builds before the rest of the server, so the first sample covers
-      // startup work such as migrations and projection bootstrap. That can block the
-      // loop for seconds on a large database, so skip it rather than warn at every
-      // launch. Layers build outside any span, so this fiber retains no parent span.
+      // Skip the first sample because pre-span startup migrations/bootstrap can
+      // block large databases for seconds without indicating an ongoing stall.
       yield* wait.pipe(
         Effect.andThen(sample),
         Effect.andThen(wait.pipe(Effect.andThen(tick), Effect.forever)),

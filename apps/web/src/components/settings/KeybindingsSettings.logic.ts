@@ -15,9 +15,7 @@ import { shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
-// Every usage.* command needs a rank. An unranked one falls back to the
-// alphabetical compare, which makes the comparator inconsistent and the order
-// depend on the input order.
+// Rank every usage.* command or alphabetical fallback makes the comparator inconsistent.
 const usageCommandOrder = new Map<KeybindingCommand, number>(
   [
     "usage.open" as const,
@@ -27,11 +25,7 @@ const usageCommandOrder = new Map<KeybindingCommand, number>(
 
 const firstUsageCommand = METRIC_OPTIONS[0].command;
 
-/**
- * Orders commands by `key`, except Usage page commands, which sort as one
- * block in page order where the first of them would sort. A total order, so
- * adding a binding elsewhere cannot reshuffle the Usage rows.
- */
+/** Keep Usage commands in page order within a total order so unrelated bindings cannot reshuffle them. */
 function compareCommands(
   left: KeybindingCommand,
   right: KeybindingCommand,
@@ -231,7 +225,6 @@ function keybindingGroupFor(command: KeybindingCommand): { id: string; title: st
   );
 }
 
-/** Splits sorted rows into the page's sections, dropping sections with no rows. */
 export function groupKeybindingRows(
   rows: ReadonlyArray<KeybindingRow>,
 ): ReadonlyArray<KeybindingGroup> {

@@ -71,12 +71,7 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
     readonly authorizeDpop: (input: {
       readonly expectedEnvironmentId: EnvironmentId;
-      /**
-       * Connect to this origin instead of the T3 Connect tunnel. The access
-       * token is not bound to an origin, and each proof is minted for the URL
-       * it signs, so a token from the relay also works on the environment's
-       * LAN or tailnet address.
-       */
+      /** DPoP proofs sign the chosen URL, so relay tokens also work on LAN or tailnet endpoints. */
       readonly directEndpoint?: { readonly httpBaseUrl: string; readonly wsBaseUrl: string };
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
     readonly authorizeDpopHttp: (input: {
@@ -139,11 +134,7 @@ export const make = Effect.gen(function* () {
     >
   >(new Map());
 
-  /**
-   * Confirms a direct address still serves the expected environment before a
-   * credential is sent there. A saved LAN address can belong to another
-   * machine on a different network.
-   */
+  // Verify identity before sending credentials; a saved LAN address may be another machine on this network.
   const verifyDirectEndpoint = Effect.fn("clientRuntime.connection.remote.verifyDirectEndpoint")(
     function* (input: {
       readonly expectedEnvironmentId: EnvironmentId;
@@ -516,9 +507,7 @@ export const make = Effect.gen(function* () {
       if (cachedSocket.failure._tag === "ConnectionBlockedError") {
         return yield* mapDpopSocketError(cachedSocket.failure);
       }
-      // An unreachable direct address says nothing about the token, so keep
-      // it for the T3 Connect route rather than forcing a relay round trip.
-      // A rejected token falls through and is replaced like on the tunnel.
+      // Direct-route reachability failures preserve the token for relay; credential rejection replaces it.
       if (endpoint !== undefined && cachedSocket.failure._tag !== "EnvironmentAuthInvalidError") {
         return yield* mapDpopSocketError(cachedSocket.failure);
       }

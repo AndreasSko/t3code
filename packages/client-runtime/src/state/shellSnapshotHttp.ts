@@ -19,20 +19,11 @@ import {
   type DeferredShellSnapshot,
 } from "./shellPullRequests.ts";
 
-// Long enough for a slow but alive server to finish. On timeout the socket asks
-// the same server for the same full snapshot, so a short deadline only throws
-// the first build away. The socket fallback is for setups where /api fails but
-// /ws works, such as a proxy that blocks /api. A dead server is caught by the
-// socket ping, which drops the session and interrupts this load. The cached
-// shell renders while this runs.
+// Short timeouts duplicate work against the same slow server; socket fallback
+// handles broken HTTP paths, while ping failure interrupts a dead session.
 const DEFAULT_SHELL_SNAPSHOT_TIMEOUT_MS = 20_000;
 
-/**
- * Load the environment shell snapshot (projects + thread shells) over HTTP
- * instead of as the WebSocket subscription's first frame. The response is
- * gzip-compressible by the transport and keeps the (potentially large) list off
- * the socket.
- */
+/** Loads compressible snapshots over HTTP to keep large lists off the socket. */
 export const fetchEnvironmentShellSnapshot = Effect.fn(
   "clientRuntime.state.fetchEnvironmentShellSnapshot",
 )(function* (input: {
@@ -49,9 +40,7 @@ export const fetchEnvironmentShellSnapshot = Effect.fn(
     method: "GET",
     url: (urls) => urls.shellSnapshot(),
     timeoutMs: input.timeoutMs ?? DEFAULT_SHELL_SNAPSHOT_TIMEOUT_MS,
-    // The body is decoded here so each thread's pull request links can decode after its
-    // rows. Every declared error is an `EnvironmentHttpCommonError`, so decoding one keeps
-    // the error the credential retry checks for.
+    // Defer per-thread links after row decode while preserving declared auth errors for credential retry.
     request: ({ client, headers }) =>
       client
         .shellSnapshot({
@@ -88,12 +77,7 @@ const decodeShellSnapshotResponse = (
   );
 };
 
-/**
- * Loads the environment shell snapshot over HTTP, returning `Option.none()` when
- * it cannot be loaded (so the caller falls back to the socket-embedded snapshot).
- * Decouples the shell state machine from the underlying HTTP + DPoP details and
- * keeps them out of test contexts.
- */
+/** Option.none triggers socket fallback; callers do not need HTTP/DPoP details. */
 export class ShellSnapshotLoader extends Context.Service<
   ShellSnapshotLoader,
   {

@@ -22,21 +22,11 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
-    /**
-     * Set on a route the server reported while this client was connected,
-     * rather than one the user paired. Learned routes are replaced when the
-     * server reports a different address, for example after a DHCP change.
-     */
+    /** Server-learned routes are replaced when reported addresses change. */
     learned: Schema.optionalKey(Schema.Literal(true)),
-    /**
-     * "t3-connect" when the route authenticates with the environment's T3
-     * Connect credential instead of a stored bearer token.
-     */
+    /** Uses the environment's T3 Connect credential rather than a bearer token. */
     authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
-    /**
-     * "tailscale" on a learned route the server found on its Tailscale
-     * interface. A bare 100.64.0.0/10 address could belong to any VPN.
-     */
+    /** Server-confirmed Tailscale interface; a bare 100.64.0.0/10 address could be any VPN. */
     network: Schema.optionalKey(Schema.Literal("tailscale")),
   },
 ) {}
@@ -52,17 +42,12 @@ export class SshConnectionProfile extends Schema.TaggedClass<SshConnectionProfil
 export const ConnectionProfile = Schema.Union([BearerConnectionProfile, SshConnectionProfile]);
 export type ConnectionProfile = typeof ConnectionProfile.Type;
 
-/** One way to reach an environment: T3 Connect, a direct URL, or SSH. */
 export interface ConnectionRoute {
   readonly target: ConnectionTarget;
   readonly profile: Option.Option<ConnectionProfile>;
 }
 
-/**
- * A saved environment. `target` and `profile` are its preferred route;
- * `alternateRoutes` holds the others in preference order. Read them together
- * with `connectionRoutes`.
- */
+/** Read preferred and alternate routes together with connectionRoutes, in preference order. */
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
   readonly profile: Option.Option<ConnectionProfile>;
@@ -123,15 +108,7 @@ export const ConnectionRegistration = Schema.Union([
 ]);
 export type ConnectionRegistration = typeof ConnectionRegistration.Type;
 
-/**
- * Platform-managed registrations are reconciled from the host (the desktop
- * bootstrap IPC) rather than persisted by the user. They cover the primary
- * local environment plus any additional desktop-local backends running
- * alongside it (e.g. a parallel WSL backend). The primary stays on same-origin
- * cookie auth (`PrimaryConnectionRegistration`); secondary local backends live
- * on a separate loopback origin and authenticate with a bearer token minted
- * from their bootstrap credential (`BearerConnectionRegistration`).
- */
+/** Host-reconciled registrations: primary uses same-origin cookies, secondary loopback servers use bearer auth. */
 export const PlatformConnectionRegistration = Schema.Union([
   PrimaryConnectionRegistration,
   BearerConnectionRegistration,

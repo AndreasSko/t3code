@@ -1,12 +1,6 @@
 /**
- * Presents one preview tab's debugger as a minimal CDP browser endpoint, so
- * the environment server can drive a desktop `<webview>` with the same
- * Playwright engine it uses for headless tabs.
- *
- * Only the tab's own page is reachable. Browser-level commands Playwright sends
- * while connecting are answered here, and every page command goes to the tab's
- * `webContents.debugger`. Electron allows one debugger client per webContents,
- * so the relay shares the attach the preview manager already holds.
+ * Expose only this tab to the server's Playwright engine.
+ * Electron permits one debugger client per WebContents, so share the preview manager's attachment.
  */
 
 export interface CdpRelayTarget {
@@ -21,18 +15,12 @@ export interface CdpRelayTarget {
   readonly url: () => string;
   readonly title: () => string;
   readonly userAgent: () => string;
-  /**
-   * Where the server wants this tab's downloads, named by their CDP guid. The
-   * desktop app and the server it launched share a disk, so the server's
-   * Playwright reads the file where it asked for it.
-   */
+  /** Desktop and server share a disk; write downloads where the server's Playwright can read them. */
   readonly setDownloadDirectory: (directory: string | null) => void;
 }
 
 export interface CdpRelayConnection {
-  /** Feed one message from the server. */
   readonly receive: (raw: string) => void;
-  /** Feed one debugger event from the tab. */
   readonly event: (method: string, params: unknown, sessionId: string | undefined) => void;
 }
 
@@ -159,10 +147,7 @@ export function createCdpRelayConnection(
 
   const pageCommand = (command: CdpCommand): Promise<unknown> => {
     const child = sessions.get(command.sessionId!) === "page" ? undefined : command.sessionId;
-    // The page itself is already running, but its child frames are not:
-    // Playwright auto-attaches with waitForDebuggerOnStart, so Chromium pauses
-    // every new cross-site iframe and worker until this reaches it. Swallowing
-    // it left sign-in checks and captchas, which run in such frames, frozen.
+    // Forward runIfWaitingForDebugger to child sessions: Playwright pauses cross-site iframes and workers on attach.
     if (command.method === "Runtime.runIfWaitingForDebugger" && child === undefined) {
       return Promise.resolve({});
     }

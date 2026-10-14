@@ -8,17 +8,8 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
-// Packaged Windows builds ship the server tree inside resources/server.asar
-// (see scripts/build-desktop-artifact.ts). The Windows primary reads it in
-// place through the asar-aware ELECTRON_RUN_AS_NODE runtime, but the WSL
-// backend launches plain `wsl.exe -- node`, which cannot read an asar archive.
-// This fallback service materializes the archive into a real, version-keyed
-// directory only when the distro-local runtime cannot be prepared.
-//
-// Reading through Electron's patched fs also transparently returns the
-// contents of files that electron-builder/asar left in the server.asar.unpacked
-// sibling (native binaries), so a single walk of the archive yields the
-// complete tree.
+// Plain WSL Node cannot read server.asar; extract only when the distro-local runtime is unavailable.
+// Use Electron's patched fs so server.asar.unpacked native files are included.
 
 export type WslServerTreeResult =
   | { readonly ok: true; readonly root: string }
@@ -46,10 +37,7 @@ export class DesktopWslServerTreeExtractError extends Schema.TaggedError<Desktop
 export class DesktopWslServerTree extends Context.Service<
   DesktopWslServerTree,
   {
-    // Resolves the directory the WSL backend should treat as the app root
-    // (the directory containing apps/server/dist and node_modules). In dev
-    // the checkout already is that directory; packaged Windows builds extract
-    // server.asar on first use.
+    // Returns an app root containing apps/server/dist and node_modules; packaged builds materialize server.asar on first use.
     readonly ensure: Effect.Effect<WslServerTreeResult>;
     // Removes the Windows-side extraction cache after a distro-local runtime
     // has proven healthy. Serialized with ensure so cleanup cannot race an
@@ -58,10 +46,7 @@ export class DesktopWslServerTree extends Context.Service<
   }
 >()("@t3tools/desktop/wsl/DesktopWslServerTree") {}
 
-// Child scheduling stays here instead of inside `visit`, so nested directories
-// cannot create independent concurrency pools. The LIFO work list also keeps
-// traversal memory proportional to the remaining frontier rather than the
-// number of active fibers.
+// Schedule children centrally so nested directories share one concurrency bound; LIFO traversal limits frontier memory.
 export const forEachBoundedTree = <Node, E, R>(
   roots: ReadonlyArray<Node>,
   visit: (node: Node) => Effect.Effect<ReadonlyArray<Node>, E, R>,
@@ -128,8 +113,7 @@ export const make = Effect.gen(function* () {
   const version = environment.appVersion;
   const versionDir = join(treeRoot, version);
 
-  // Remove sibling trees left behind by previous app versions (and aborted
-  // extractions). Best-effort: a locked file must not block the backend.
+  // Sweep stale versions best-effort so Windows file locks cannot block backend startup.
   const sweepStale = Effect.gen(function* () {
     const entries = yield* fs.readDirectory(treeRoot).pipe(Effect.orElseSucceed(() => []));
     yield* Effect.forEach(
@@ -181,10 +165,7 @@ export const make = Effect.gen(function* () {
     .withPermits(1)(
       needsExtraction
         ? Effect.gen(function* () {
-            // Invalidate completeness before recursive deletion. Windows can
-            // remove part of a tree and then fail on a locked file; without
-            // this ordering, a surviving marker makes ensure reuse that
-            // half-deleted fallback instead of extracting it again.
+            // Revoke completeness before deleting: a Windows lock can leave a partial tree whose surviving marker would allow reuse.
             yield* fs.remove(join(versionDir, MARKER_FILE_NAME), { force: true });
             yield* fs.remove(treeRoot, { recursive: true, force: true });
           }).pipe(

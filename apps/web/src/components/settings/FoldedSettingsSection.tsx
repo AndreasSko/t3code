@@ -6,11 +6,7 @@ import { cn } from "~/lib/utils";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { useSettingsSearchTarget, useSettingsSearchTargetId } from "./settingsLayout";
 
-/**
- * A grouped settings section that starts closed. The header carries the title,
- * a one line summary of what is set inside, and an optional control such as
- * the section's own switch. A settings search that targets the section opens it.
- */
+/** Settings search unfolds this section before its target scrolls. */
 export function FoldedSettingsSection({
   id,
   title,

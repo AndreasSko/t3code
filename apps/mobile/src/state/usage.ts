@@ -1,14 +1,4 @@
-/**
- * Multi-environment usage state.
- *
- * Every connected environment answers the same typed query; the client merges
- * the results. Raw transcripts never leave the machine that produced them.
- *
- * Mirror of `apps/web/src/state/usage.ts` over mobile's atom wiring; the merge
- * rules themselves live in `@t3tools/shared/usageMerge`.
- *
- * @module state/usage
- */
+/** Raw usage transcripts stay on their source environment. */
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthDiagnosticsReadScope,
@@ -40,13 +30,7 @@ export interface EnvironmentUsageStatus {
   readonly needsCursorKeychainAccess: boolean;
 }
 
-/**
- * Reads every environment's summary for one window.
- *
- * Keyed by the serialised window so switching ranges does not thrash the atom
- * cache, and so each environment's query is shared with any other reader of the
- * same window.
- */
+/** Key by serialized window to share environment queries and avoid cache churn when switching ranges. */
 const usageByWindowAtom = Atom.family((windowKey: string) =>
   Atom.make((get): readonly EnvironmentUsageStatus[] => {
     const input = JSON.parse(windowKey) as UsageSummaryInput;
@@ -95,13 +79,8 @@ export interface UsageView {
   readonly merged: MergedUsage;
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
-  /** True until at least one environment has answered. */
   readonly isPending: boolean;
-  /**
-   * True while environments that have not failed are still answering. Failed
-   * environments are reported in the environment menu: totals will not
-   * improve by waiting on them, so they must not read as "still reporting".
-   */
+  /** Failed environments cannot improve totals by waiting, so they must not count as still reporting. */
   readonly isPartial: boolean;
   readonly refresh: (input?: UsageSummaryInput) => Promise<void>;
 }

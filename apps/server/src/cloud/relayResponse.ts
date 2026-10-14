@@ -5,11 +5,8 @@ import * as Schema from "effect/Schema";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { isHttpClientError } from "effect/http/HttpClientError";
 
-/**
- * A relay request that did not succeed. `unavailable` means it may succeed on
- * retry; the relay refused the other kinds. The description is safe to show:
- * it carries the relay's own explanation and trace ID, never request details.
- */
+/** unavailable is retryable; other kinds are refusals. Descriptions
+ * expose relay diagnostics and trace IDs without request details. */
 export class RelayRequestError extends Schema.TaggedError<RelayRequestError>()(
   "RelayRequestError",
   {

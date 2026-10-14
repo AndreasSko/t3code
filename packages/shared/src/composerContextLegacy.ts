@@ -11,11 +11,8 @@ import * as Schema from "effect/Schema";
 import { formatComposerContextReference } from "./composerContextReferences.ts";
 
 /**
- * Upgrades a message written before inline context references: trailing
- * `<terminal_context>`, `<element_context>` and `<preview_annotation>` blocks, inline or
- * trailing `<review_comment>` blocks, and U+FFFC terminal placeholders. Produces canonical
- * reference links plus records so old messages render and copy through the new path.
- * Event history is never rewritten; this runs in memory on read.
+ * Convert legacy context blocks and terminal placeholders into inline references
+ * and records on read, without rewriting event history.
  */
 
 export interface UpgradedLegacyContext {
@@ -161,10 +158,8 @@ function elementRecord(entry: ParsedEntry, index: number): ElementContextRecord 
 
 function previewRecord(body: string, index: number): PreviewAnnotationContextRecord | null {
   const lines = body.split("\n");
-  // A legacy comment was written verbatim, so it can run over several lines and hold blank
-  // lines and markup of its own. Its value is every line up to the next field or the block that
-  // follows it — anything else is text the author typed, and dropping it loses instructions the
-  // chip that replaces this block cannot show.
+  // Legacy comments are verbatim multiline text; read until the next field or block.
+  // Dropping blank lines or markup would lose instructions hidden by the replacement chip.
   const FIELD_PREFIXES = ["Preview annotation:", "Id: ", "Page: ", "Comment: ", "Targets: "];
   const BLOCK_DELIMITER =
     /^<\/?(?:terminal_context|element_context|preview_annotation|review_comment)\b/;
@@ -339,10 +334,8 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     return `${reviewToken}${reviews.length - 1}${reviewToken}`;
   });
 
-  // Blocks were appended in send order (terminal, element, preview, review), so they peel
-  // off the end in reverse. Each peel exposes the next block as trailing.
-  // Peel reviews only when they hide another trailing context block. A review at the end
-  // of ordinary prose can still be inline; keep its original spacing and line breaks.
+  // Peel trailing blocks in reverse send order; remove reviews only when they hide another block.
+  // A review after ordinary prose may be inline and must retain its spacing.
   const trailingReviewTokens: number[] = [];
   const tokens = trailingReviewTokenPattern.exec(rest);
   if (tokens && tokens[0].length > 0) {
@@ -404,7 +397,7 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     formatComposerContextReference(reviews[Number(index)]!),
   );
 
-  // Placeholders bind to terminal entries in order, like the old materialize step did.
+  // Terminal placeholders bind to entries in order.
   let placeholderIndex = 0;
   body = body.replace(new RegExp(PLACEHOLDER, "g"), () => {
     const record = terminals[placeholderIndex];

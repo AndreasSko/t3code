@@ -71,7 +71,6 @@ export function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMess
   for (const section of sections.toReversed()) {
     if (section.message.role === "assistant") add(section, MAX_MESSAGE);
   }
-  // Use spare space when the conversation has only a few messages.
   for (const role of ["user", "assistant"] as const) {
     for (const section of sections.toReversed()) {
       const previous = selected.get(section.index);

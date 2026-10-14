@@ -1,4 +1,3 @@
-// Packaged app entry. Enables the compile cache before the main bundle loads,
-// so the cache also covers main.cjs itself.
+// Enable compile caching before loading main.cjs so that bundle is cached too.
 require("./compileCache.cjs");
 require("./main.cjs");

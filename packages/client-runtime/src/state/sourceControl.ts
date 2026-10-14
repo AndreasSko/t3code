@@ -34,8 +34,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
-    // Clone-backed project creation. The RPC returns once the project exists
-    // and the clone runs in the background; `projectClones` carries progress.
+    // The project returns before background cloning completes; projectClones reports progress.
     startProjectClone: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:project-clone-start",
       tag: WS_METHODS.projectCloneStart,
@@ -65,8 +64,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
-    // Every clone the environment tracks. Empty until a clone starts; a
-    // finished clone drops out after a grace period, a failed one stays.
+    // Finished clones leave after a grace period; failed clones stay visible.
     projectClones: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:source-control:project-clones",
       tag: WS_METHODS.subscribeProjectClones,

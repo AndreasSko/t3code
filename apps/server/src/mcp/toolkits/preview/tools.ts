@@ -41,7 +41,6 @@ const dependencies = [
   PreviewAutomationBroker.PreviewAutomationBroker,
 ];
 
-/** What a browser action fails with, including the access gate's refusal. */
 const PreviewToolFailure = Schema.Union([PreviewAutomationError, OrchestratorMcpFailure]);
 
 const presentationFields = { toolIcon: Schema.optional(ToolActivityIcon) };
@@ -256,11 +255,7 @@ const PreviewScrollTool = safeBrowserTool(
   }).annotate(Tool.Title, "Scroll preview page"),
 );
 
-/**
- * MCP `structuredContent` must be a JSON object, and Claude Code rejects the
- * whole result when it is not. Wrapping keeps arrays, strings, numbers, and
- * null valid instead of failing only for non-object expressions.
- */
+// MCP structuredContent must be an object or Claude Code rejects it; wrap non-object evaluations.
 export const PreviewEvaluateResult = Schema.Struct({
   ...presentationFields,
   value: Schema.Unknown.annotate({

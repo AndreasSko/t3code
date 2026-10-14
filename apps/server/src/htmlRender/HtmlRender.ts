@@ -98,11 +98,7 @@ export class HtmlRender extends Context.Service<
   {
     /** The self-contained page that gets stored: local images inlined, theme bootstrap injected. */
     readonly prepare: (html: string) => Effect.Effect<string, HtmlRenderPrepareError>;
-    /**
-     * Stores a prepared page as a thread attachment for clients to show inline,
-     * measuring its height at each client width when the preview browser is
-     * already installed.
-     */
+    /** Store a prepared page; measure client-width heights only if the preview browser is installed. */
     readonly publish: (input: {
       readonly threadId: ThreadId;
       readonly html: string;
@@ -164,10 +160,7 @@ const dataUriPrefix = (path: string) =>
 const latin1 = (bytes: Uint8Array, start: number, end: number) =>
   String.fromCharCode(...bytes.subarray(start, end));
 
-/**
- * Whether file bytes are an image, whatever the file is named, so a symlink or
- * renamed file cannot carry other data, such as a secret, into a page.
- */
+// Validate image bytes so renamed files and symlinks cannot embed secrets in a page.
 const isImageBytes = (bytes: Uint8Array) => {
   const head = latin1(bytes, 0, 12);
   if (
@@ -184,17 +177,12 @@ const isImageBytes = (bytes: Uint8Array) => {
   return hasSvgRoot(new TextDecoder().decode(bytes.subarray(0, 4096)));
 };
 
-/** The index just past `token` at or after `from`, or -1 when it never appears. */
 const after = (text: string, token: string, from: number) => {
   const at = text.indexOf(token, from);
   return at === -1 ? -1 : at + token.length;
 };
 
-/**
- * Whether an XML document's root element is <svg>, after any processing
- * instructions, comments, and a doctype. One forward pass, so no input can
- * make it slow, and quoted text never counts as markup.
- */
+// Find the SVG root in one pass without treating quoted text as markup.
 const hasSvgRoot = (text: string) => {
   let at = 0;
   while (at !== -1) {
@@ -263,8 +251,7 @@ const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (h
   if (pageBytes > MAX_PAGE_BYTES) {
     return yield* new HtmlRenderPageTooLargeError({ sizeBytes: pageBytes });
   }
-  // Files can grow after `stat`. Each read stops one byte past the image
-  // limit, and reading stops once the images read so far cannot fit the page.
+  // Files can grow after stat; bound reads by both the image and remaining page limits.
   let readBytes = 0;
   const images = yield* Effect.forEach(
     files.filter((file) => file.size !== undefined),
@@ -323,7 +310,6 @@ const MIN_PREVIEW_WIDTH = 240;
 const MAX_PREVIEW_WIDTH = 1_600;
 // Each preview or measurement runs its own browser; more at once mostly costs memory.
 const MAX_CONCURRENT_BROWSERS = 2;
-// Publishing waits this long at most for heights before returning without them.
 const MEASURE_TIMEOUT = "6 seconds";
 
 // Measured in the dark theme with Arial-metric fonts, so text wraps close to how clients show it.

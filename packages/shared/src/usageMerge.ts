@@ -1,11 +1,3 @@
-/**
- * Merges per-environment usage summaries into the single view the page renders.
- *
- * Pure, so the de-duplication and derivation rules can be tested without a
- * connected environment.
- *
- * @module usageMerge
- */
 import {
   USAGE_MERGE_COMPATIBLE_SINCE,
   type EnvironmentId,
@@ -84,10 +76,7 @@ export interface CostQuality {
   readonly cacheSavingsUsd: number;
 }
 
-/**
- * `costUsd` by token category. `unsplit` is cost no rates could split,
- * including all cost from servers that predate the split.
- */
+/** Category costs; unsplit holds costs whose rates cannot be separated. */
 export interface CategoryCost {
   readonly input: number;
   readonly cacheRead: number;
@@ -128,20 +117,12 @@ export interface MergedUsage {
   readonly costQuality: CostQuality;
   readonly categoryCost: CategoryCost;
   readonly speedCost: SpeedCost;
-  /** Environments whose data was dropped as a duplicate of another's. */
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly contractMismatches: readonly UsageContractMismatch[];
 }
 
-/**
- * Two sources are the same physical transcript directory only when host,
- * provider, path and filesystem identity all agree.
- *
- * `volumeId` is what stops two machines that happen to share a hostname and a
- * home path, which is every Mac in a fleet, from collapsing into one source and
- * having one of them silently dropped.
- */
+/** Include volumeId so machines sharing a hostname and home path cannot collapse into one source. */
 function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
   return [
     fingerprint.hostId,
@@ -167,16 +148,8 @@ function bucketKey(bucket: UsageBucket): string {
   return JSON.stringify([bucket.day, bucket.hourStart ?? null, bucket.provider, bucket.model]);
 }
 
-/**
- * Decides which environment owns each physical transcript directory.
- *
- * Several environments on one machine (worktree servers, for instance) resolve
- * the same provider home and would otherwise double count every token. The
- * Complete scans claim a fingerprint ahead of partial scans, then the most
- * recently read scan wins within each status. A newer partial scan can still
- * contribute cells absent from an older complete scan. Environment ids break
- * ties so the result is stable when summaries have the same read time.
- */
+/** Claim each physical directory once: complete before partial, then freshest, with stable id ties.
+ * New partial scans may still contribute cells absent from the complete scan. */
 function claimSources(environments: readonly EnvironmentUsage[]): {
   readonly ownerByFingerprint: ReadonlyMap<string, EnvironmentId>;
   readonly supplementalBucketsByEnvironment: ReadonlyMap<EnvironmentId, ReadonlySet<UsageBucket>>;
@@ -263,7 +236,6 @@ function claimSources(environments: readonly EnvironmentUsage[]): {
   };
 }
 
-/** Sources this environment owns after fingerprint claims, plus their buckets. */
 function ownedContribution(
   environment: EnvironmentUsage,
   ownerByFingerprint: ReadonlyMap<string, EnvironmentId>,
@@ -345,15 +317,8 @@ const EMPTY_MERGED: MergedUsage = {
   contractMismatches: [],
 };
 
-/**
- * Merges every connected environment's summary.
- *
- * `expectedContractVersion` guards against incompatible server code: rather
- * than blocking the page, its data is excluded and the mismatch direction is
- * reported so the UI can identify which side needs updating. Versions in
- * [{@link USAGE_MERGE_COMPATIBLE_SINCE}, expected] still merge, so an additive
- * provider expansion does not drop Claude/Codex totals from older servers.
- */
+/** Excludes incompatible summaries and reports which side needs updating.
+ * Versions from {@link USAGE_MERGE_COMPATIBLE_SINCE} through expectedContractVersion still merge. */
 export function mergeUsage(
   environments: readonly EnvironmentUsage[],
   expectedContractVersion: number,

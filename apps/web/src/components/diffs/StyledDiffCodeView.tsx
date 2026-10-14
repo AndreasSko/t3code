@@ -12,7 +12,6 @@ import type { Ref } from "react";
 import { DIFF_SURFACE_THEME_UNSAFE_CSS } from "~/lib/diffRendering";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 
-/** The app's diff stylesheet, shared by single-file renderers so their separators match. */
 export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
 :is(
   [data-line],
@@ -206,14 +205,10 @@ type StyledDiffCodeViewProps<LAnnotation> = (
 ) & {
   readonly options?: StyledDiffCodeViewOptions<LAnnotation>;
   readonly viewerRef?: Ref<CodeViewHandle<LAnnotation, undefined>>;
-  /**
-   * Appended to the shared stylesheet inside the viewer's shadow root, for a surface that has
-   * to restyle chrome the viewer owns — such as replacing its per-file line counts.
-   */
+  /** Appended inside the viewer shadow root to customize chrome owned by the viewer. */
   readonly unsafeCSSExtra?: string;
 };
 
-/** The shared web CodeView surface: app styling and virtualized geometry stay paired here. */
 export function StyledDiffCodeView<LAnnotation = undefined>({
   options,
   viewerRef,
@@ -241,16 +236,11 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
           itemMetrics: {
             diffHeaderHeight: 32,
             hunkSeparatorHeight: 24,
-            // Pierre uses its general file spacing as a fallback in expanded-file layout paths.
-            // Keep it zero alongside the explicit paddingTop or expanding the first file can
-            // reintroduce the library's default 8px gap above its header.
+            // Expanded-file paths fall back to spacing; zero it too to avoid an extra 8px header gap.
             spacing: 0,
             paddingTop: 0,
-            // Unlike the gap above, the 8px under a file's last line is painted
-            // unconditionally by Pierre's stylesheet (`--diffs-gap-fallback`), so the metric has
-            // to count it: at zero every expanded file's virtual height ran 8px short of its
-            // rendered height, and the end of the list sat past the reachable scroll range —
-            // one clipped file row per expanded file above it.
+            // Pierre always paints an 8px --diffs-gap-fallback below each file;
+            // include it in virtual height or the list end becomes unreachable.
             paddingBottom: 8,
           },
           layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },

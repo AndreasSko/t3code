@@ -260,7 +260,6 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         turnItemTypes: ["run_interrupt_request"],
       },
     );
-    // The user asked this run to stop before the restart cut it.
     if (
       sourceRecords.turnItems.some(
         (item) => item.runId === source.id && item.type === "run_interrupt_request",
@@ -292,7 +291,6 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         threadId: input.threadId,
         messageId,
         text,
-        // Shown as a work log row; the prompt the agent got is its detail.
         notification: {
           source: { kind: "system" },
           outcome: "updated",
@@ -309,11 +307,8 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         restartContinuationOfRunId: input.sourceRunId,
       })
       .pipe(
-        // The project turned this instance off since the restart. No turn
-        // resumes, and the success path below still runs so a delegated
-        // child waiting on this run is recovered immediately instead of
-        // after EffectWorker exhausts its retries on a refusal that will
-        // not change.
+        // A disabled instance cannot resume; still recover the delegated child's result
+        // immediately instead of retrying the same refusal.
         Effect.catchTags({
           ThreadManagementProviderInstanceDisabledError: (error) =>
             Effect.logInfo("orchestration-v2.restart-continuation.instance-disabled", {

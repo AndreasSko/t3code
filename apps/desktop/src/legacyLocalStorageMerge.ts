@@ -1,8 +1,5 @@
 /**
- * Merges V1 profile localStorage items into the V2 profile. Runs in the preload
- * before the app reads storage, and never overwrites what V2 already holds: a
- * key V2 has written keeps V2's value, except that stashed prompts and unsent
- * drafts are merged entry by entry so neither side's are lost.
+ * Merge before app storage is read; preserve V2 values, combining stashes and drafts entry by entry.
  */
 
 interface MergeStorage {
@@ -105,7 +102,6 @@ export function mergeLegacyLocalStorage(
     try {
       storage.setItem(key, next);
     } catch {
-      // Over quota: skip this key rather than abandon the rest.
       complete = false;
     }
   }

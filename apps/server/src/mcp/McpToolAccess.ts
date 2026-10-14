@@ -27,13 +27,7 @@ import {
   unavailable,
 } from "./threadAccess.ts";
 
-// Only the classes below assign these, from their static blocks, so nothing
-// outside this module can build a declaration or a handlers layer.
-
-/**
- * Both constructors demand this. Their private constructors only stop the type
- * checker; this also stops `Reflect.construct` and friends at runtime.
- */
+// Private constructors protect types only; the module token also blocks Reflect.construct at runtime.
 const builtHere: unique symbol = Symbol("t3/mcp/McpToolAccess/builtHere");
 
 const refuseOutsideConstruction = (token: symbol) => {
@@ -42,50 +36,26 @@ const refuseOutsideConstruction = (token: symbol) => {
   }
 };
 
-/** Builds a declaration; only the declaration functions below call it. */
 let declare: <P, A, E, R>(
   handle: (params: P) => Effect.Effect<A, E, R>,
 ) => Declaration<(params: P) => Effect.Effect<A, E, R>>;
 
 type CheckedHandlerOf<D> = D extends Declaration<infer Handler> ? Handler : never;
 
-/** Turns each declaration back into the handler it checks, keeping its type. */
 interface CheckedHandler extends Struct.Lambda {
   <Handler>(declaration: Declaration<Handler>): Handler;
   readonly "~lambda.out": CheckedHandlerOf<this["~lambda.in"]>;
 }
 let checkedHandler: CheckedHandler;
 
-/** Only `toLayer` below builds one. */
 let handlersLayer: <Tools extends Record<string, Tool.Any>, EX, RX>(
   layer: Layer.Layer<Tool.HandlersFor<Tools>, EX, RX>,
 ) => HandlersLayer<Tools, EX, RX>;
 
-/**
- * Who may call a T3 MCP tool. Every handler is built by one of the
- * declarations below, which say what the tool does. `toLayer` accepts only
- * declarations, and `/mcp` registers only layers `toLayer` built, so a tool
- * without a decision here does not compile. Both are nominal classes, so a
- * handler or layer cannot pass for one by copying its fields. Effect's own
- * registration functions accept any handler, so the
- * `t3code/no-raw-mcp-registration` lint rule keeps Effect's `McpServer` inside
- * McpHttpServer.
- *
- * Parameters choose the target; the caller sets the limits: a thread caller
- * its own runtime and interaction modes, an outside client the ceiling it was
- * approved with. Nothing a caller starts or changes may run with broader
- * modes, and a thread caller changes things only while its own run is live.
- * A refusal is an `OrchestratorMcpFailure`, so the compiler requires it in the
- * tool's failure schema, and `ThreadManagementService` in its dependencies.
- *
- * The declaration checks the caller before the handler runs. Handlers still
- * check what only they can see, such as a queued run belonging to its thread.
- */
+/** Nominal declarations/layers enforce access choices; no-raw-mcp-registration guards registration.
+ * Check caller limits before handlers, which still validate resource-specific ownership. */
 export class Declaration<out Handler> {
-  // A private field makes the class nominal, and only this module can build
-  // one: its constructor is private and the static block hands the only way
-  // in to module-scoped functions. Copying a declaration's fields onto
-  // anything else fails to typecheck and, at runtime, to run.
+  // Private fields keep declarations nominal; module-only construction prevents forged handlers.
   readonly #handle: Handler;
   private constructor(token: typeof builtHere, handle: Handler) {
     refuseOutsideConstruction(token);
@@ -97,7 +67,6 @@ export class Declaration<out Handler> {
   }
 }
 
-/** A client approved for read-only access changes nothing. */
 const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) =>
     scope.client?.access === "read-only"
@@ -112,11 +81,7 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   ),
 );
 
-/**
- * The caller of a tool that changes something. Tools that act for a
- * capability of their own (preview, device, worktree, pull requests) check it
- * themselves.
- */
+// Capability toolkits check their own access; thread control is checked by orchestratingCaller.
 const writingCaller = refuseReadOnlyClient.pipe(
   Effect.andThen(loadCaller()),
   Effect.tap(assertLiveCaller),
@@ -140,11 +105,7 @@ export const reads = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>)
 export const readsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => requireThreadCaller.pipe(Effect.flatMap(() => handle(params))));
 
-/**
- * Acts as the calling T3 thread (its subagents, preview tabs, devices,
- * worktree) while that thread's run is live. Only an agent running inside a
- * T3 thread has one.
- */
+/** Act through the caller's T3 thread only while its run is live. */
 export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) =>
     requireThreadCaller.pipe(
@@ -157,20 +118,12 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
 export const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => orchestratingCaller.pipe(Effect.flatMap(() => handle(params))));
 
-/**
- * Changes something that belongs to no thread under a capability of the tool's own, such as
- * writing a pull request's review guide. Unlike `writes` it does not need thread control; the
- * handler checks its capability, as the capability toolkits do.
- */
+/** Write under the tool's own capability without requiring thread control; the handler checks access. */
 export const writesWithCapability = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => writingCaller.pipe(Effect.flatMap(() => handle(params))));
 
-/**
- * Changes the threads `threads` names. An omitted id is the caller's own
- * thread; any other thread must run within the caller's modes, checked here
- * and again by the orchestrator when it applies each command. A thread that
- * does not exist is the handler's to report.
- */
+/** Omitted ids target the caller's thread; check other threads against caller
+ * modes here and again at command application. Missing targets are handler errors. */
 export const writesThreads = <P, A, E, R>(
   threads: (params: P) => ReadonlyArray<ThreadId | undefined>,
   handle: (params: P) => Effect.Effect<A, E, R>,
@@ -187,9 +140,8 @@ export const writesThreads = <P, A, E, R>(
           yield* assertTargetWithinLimits(caller.limits, target);
         }
       }
-      // The target's user can raise its modes after the check above; the
-      // orchestrator checks again under the thread's lock and records its
-      // refusal here, since handlers wrap dispatch errors their own way.
+      // Modes can change mid-call; the orchestrator rechecks under the target's
+      // lock and records refusal here despite handler-specific dispatch wrapping.
       const refused = yield* Ref.make<DispatchModeRefusal | undefined>(undefined);
       return yield* handle(params).pipe(
         Effect.provideService(DispatchModeLimit, { ...caller.limits, refused }),
@@ -214,7 +166,6 @@ const escalationDenied = (refusal: DispatchModeRefusal) =>
     message: `Thread ${refusal.threadId} now runs in ${refusal.runtimeMode}/${refusal.interactionMode} mode, above this caller's. Its user changed it while this call ran.`,
   });
 
-/** The modes a started thread runs with: those requested, else the caller's own. */
 export interface StartedModes {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
@@ -246,11 +197,8 @@ export const startsThreads = <P, A, E, R>(
 const fullAccessRequired =
   "Changing projects or environment settings needs a live full-access/default calling thread or a full-access client.";
 
-/**
- * Changes projects or environment settings, which needs a full-access/default
- * caller. `check` re-checks the caller wherever the handler waits before
- * writing, such as for a lock, since the caller's modes can change meanwhile.
- */
+/** Require full-access/default modes; call check again after waits or locks
+ * because caller modes may have changed before writing. */
 export const writesEnvironment = <P, A, E, R>(
   handle: (
     params: P,
@@ -263,19 +211,13 @@ export const writesEnvironment = <P, A, E, R>(
   return declare((params: P) => check.pipe(Effect.flatMap(() => handle(params, check))));
 };
 
-/** What a declaration's own check needs. */
 type CheckServices = Effect.Services<typeof orchestratingCaller>;
 
-/**
- * Each handler of `Handlers`, built by one of the declarations above. A
- * declaration is never callable, which rules out a handler function wearing a
- * declaration's fields.
- */
+// Declarations are non-callable so handler functions cannot impersonate them with copied fields.
 type Declarations<Handlers> = {
   readonly [Name in keyof Handlers]: Declaration<Handlers[Name]> & NotCallable;
 };
 
-/** Anything but a function. */
 type NotCallable = { readonly call?: never } & { readonly apply?: never };
 
 /** A toolkit's handlers, each built by one of the declarations above. */
@@ -283,10 +225,7 @@ export type Handlers<Tools extends Record<string, Tool.Any>> = Declarations<
   Toolkit.HandlersFrom<Tools>
 >;
 
-/**
- * A toolkit's handler layer built by `toLayer`, the only kind `/mcp`
- * registers. Like a declaration it is nominal, so nothing else passes for one.
- */
+/** Nominal layer built only by toLayer; /mcp rejects raw handler layers. */
 export class HandlersLayer<Tools extends Record<string, Tool.Any>, EX = never, RX = never> {
   readonly #layer: Layer.Layer<Tool.HandlersFor<Tools>, EX, RX>;
   private constructor(
@@ -299,7 +238,6 @@ export class HandlersLayer<Tools extends Record<string, Tool.Any>, EX = never, R
   static {
     handlersLayer = (layer) => new HandlersLayer(builtHere, layer);
   }
-  /** The handlers, for registering this toolkit on the MCP server. */
   static layer<Tools extends Record<string, Tool.Any>, EX, RX>(
     handlers: HandlersLayer<Tools, EX, RX>,
   ) {

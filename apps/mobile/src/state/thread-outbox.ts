@@ -10,12 +10,7 @@ export const threadOutboxManager = createThreadOutboxManager({
   storage: expoThreadOutboxStorage,
 });
 
-/**
- * Lands queued outbox mutations before the JS runtime is torn down (app update
- * restart). An enqueued message is published to the atom immediately but its
- * durable write waits behind the mutation queue, so draining only the writes
- * already mid-file would miss it.
- */
+/** Flush queued mutations before restart; waiting only for writes already mid-file would miss enqueues. */
 export async function flushThreadOutbox(): Promise<void> {
   await threadOutboxManager.serialize(async () => {});
   await flushThreadOutboxWrites();
@@ -30,11 +25,7 @@ export function confirmThreadOutboxMessageQueued(message: QueuedThreadMessage): 
   return threadOutboxManager.confirmQueued(message);
 }
 
-/**
- * Rewrite a queued message; no-op (false) if it was removed in the meantime,
- * or (with `expectedRevision` from `threadOutboxRevision`) if any other write
- * was accepted since the revision was read.
- */
+/** False when removed or superseded since expectedRevision was captured; never resurrect a stale payload. */
 export function updateThreadOutboxMessage(
   message: QueuedThreadMessage,
   expectedRevision?: number,
@@ -47,6 +38,4 @@ export function threadOutboxRevision(messageId: QueuedThreadMessage["messageId"]
   return threadOutboxManager.revisionOf(messageId);
 }
 
-// Removal lives in `thread-outbox-removal.ts`: taking a message out of the
-// outbox must also release its local attachment files, and that owner needs
-// the composer draft state this module must not depend on.
+// Removal also needs composer references for file cleanup; keep that dependency out of this module.

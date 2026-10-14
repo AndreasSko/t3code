@@ -62,9 +62,7 @@ const SKIPPABLE_SUDO_PROBES = new Set(["[", "[[", "test", "true"]);
 const NON_PROGRAM_PREFIX_CHARACTERS = "<>(){}[];|&$`#!%@:";
 const NON_PROGRAM_SUFFIX_CHARACTERS = "){]}`";
 
-// These tokens describe shell syntax or shell-local control flow, not a useful
-// executable name. Falling back to "command" is less misleading than labels
-// such as "Ran if", "Ran [", or "Ran function".
+// Shell syntax tokens make misleading executable labels such as "Ran if"; fall back to "command".
 const NON_DESCRIPTIVE_SHELL_PROGRAMS = new Set([
   "!",
   "#",
@@ -160,8 +158,7 @@ const NON_DESCRIPTIVE_SHELL_PROGRAMS = new Set([
   "while",
 ]);
 
-// Unlike setup builtins, these can make later segments part of control flow or
-// otherwise unreachable, so do not use a later program as the command label.
+// These builtins can make later segments unreachable, so later programs cannot supply the label.
 const TERMINAL_SHELL_PROGRAMS = new Set([
   "and",
   "begin",
@@ -922,9 +919,7 @@ function referencedCommandAlias(token: string): string | null {
   return reference?.[1] ?? reference?.[2] ?? null;
 }
 
-// Recover only literal aliases declared by an earlier top-level shell segment.
-// This covers common `SSH=(ssh ...)` and `TOOL=/path/to/tool` forms without
-// evaluating expansions or trying to model general shell state.
+// Resolve only literal aliases from earlier top-level segments without evaluating shell expansions.
 function literalCommandAliasProgramName(command: string): string | null {
   const aliases = new Map<string, string>();
   let remainingCommand: string | null = command;
@@ -1389,9 +1384,7 @@ export function withVisibleControlCharacters(text: string): string {
   );
 }
 
-// A wrapper whose quoting does not balance is kept: the script's end cannot be
-// known, which happens when Codex's secret redaction removes the backslash of
-// an escaped quote inside `-lc "…"`.
+// Codex redaction can unbalance quoting; keep wrappers intact when the script end is unknowable.
 function withoutShellWrapper(command: string): string {
   const trimmed = command.trim();
   const split = splitFirstShellCommand(trimmed);
@@ -1410,9 +1403,7 @@ function withoutShellWrapper(command: string): string {
 
 const POWERSHELL_PROGRAMS = new Set(["powershell", "pwsh"]);
 
-// PowerShell's approved verbs (`Get-Verb`), plus the ForEach, Where, Sort and
-// Tee of its built-in *-Object cmdlets. Cmdlets match only capitalized, as
-// agents write them: lowercase `update-grub` or `install-info` are Linux tools.
+// Match capitalized PowerShell verbs and *-Object aliases; lowercase names may be Linux tools.
 const POWERSHELL_VERBS = new Set(
   `Add Approve Assert Backup Block Build Checkpoint Clear Close Compare Complete Compress Confirm Connect Convert ConvertFrom ConvertTo Copy Debug Deny Deploy Disable Disconnect Dismount Edit Enable Enter Exit Expand Export Find ForEach Format Get Grant Group Hide Import Initialize Install Invoke Join Limit Lock Measure Merge Mount Move New Open Optimize Out Ping Pop Protect Publish Push Read Receive Redo Register Remove Rename Repair Request Reset Resize Resolve Restart Restore Resume Revoke Save Search Select Send Set Show Skip Sort Split Start Step Stop Submit Suspend Switch Sync Tee Test Trace Unblock Undo Uninstall Unlock Unprotect Unpublish Unregister Update Use Wait Watch Where Write`.split(
     " ",
@@ -1424,10 +1415,7 @@ function isPowerShellCmdlet(word: string): boolean {
   return cmdlet !== null && POWERSHELL_VERBS.has(cmdlet[1]!);
 }
 
-/**
- * The grammar to highlight a command with: PowerShell when pwsh or powershell
- * runs it, or when it is written in PowerShell, as Windows agents run it.
- */
+/** Uses PowerShell highlighting for explicit wrappers or recognized PowerShell syntax. */
 export function commandHighlightLanguage(command: string): "powershell" | "shellscript" {
   const program = /^(?:&\s*)?(?:"([^"]*)"|'([^']*)'|(\S+))/u.exec(command.trim());
   const name = (program?.[1] ?? program?.[2] ?? program?.[3] ?? "")
@@ -1439,7 +1427,6 @@ export function commandHighlightLanguage(command: string): "powershell" | "shell
   return isPowerShellScript(command) ? "powershell" : "shellscript";
 }
 
-/** Whether any statement starts like PowerShell and never like POSIX shell. */
 function isPowerShellScript(command: string): boolean {
   let rest: string | null = command.trim();
   // A leading call operator; POSIX shell cannot start a command with `&`.

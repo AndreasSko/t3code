@@ -23,8 +23,7 @@ const encodeCredentials = Schema.encodeEffect(Credentials);
 
 /**
  * The SDK owns the credential format; persistence uses the environment's secret store.
- * `legacyFile` is the SDK file store earlier versions used; its sign-in moves into
- * the secret store once and the file is deleted.
+ * When legacyFile is supplied, migrate its sign-in once and delete the file.
  */
 export const makeCursorCredentialStore = Effect.fn("makeCursorCredentialStore")(function* (
   instanceId: ProviderInstanceId,

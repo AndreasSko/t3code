@@ -16,12 +16,8 @@ export type ProviderOrchestrationAdapterInfrastructure =
   | CursorKeychain.CursorKeychain
   | IdAllocator.IdAllocatorV2;
 
-/**
- * Infrastructure shared by the V2 adapters materialized inside provider
- * instances. `providerContinuationRequestsLayer` must be the same layer
- * reference the orchestration runtime provides to its continuation worker so
- * Effect layer memoization yields one shared queue.
- */
+/** Share `ProviderContinuationRequests.layer` with the continuation worker so
+ * Effect layer memoization yields one queue. */
 export const layer = Layer.mergeAll(
   ClaudeAdapterV2.layerQueryRunner,
   CodexAdapterV2.layerAppServerClientFactory,

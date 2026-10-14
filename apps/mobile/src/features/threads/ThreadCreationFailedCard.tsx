@@ -3,11 +3,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 
-/**
- * Shown in place of the composer when the server rejected a new task. The
- * prompt and attachments are already back in the project draft, so the only
- * action is reopening it.
- */
+/** Rejected task content is restored to the project draft; this card reopens it. */
 export function ThreadCreationFailedCard(props: {
   readonly reason: string;
   readonly onEditTask: () => void;

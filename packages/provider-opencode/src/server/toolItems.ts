@@ -1,8 +1,3 @@
-/**
- * Turn-item bodies for OpenCode tool calls, shared by the 1.x and 2.x runtimes.
- * Both report a tool as a name, a JSON input, text output, and free-form
- * metadata; only how they deliver those differs.
- */
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
 import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
 

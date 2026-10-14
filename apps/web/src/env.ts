@@ -1,6 +1,2 @@
-/**
- * True when running inside the Electron preload bridge, false in a regular browser.
- * The preload script sets window.desktopBridge via contextBridge before any web-app
- * code executes, so this is reliable at module load time.
- */
+/** Electron preload installs desktopBridge before web code, so detection is reliable at module load. */
 export const isElectron = typeof window !== "undefined" && window.desktopBridge !== undefined;

@@ -65,19 +65,12 @@ export interface ComposerEditorProps {
   readonly onPasteText?: (paste: ComposerTextPaste) => void;
   readonly onFocus?: () => void;
   readonly onBlur?: () => void;
-  /**
-   * Hardware-keyboard Return behavior on iOS. No-op on Android, which has no
-   * hardware Return handling.
-   */
+  /** Hardware-keyboard Return behavior on iOS; no-op on Android. */
   readonly enterBehavior?: ComposerEnterBehavior;
   /** Shortcut-HUD title for the primary send chord. iOS only. */
   readonly submitTitle?: string;
   /** Shortcut-HUD title for the Command-modified send chord. iOS only. */
   readonly alternateSubmitTitle?: string;
-  /**
-   * Hardware keyboard submission. `alternate` is true for the Command-modified
-   * chord, which sends using the opposite of the configured follow-up
-   * behavior. Always false on Android, which has no hardware Return handling.
-   */
+  /** Command submission uses the opposite follow-up behavior; `alternate` is always false on Android. */
   readonly onSubmit?: (alternate: boolean) => void;
 }

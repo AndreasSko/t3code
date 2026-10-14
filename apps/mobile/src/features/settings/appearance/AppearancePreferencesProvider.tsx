@@ -177,9 +177,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
 
   const updateThemePreferences = useCallback(
     (patch: Partial<Preferences>) => {
-      // Theme selection owns the visible root ScopedTheme value. Keep its
-      // optimistic atom update urgent so the first frame after a press is the
-      // complete new palette rather than a deferred transition render.
+      // Keep the optimistic theme update urgent so the first frame uses the complete palette.
       savePreferences(patch);
     },
     [savePreferences],
@@ -217,10 +215,8 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     (value: MobileThemeMode) => {
       const current = appliedRuntimeStateRef.current ?? runtimeState;
 
-      // Clear a forced native appearance before publishing System. The
-      // resulting useColorScheme notification still sees the previous forced
-      // preference, so React batches the actual system palette into the one
-      // urgent preference commit below.
+      // Reset native appearance before publishing System so useColorScheme still sees
+      // the forced preference and React batches the real system palette into one commit.
       if (value === "system") {
         Appearance.setColorScheme("unspecified");
       }

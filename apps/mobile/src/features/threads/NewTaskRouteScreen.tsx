@@ -166,8 +166,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
-  // Scratch projects are reached through the No project row, never as rows
-  // of their own.
   const listScopes = projectScopes.filter(
     (scope) =>
       !scope.projects.every((project) =>
@@ -187,9 +185,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
-  // Threads without a project need a connected environment that offers them.
-  // The row starts on the selected environment when it has one, otherwise the
-  // first that does; the draft page's machine picker moves it from there.
+  // Scratch tasks require a connected supporting environment; the draft can switch machines later.
   const scratchEnvironments = connectedEnvironments.filter(
     (environment) =>
       availableScratchWorkspaceRoot(
@@ -269,8 +265,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       return;
     }
     if (!isFocused) {
-      // Returning from the reserved draft is a fresh resume attempt. Keeping
-      // this latch set would leave every project row disabled with no route.
+      // Clear the latch on return so project rows can resume the reserved draft again.
       resumedDestinationKeyRef.current = null;
       return;
     }

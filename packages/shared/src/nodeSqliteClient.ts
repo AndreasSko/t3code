@@ -1,9 +1,3 @@
-/**
- * Port of `@effect/sql-sqlite-node` that uses the native `node:sqlite`
- * bindings instead of `better-sqlite3`.
- *
- * @module SqliteClient
- */
 import * as NodeSqlite from "node:sqlite";
 import * as NodeUtil from "node:util";
 import * as NodeWorkerThreads from "node:worker_threads";
@@ -879,12 +873,8 @@ const make = Effect.fn("makeWithDatabase")(function* (
     acquirer,
     compiler,
     transactionAcquirer,
-    // A deferred BEGIN only takes the write lock at the first write. If another
-    // process commits after this transaction's first read, that write fails at
-    // once with SQLITE_BUSY_SNAPSHOT, which busy_timeout cannot wait out. Taking
-    // the lock up front makes it wait instead, at the cost of serializing
-    // read-only transactions behind other processes' writers. Read-only
-    // connections cannot write, so they keep the deferred BEGIN.
+    // BEGIN IMMEDIATE avoids SQLITE_BUSY_SNAPSHOT, which busy_timeout cannot wait out.
+    // It serializes read-only transactions too; read-only connections keep deferred BEGIN.
     beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
     spanAttributes: [
       ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),

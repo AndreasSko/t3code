@@ -67,11 +67,7 @@ export interface DraftState {
   /** Not editable in the dialog, but preserved so editing an agent-created task keeps its modes. */
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
-  /**
-   * The task's original model selection. The picker only edits
-   * `instanceId:model`; keeping the source object preserves provider options
-   * (reasoning, temperature, …) when the model itself is left unchanged.
-   */
+  /** Keep the original selection so unchanged models retain provider options the picker does not edit. */
   readonly baseModelSelection: ModelSelection | null;
   readonly signatureEnabled: boolean;
   readonly signatureHeader: string;
@@ -83,7 +79,6 @@ export interface DraftState {
   readonly maxDeliveryAgeMinutes: string;
 }
 
-/** GitHub's signature settings, the most common sender. */
 export const WEBHOOK_SIGNATURE_DEFAULTS = {
   signatureHeader: "x-hub-signature-256",
   signatureEncoding: "hex",

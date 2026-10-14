@@ -5,9 +5,8 @@ export function structuralProtocolMethod(value: string): string {
 }
 
 /**
- * Retain only bounded structural metadata for native protocol diagnostics.
- * Provider payload values may contain prompts, credentials, or arbitrarily
- * large tool output and must never be copied into the observability stream.
+ * Log bounded structural metadata only; prompts, credentials and large tool
+ * payloads must never enter observability streams.
  */
 export function summarizeNativeProtocolPayload(
   payload: unknown,

@@ -69,17 +69,8 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
   return { natural, iconOnly: Math.min(natural, iconOnly) };
 }
 
-/**
- * Read the natural widths of the resting composer controls from the DOM.
- *
- * Both the composer (deciding which blocks move into overflow) and the
- * context strip (deciding whether its labels may expand) read the same
- * numbers, so neither decision depends on what the other one hid last render.
- *
- * Hidden blocks and the unused overflow trigger stay mounted out of flow at
- * full size. The picker is the one flexible item: its intended width is
- * recovered from the truncated label.
- */
+/** Read mounted controls at natural width so composer and context layout do not depend
+ * on what either hid last render; recover the flexible picker from its truncated label. */
 export function measureRestingComposerControls(
   controls: HTMLElement,
 ): RestingComposerControlsMeasurement | null {

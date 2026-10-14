@@ -33,9 +33,7 @@ function textFromBlocks(value: unknown, depth: number): string | null {
     if (typeof resource.uri === "string") return resource.uri;
   }
   const keys = Object.keys(value).filter((key) => key !== "isError" && key !== "is_error");
-  // MCP results and provider tool results wrap their text in `content`.
-  // `structuredContent` usually repeats it as data, so it only shows when the
-  // text is empty.
+  // structuredContent often duplicates MCP/provider content blocks; show it only when text is absent.
   if (keys.length === 1 && keys[0] === "content") return textFromBlocks(value.content, depth + 1);
   if (keys.length === 2 && keys.includes("content") && keys.includes("structuredContent")) {
     const text = textFromBlocks(value.content, depth + 1);
@@ -64,7 +62,6 @@ function prettyJsonText(text: string): string {
   return documents.map((document) => JSON.stringify(document, null, 2)).join("\n\n");
 }
 
-/** Formats a tool input or output for display: text blocks as text, the rest as JSON. */
 function formatToolValue(value: unknown, hasImagePreview = false): string | null {
   if (value === undefined || value === null) return null;
   // Claude Read returns one structured image; lists may contain other images.
@@ -81,10 +78,7 @@ function formatToolValue(value: unknown, hasImagePreview = false): string | null
   return json;
 }
 
-/**
- * The call a tool row's body shows above its result: the full command, the
- * arguments as `key value` pairs, or formatted text when they are not flat.
- */
+/** Shows full commands, flat key-value arguments, or formatted structured input. */
 export function toolCallLines(input: {
   readonly command?: string | undefined;
   readonly args?: unknown;
@@ -130,10 +124,7 @@ const LIVE_TURN_ITEM_STATUSES: ReadonlySet<OrchestrationV2TurnItem["status"]> = 
   "waiting",
 ]);
 
-/**
- * Cache key for a fetched item. A running item keeps one key, so an open row
- * fetches once while it streams and again when it finishes, not on every update.
- */
+/** Running items keep a revision key until completion to avoid fetching on every stream update. */
 export function turnItemDetailRevision(item: OrchestrationV2TurnItem): string {
   return LIVE_TURN_ITEM_STATUSES.has(item.status) ? "live" : DateTime.formatIso(item.updatedAt);
 }
@@ -150,7 +141,7 @@ export function turnItemNeedsDetailFetch(item: OrchestrationV2TurnItem): boolean
   }
 }
 
-/** Older Claude bash rows stored the raw `{ stdout, stderr, interrupted, ... }` result. */
+// Legacy Claude bash output may be a structured stdout/stderr result.
 function commandOutputText(output: string): string {
   if (!output.trimStart().startsWith('{"stdout"')) return output;
   const parsed = parseJson(output.trim());
@@ -167,7 +158,6 @@ function commandOutputText(output: string): string {
     .join("\n");
 }
 
-/** The tool output carried by a fetched item, formatted for display. */
 export function turnItemOutputText(item: OrchestrationV2TurnItem): string | null {
   switch (item.type) {
     case "command_execution":
@@ -208,10 +198,7 @@ export function turnItemOutputText(item: OrchestrationV2TurnItem): string | null
   }
 }
 
-/**
- * Images in a fetched item's tool output, as assets. The detail read leaves
- * the bytes out, so each loads over HTTP by its index.
- */
+/** Detail reads omit image bytes; fetch each asset over HTTP by output index. */
 export function turnItemOutputImages(
   item: OrchestrationV2TurnItem,
 ): ReadonlyArray<Extract<AssetResource, { readonly _tag: "tool-output-image" }>> {
@@ -224,10 +211,7 @@ export function turnItemOutputImages(
   }));
 }
 
-/**
- * Whether expanding the item shows anything. Rows without content must not
- * offer a disclosure, otherwise they open to an empty panel.
- */
+/** Empty items must not offer disclosures that open blank panels. */
 export function turnItemHasDetail(item: OrchestrationV2TurnItem): boolean {
   switch (item.type) {
     case "reasoning":

@@ -28,11 +28,7 @@ type SubagentRowSubagent = Pick<
   | "result"
 >;
 
-/**
- * One agent as shown in the Agents sheet and transcript cards: status, model,
- * workspace changes, and recent progress or result. Callers own the press
- * target and pass their own elapsed timer so ticking stays isolated.
- */
+/** Callers own the press target and elapsed timer so ticks do not rerender agent metadata. */
 export function SubagentRow(props: {
   readonly environmentId: EnvironmentId;
   readonly subagent: SubagentRowSubagent;
@@ -130,9 +126,7 @@ function SubagentMetadata(props: {
         {modelLabel}
       </Text>
       {workspace.map(({ label, value }) => (
-        // The row reads this label in place of the icon. collapsable keeps the
-        // view (and label) from being flattened away without making it a
-        // separate accessibility stop.
+        // Prevent label flattening without adding a separate accessibility stop.
         <View
           key={label}
           collapsable={false}

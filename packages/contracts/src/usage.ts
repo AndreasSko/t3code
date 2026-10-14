@@ -1,34 +1,18 @@
 /**
- * Usage reporting contract.
- *
- * Each environment scans native session files and databases, including work
- * driven outside T3 Code. Source status describes gaps in local coverage.
- *
- * Environments return pre-aggregated `(day, hourStart?, provider, model, sourcePath?)`
- * buckets. Raw transcript records never cross the wire.
- *
- * @module usage
+ * Environments scan native sessions, including work outside T3. Send aggregated
+ * buckets only; raw transcript records stay off the wire.
  */
 import * as Schema from "effect/Schema";
 
 import { ForwardCompatibleArray, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
- * Bumped whenever the shape of {@link UsageSummary} changes incompatibly. The
- * client renders partial coverage when an environment reports an older version
- * rather than failing the whole page.
- * Adding providers or other array-element variants is additive: unknown
- * entries are skipped on decode and do not require a version bump. So are
- * optional bucket fields, which older clients ignore.
+ * Bump for incompatible shapes; unknown array variants and optional fields
+ * are additive and need no bump. Older versions render as partial coverage.
  */
 export const USAGE_CONTRACT_VERSION = 6 as const;
 
-/**
- * Oldest {@link UsageSummary} version a current client will still merge.
- *
- * v5/v6 add providers and optional source attribution; v4 Claude/Codex
- * buckets remain valid in mixed-version environments.
- */
+/** Minimum merge version; v4 buckets remain valid with additive provider and source fields. */
 export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
 
 export const UsageProviderKind = Schema.Literals([
@@ -42,12 +26,7 @@ export const UsageProviderKind = Schema.Literals([
 ]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
-/**
- * A calendar day in the reporting time zone, formatted `YYYY-MM-DD`.
- *
- * Days are bucketed server-side so that a turn always lands on the day the user
- * experienced it, not the UTC day.
- */
+/** YYYY-MM-DD in the reporting time zone, not UTC, to match the user's day. */
 const USAGE_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export const UsageDay = TrimmedNonEmptyString.check(Schema.isPattern(USAGE_DAY_PATTERN)).pipe(
@@ -59,23 +38,15 @@ export const UsageResolution = Schema.Literals(["day", "hour"]);
 export type UsageResolution = typeof UsageResolution.Type;
 
 /**
- * Why a bucket's cost is what it is.
- *
- * - `providerReported` - the transcript carried an explicit cost figure.
- * - `modelPriced` - we used a custom price override or the LiteLLM rate table.
- * - `unpriced` - tokens are known, rates are not. Counted in totals, excluded
- *   from cost.
+ * unpriced tokens count in totals but contribute no cost; modelPriced
+ * uses custom overrides or LiteLLM rates.
  */
 export const UsageCostSource = Schema.Literals(["providerReported", "modelPriced", "unpriced"]);
 export type UsageCostSource = typeof UsageCostSource.Type;
 
 /**
- * Token counts for a bucket.
- *
- * `cachedInputTokens` and `cacheCreationTokens` are disjoint from
- * `uncachedInputTokens`; summing all three gives total input. `reasoningTokens`
- * is a *subset* of `outputTokens` (Codex reports it that way, and Anthropic
- * folds thinking into output), so it must never be added on top.
+ * The three input counts are disjoint. reasoningTokens is already included
+ * in outputTokens and must never be added again.
  */
 export const UsageTokenTotals = Schema.Struct({
   uncachedInputTokens: NonNegativeInt,
@@ -99,13 +70,8 @@ export const UsageCategoryCost = Schema.Struct({
 export type UsageCategoryCost = typeof UsageCategoryCost.Type;
 
 /**
- * One `(day, hourStart?, provider, model)` cell. `hourStart` is the UTC start
- * instant of a rolling bucket and is present only for hourly requests.
- *
- * `costUsd` is the raw API-equivalent cost of these tokens. It is not money
- * spent: subscription plans bill separately. `unpricedRecords` counts records
- * whose tokens are included in the token totals but which contributed nothing
- * to `costUsd`.
+ * hourStart is a UTC hourly-bucket start. costUsd is API-equivalent, not subscription
+ * spend; unpricedRecords contribute tokens but no cost.
  */
 export const UsageBucket = Schema.Struct({
   day: UsageDay,
@@ -117,15 +83,12 @@ export const UsageBucket = Schema.Struct({
   totals: UsageTokenTotals,
   costUsd: Schema.Number,
   /**
-   * What the cached input would have cost at full input rates minus what it
-   * actually cost. Requires the rate table, so it is computed alongside cost
-   * rather than derived on the client.
+   * Full input cost minus actual cached cost; computed server-side because
+   * it needs the rate table.
    */
   cacheSavingsUsd: Schema.Number,
-  /**
-   * `costUsd` by token category. Cost with no known rates stays out of it, and
-   * it is absent when nothing could be split or the server predates it.
-   */
+  /** Costs without known rates stay out of the split, even when provider-reported.
+   * Absent when nothing can be split or the server predates it. */
   categoryCostUsd: Schema.optional(UsageCategoryCost),
   /** Cost of fast and ultrafast requests. Absent when zero; the rest is standard. */
   fastCostUsd: Schema.optional(Schema.Number),
@@ -142,24 +105,16 @@ export const UsageBucket = Schema.Struct({
 export type UsageBucket = typeof UsageBucket.Type;
 
 /**
- * Identifies the physical transcript directory a source read from.
- *
- * Two environments on the same machine (worktree servers, for example) resolve
- * the same provider home and would otherwise double count. The client drops
- * duplicate fingerprints before merging.
+ * Deduplicate fingerprints before merging so environments sharing a
+ * physical transcript directory do not double-count usage.
  */
 export const UsageSourceFingerprint = Schema.Struct({
   hostId: TrimmedNonEmptyString,
   provider: UsageProviderKind,
   resolvedHomePath: TrimmedNonEmptyString,
   /**
-   * Filesystem identity of the transcript directory, as `device:inode`.
-   *
-   * Hostname and path alone are not enough: every Mac in a fleet resolves
-   * `/Users/<user>/.claude`, so two machines that happen to share a hostname
-   * would look like one source and have their usage silently dropped. The
-   * device/inode pair is stable for two servers reading the same directory and
-   * effectively never collides across machines. Empty when it cannot be read.
+   * device:inode distinguishes directories when machines share hostnames and paths.
+   * Empty when filesystem identity cannot be read.
    */
   volumeId: Schema.String,
 });
@@ -175,20 +130,12 @@ export const UsageSource = Schema.Struct({
   skippedFiles: NonNegativeInt,
   /** Records that parsed but carried no recognisable usage payload. */
   malformedRecords: NonNegativeInt,
-  /**
-   * Distinct transcript sessions seen under this directory. Buckets also carry
-   * per-bucket session counts, but a session spans days and models, so summing
-   * those overcounts; this is the figure clients should total.
-   */
+  /** Use this total: sessions span days and models, so summing bucket counts overcounts. */
   distinctSessions: NonNegativeInt,
   message: Schema.NullOr(TrimmedNonEmptyString),
   /** An action the client can offer to make this source available. */
   action: Schema.optionalKey(Schema.Literal("enableCursorKeychain")),
-  /**
-   * Present when this source answered from its cache while a slow refresh (an
-   * account API, for example) runs. Repeat the request with `awaitRefresh` to
-   * get the refreshed source.
-   */
+  /** Cached answer while refresh runs; request awaitRefresh for the refreshed source. */
   refreshing: Schema.optionalKey(Schema.Literal(true)),
 });
 export type UsageSource = typeof UsageSource.Type;
@@ -196,10 +143,6 @@ export type UsageSource = typeof UsageSource.Type;
 export const UsagePricingStatus = Schema.Literals(["fresh", "cached", "unavailable"]);
 export type UsagePricingStatus = typeof UsagePricingStatus.Type;
 
-/**
- * Provenance for the rate table, so the UI can be honest about how good the
- * cost figures are.
- */
 export const UsagePricing = Schema.Struct({
   status: UsagePricingStatus,
   source: TrimmedNonEmptyString,
@@ -213,10 +156,7 @@ export const UsageSummaryInput = Schema.Struct({
   sinceDay: UsageDay,
   /** Inclusive last day of the window, in `timeZone`. */
   untilDay: UsageDay,
-  /**
-   * IANA zone the client wants days bucketed in. An offset would be wrong for
-   * any window that crosses a DST boundary.
-   */
+  /** Use an IANA zone because fixed offsets fail across DST boundaries. */
   timeZone: TrimmedNonEmptyString,
   /** Defaults to daily for older clients. */
   resolution: Schema.optional(UsageResolution),
@@ -224,11 +164,7 @@ export const UsageSummaryInput = Schema.Struct({
   sinceTime: Schema.optional(TrimmedNonEmptyString),
   /** Exclusive UTC instant for an hourly rolling window. */
   untilTime: Schema.optional(TrimmedNonEmptyString),
-  /**
-   * Wait for slow sources to finish refreshing instead of answering from their
-   * cache. Clients send it as the follow-up to a summary with a `refreshing`
-   * source. Older servers ignore it and always wait.
-   */
+  /** Follow up refreshing sources with this to await fresh data; older servers always wait. */
   awaitRefresh: Schema.optional(Schema.Boolean),
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;

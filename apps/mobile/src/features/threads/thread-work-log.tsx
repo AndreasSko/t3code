@@ -428,16 +428,14 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): WorkContentIcon {
   }
 }
 
-// Entering fades only for rows created moments ago: rows remount whenever the
-// list scrolls them back into view, and old rows must not replay an entrance.
+// Scrolled-out rows remount, so only newly created rows may replay entrance fades.
 const FRESH_ROW_WINDOW_MS = 3_000;
 function isFreshRow(createdAt: string): boolean {
   const timestamp = Date.parse(createdAt);
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ROW_WINDOW_MS;
 }
 
-// The minimum matches min-h-8 below. Exact sizing is disabled when native
-// accessibility scaling can make the single-line text taller than that minimum.
+// Fixed min-h-8 sizing is invalid when native accessibility scaling makes text taller.
 const WORK_ROW_HEIGHT = THREAD_WORK_ROW_MIN_HEIGHT;
 const WORK_ROW_GAP = 1; // gap-px
 const WORK_LOG_BOTTOM_MARGIN = 3.5; // mb-1 with the mobile 14px rem
@@ -609,8 +607,7 @@ function ThreadWorkGroupList(props: {
   const scrollOffset = useSharedValue(initialPosition?.scrollOffset ?? 0);
   const sharedValues = useMemo(() => ({ scrollOffset }), [scrollOffset]);
 
-  // Each edge fades only while content continues past it. Scroll offset stays
-  // on the UI thread; only content-size changes update React state.
+  // Keep scrolling fades on the UI thread; only content-size changes update React state.
   const topFadeStyle = useAnimatedStyle(() => ({
     opacity: Math.min(1, Math.max(0, scrollOffset.value) / WORK_GROUP_EDGE_FADE_HEIGHT),
   }));
@@ -677,18 +674,13 @@ function ThreadWorkGroupList(props: {
       } else if (pendingAppendHeightRef.current !== null) {
         pendingAppendHeightRef.current = Math.min(nextHeight, WORK_GROUP_MAX_HEIGHT);
       }
-      // A short group can grow its viewport on this append. Wait for that
-      // layout before calculating the end offset, rather than jumping twice.
+      // Append can grow the viewport; wait for its layout before choosing the end offset.
       finishPendingAppend();
       rememberPosition();
     },
     [props.activities, props.expandedRows, scrollOffset, finishPendingAppend, rememberPosition],
   );
-  // The native ScrollView reports its content size a frame or more after
-  // LegendList has laid the rows out, so a detail toggle rendered the group
-  // at its old height while the rows below already moved. Read the size
-  // LegendList computes on the JS thread instead; it settles in the same
-  // commit as the row measurement that changed it.
+  // Native content-size events lag row layout; read LegendList totalSize so group height settles in the same commit.
   const onContentSizeChangeRef = useRef(onContentSizeChange);
   useLayoutEffect(() => {
     onContentSizeChangeRef.current = onContentSizeChange;
@@ -727,8 +719,7 @@ function ThreadWorkGroupList(props: {
         estimatedItemSize={props.rowSizing.estimatedRowHeight + WORK_ROW_GAP}
         getFixedItemSize={getFixedItemSize}
         initialScrollIndex={initialScrollIndex}
-        // Bootstrap overscan is only 50px. An offset inside expanded detail can
-        // otherwise leave its own row unmeasured until after scroll restoration.
+        // Bootstrap overscan is only 50px; force the restored detail row to measure before positioning.
         alwaysRender={
           restoringPosition && initialPosition ? { keys: [initialPosition.rowId] } : undefined
         }
@@ -785,7 +776,6 @@ function ThreadWorkGroupList(props: {
   );
 }
 
-/** A screen-colored gradient painted over the list edge that still has content past it. */
 function EdgeFade(props: { readonly color: string; readonly direction: "up" | "down" }) {
   const gradientId = `work-group-fade-${useId().replaceAll(":", "")}`;
   return (
@@ -813,7 +803,6 @@ function workLogRowKey(row: ThreadFeedActivity): string {
   return row.id;
 }
 
-/** Shown while the thread's run still ends in this failed preparation. */
 function WorkspacePreparationRetryButton(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -980,7 +969,6 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
       </WorkLogPressable>
     );
   }
-  // A subagent's notification opens its thread, like the subagent's own row.
   const notifiedSubagentThreadId =
     row.projectedItem.item.type === "notification"
       ? notificationChildThreadId(row.projectedItem.item.source)
@@ -990,7 +978,6 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
   const fetchedItem = fetchedDetail.data?.item ?? null;
   // Reads keep their path list; the fetched file contents show as output.
   const isRead = toolGroupAction(row.workEntry) === "read";
-  // Tool calls show the call in the foreground and the result muted below it.
   const shownItem = fetchedItem ?? row.projectedItem.item;
   const call =
     expanded && !isRead && shownItem.type === "command_execution"
@@ -1067,8 +1054,7 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
         accessibilityState={canExpand ? { expanded } : undefined}
         onPress={() => {
           if (notifiedSubagentThreadId !== undefined) {
-            // Push, not navigate: navigate reuses this Thread route, so back
-            // would skip the parent thread and land on Home (matches #15068).
+            // navigate reuses the current Thread route and loses parent Back navigation (#15068); push a new route.
             navigation.dispatch(
               StackActions.push("Thread", {
                 environmentId: String(props.environmentId),
@@ -1314,8 +1300,6 @@ export function ThreadWorkGroupToggle(props: {
   return (
     <WorkLogBlock layout="group-header">
       {props.thought ? (
-        // The latest thought sits above the status line as an ordinary work-log
-        // row, wrapped up to four lines.
         <Pressable
           accessible={false}
           onPress={props.onToggle}
@@ -1382,12 +1366,7 @@ export function ThreadWorkGroupToggle(props: {
   );
 }
 
-/**
- * A batch of spawned subagents. The status line updates in place as members
- * report progress; expanding lists each member. Text nodes carry keys tied to
- * the row identity only, so a progress tick re-renders the labels without
- * remounting the card (see the batch key in appendActivityGroupRows).
- */
+/** Keep keys tied to row identity so progress updates labels without remounting the spawn card. */
 export const ThreadAgentSpawnCard = memo(function ThreadAgentSpawnCard(props: {
   readonly summary: AgentSpawnSummary;
   readonly expanded: boolean;

@@ -28,9 +28,7 @@ import {
 
 export interface ComposerAttachmentStripProps {
   readonly environmentId?: EnvironmentId;
-  /** Attachments to display. */
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
-  /** Called when the user removes an attachment. */
   readonly onRemove: (imageId: string) => void;
   /** Called when the user taps an image or PDF to preview it. */
   readonly onPressPreview?: (source: FilePreviewSource) => void;
@@ -40,11 +38,10 @@ export interface ComposerAttachmentStripProps {
   ) => void;
   /** Called when the user taps a document that is not a picture, video or PDF. */
   readonly onPressDocument?: (attachment: DraftComposerFileAttachment) => void;
-  /** Image thumbnail size in points.  Defaults to 72. */
+  /** Image thumbnail size in points. */
   readonly imageSize?: number;
-  /** Border radius of each image thumbnail.  Defaults to 16. */
+  /** Image thumbnail radius in points. */
   readonly imageBorderRadius?: number;
-  /** Whether the remove button should sit in its own gutter instead of overlapping the image. */
   readonly removeButtonPlacement?: "overlay" | "gutter";
 }
 
@@ -100,21 +97,11 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
   );
 }
 
-/**
- * Thumbnail URI for a draft image. File-backed previews rebase into the
- * current iOS data container (its UUID changes across installs); the raw
- * persisted URI renders meanwhile, which is correct everywhere but after a
- * container move.
- */
+// File-backed previews rebase because iOS data-container UUIDs change across installs.
 const PREVIEW_CACHE_DIRECTORY = "t3-composer-previews";
 
-/**
- * Fabric re-parses an image source URL on every layout pass of the node, and a
- * multi-megabyte data URL makes each Fabric commit slow enough that concurrent
- * UI-thread commits (the question card's coverage animation) win the race every
- * time until the renderer aborts. Inline bytes are written to the cache once and
- * the thumbnail renders from that file instead.
- */
+// Fabric reparses image URLs on every layout; large data URLs can starve commits.
+// Cache inline bytes as a file instead.
 /** Roughly 192KB of base64: small enough that re-parsing it per layout stays imperceptible. */
 const INLINE_PREVIEW_FALLBACK_MAX_CHARS = 256_000;
 
@@ -134,7 +121,6 @@ async function materializeDataUrlPreview(id: string, dataUrl: string): Promise<s
   return file.uri;
 }
 
-/** The thumbnail source for a draft image: an owned file when there is one, never a data URL. */
 function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): string | null {
   const { id, fileUri, previewUri } = attachment;
   const [rebased, setRebased] = useState<{ fileUri: string; uri: string } | null>(null);
@@ -146,7 +132,6 @@ function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): s
     void (async () => {
       const { Paths } = await import("expo-file-system");
       const owned = resolveOwnedComposerAttachmentFileUri(fileUri, Paths.document.uri);
-      // Re-render only when the container actually moved.
       if (!cancelled && owned !== null && owned !== previewUri) setRebased({ fileUri, uri: owned });
     })();
     return () => {
@@ -228,8 +213,7 @@ function ComposerImageAttachment(
 
 function ComposerAttachmentContent(props: ComposerAttachmentThumbnailProps) {
   const { attachment } = props;
-  // The document picker types every pick as a plain file, so a picture arrives here as one.
-  // What it *is* decides how it presents, the same way videos are already recognised below.
+  // The document picker types pictures as plain files, so also inspect their MIME type.
   if (attachment.type === "image" || imageMimeType(attachment) !== null) {
     // A pasted-text marker does not fit the snapshot source a picture carries.
     const { source: _droppedSource, ...rest } = attachment;
@@ -333,9 +317,6 @@ function ComposerVideoAttachment(props: {
   );
 }
 
-/**
- * Attachment thumbnails used by the thread composer and the new-task draft screen.
- */
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
   const gallery = useMemo(() => composerImageGallery(props.attachments), [props.attachments]);
   const size = props.imageSize ?? 72;

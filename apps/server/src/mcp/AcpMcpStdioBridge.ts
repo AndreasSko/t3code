@@ -9,21 +9,8 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { discardResponseBody, responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
 
-/**
- * Stdio-to-HTTP bridge for T3's MCP endpoint.
- *
- * ACP agents must support stdio MCP servers, while optional http/sse support
- * is unevenly implemented. `t3 acp-mcp-bridge` runs as the stdio MCP server an
- * ACP agent spawns and forwards each JSON-RPC line to T3's authenticated
- * streamable-HTTP endpoint: single JSON responses and SSE streams are written
- * back as newline-delimited JSON-RPC, notification acknowledgements (202/204)
- * produce no output, and the `mcp-session-id` / negotiated protocol version
- * are replayed on subsequent requests.
- *
- * This entry sits on the ACP first-message critical path (bin.ts fast-paths
- * it before the CLI graph), so it imports only effect core modules; keep the
- * import list lean when changing it.
- */
+// ACP stdio support is mandatory while HTTP/SSE is uneven, so bridge it.
+// Keep imports lean: this runs on the first-message critical path.
 
 export class AcpMcpBridgeError extends Error {
   readonly _tag = "AcpMcpBridgeError";
@@ -72,20 +59,13 @@ export interface AcpMcpToolCallOptions {
   readonly fetchImplementation?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
-/**
- * Call one MCP tool through a fresh authenticated HTTP session.
- *
- * This is the terminal fallback for ACP agents that accept `mcpServers` in
- * `session/new` but fail to expose those tools to their model. Compliant ACP
- * agents continue to use the stdio bridge above.
- */
+/** Fresh-session terminal fallback for ACP agents that fail to expose injected MCP servers. */
 export function callAcpMcpTool(
   options: AcpMcpToolCallOptions,
 ): Effect.Effect<unknown, AcpMcpBridgeError> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   return Effect.gen(function* () {
-    // The bridge is single-fibered at creation time; concurrent sends only
-    // read these after the sequential handshake, so plain locals suffice.
+    // Sequential initialization precedes concurrent reads, so plain session locals suffice.
     let sessionId: string | null = null;
     let protocolVersion: string | null = null;
 
@@ -162,9 +142,7 @@ export function callAcpMcpTool(
 export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.Effect<void> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   return Effect.gen(function* () {
-    // Dispatch happens synchronously on the single stream fiber, so plain
-    // locals carry the shared session state; forwards mutate them in
-    // completion order exactly like the wire does.
+    // Single-fiber dispatch and wire-order completions let plain locals hold session state.
     let sessionId: string | null = null;
     let protocolVersion: string | null = null;
     const running = new Set<Fiber.Fiber<void>>();
@@ -232,10 +210,8 @@ export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.
         }),
       );
 
-    // Only session establishment is ordered; client responses to
-    // server-initiated SSE requests must bypass the barrier or they would
-    // deadlock the still-open HTTP exchange, and normal MCP calls stay
-    // concurrent after initialization.
+    // Order session setup only: responses to server SSE requests must bypass
+    // the barrier to avoid deadlock; initialized tool calls remain concurrent.
     let sessionBarrier: Effect.Effect<void> = Effect.void;
     let sessionBarrierPending = false;
 
@@ -307,11 +283,7 @@ export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.
   });
 }
 
-/**
- * Argv runner for `t3 acp-mcp-bridge` and `t3 acp-mcp-call`, shared by the
- * fast-path dispatch in bin.ts and the full CLI's command handlers. Kept free
- * of heavy imports: these commands run on the ACP first-message critical path.
- */
+/** Shared CLI runner; avoid heavy imports on the ACP first-message path. */
 export async function runAcpMcpCliFastPath(
   command: "acp-mcp-bridge" | "acp-mcp-call",
   args: ReadonlyArray<string>,

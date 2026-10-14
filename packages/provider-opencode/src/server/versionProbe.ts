@@ -1,4 +1,3 @@
-/** Detects whether an OpenCode instance runs 1.x or 2.x, so the driver can pick its runtime. */
 import { parseSemver } from "@t3tools/shared/semver";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";

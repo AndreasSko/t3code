@@ -22,9 +22,8 @@ export interface NativeLayoutMetrics {
 }
 
 /**
- * Keep bottom controls in one usable region. A book-like fold selects the
- * larger side; a horizontal fold leaves the controls on the lower display.
- * Text and other scrollable content can continue to use the full canvas.
+ * Keep bottom controls on the larger side of a book fold or the lower display of a horizontal fold.
+ * Scrollable content can still use the full canvas.
  */
 export function deriveBottomControlInsets(metrics: NativeLayoutMetrics | null) {
   if (!metrics) return { left: 0, right: 0, bottom: 0 };

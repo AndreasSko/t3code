@@ -39,14 +39,8 @@ const SKILL_TOKEN_REGEX = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s)`, "gu");
 export const SKILL_MENTION_PATTERN = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s|$)`, "gu");
 const MENTION_TOKEN_REGEX = /(^|\s)@(?:"((?:\\.|[^"\\])*)"|([^\s@"]+))(?=\s)/g;
 /**
- * The label body is bounded rather than `*`. Unbounded, every whitespace in
- * the composer is a candidate start: the engine scans the rest of the text for
- * a closing `]`, fails, and rescans from the next whitespace — quadratic on
- * input like " [[[[[…". A cap makes each attempt constant-bounded.
- *
- * Only a basename ever survives the `label !== basename` check below, so this
- * cannot reject a link a user could meaningfully write; the longest filename
- * any common filesystem allows is 255.
+ * Cap label scans to avoid quadratic rescanning when ] is missing. Only basenames pass validation;
+ * 512 exceeds common filesystem limits of 255 characters, so it cannot exclude a meaningful link.
  */
 const MAX_FILE_LINK_LABEL_LENGTH = 512;
 const FILE_LINK_TOKEN_REGEX = new RegExp(

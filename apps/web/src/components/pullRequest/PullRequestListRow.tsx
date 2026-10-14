@@ -16,26 +16,14 @@ import {
   PullRequestStateGlyph,
 } from "./pullRequestPresentation";
 
-/**
- * The one row shape both pull request lists share: the full page and a thread's linked panel.
- * A status column, then two lines — number and title with the diff counts on the right;
- * author and whatever else the caller shows under them with the time on the right. The column
- * stacks the lifecycle glyph over the checks glyph, so what a pull request is and how it is
- * doing read top to bottom at the left edge, and the right edge is only numbers and time. The
- * page puts repository and labels there, the panel puts the branches there. The caller owns
- * the wrapper (a link on the panel, a button on the page) and hands in the slots.
- */
+/** Shared PR row slots; callers own the outer link or button wrapper. */
 export const PULL_REQUEST_ROW_CLASS =
   "group/pr-row flex w-full items-center gap-2 rounded-md py-1 pr-1 text-left";
 
 export const PULL_REQUEST_ROW_NUMBER_CLASS =
   "shrink-0 font-mono text-xs tabular-nums text-muted-foreground";
 
-/**
- * The conflict warning rides the corner of the lifecycle glyph, over the arrow's merge circle,
- * so the leading slot stays one icon wide and titles line up whether or not a row is blocked.
- * The background fill cuts it out of the glyph beneath.
- */
+/** Corner conflict badges preserve a one-icon leading column and title alignment. */
 export function PullRequestRowGlyph({
   state,
   isDraft,
@@ -123,7 +111,6 @@ export function PullRequestRowLines({
   );
 }
 
-/** Avatar and login at the meta line's own size, with the actor's full name on hover. */
 export function PullRequestRowAuthor({
   actor,
   className,
@@ -149,11 +136,7 @@ export function PullRequestRowAuthor({
   );
 }
 
-/**
- * `head → base`, in the mono the branches are typed in, each cut in the middle when the row is
- * short of room. The base keeps its width up to a share of the line, so a long head cannot
- * squeeze a short `main` out; the arrow stays readable so the two are not read as one name.
- */
+/** Preserve base-branch width so long heads cannot squeeze it out; keep the arrow visible. */
 export function PullRequestRowBranches({ head, base }: { head: string; base: string }) {
   return (
     <span className="flex min-w-0 items-center gap-1 font-mono">

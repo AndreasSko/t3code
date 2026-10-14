@@ -47,11 +47,7 @@ function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: bool
   return rendered ? "Show HTML source" : "Show rendered page";
 }
 
-/**
- * A captured attachment shown with the same chrome as a workspace file: one
- * header row with crumbs and icon actions, then the document. Captured bytes
- * are viewed independently of similarly named files in the workspace.
- */
+/** Captured bytes are independent of similarly named workspace files. */
 export function AttachmentFilePreview(props: {
   name: string;
   mimeType: string;

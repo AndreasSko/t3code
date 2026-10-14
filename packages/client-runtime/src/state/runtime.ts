@@ -58,10 +58,7 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
   EnvironmentAtomOptions<Input, A, E, R>,
   "execute"
 > {
-  /**
-   * `emit` shows a provisional value while the query keeps waiting. The settled
-   * result replaces it, so catch failures that should keep it on screen.
-   */
+  /** emit is provisional; settlement replaces it, so catch failures that should keep the value visible. */
   readonly execute: (
     input: Input,
     emit: (value: A) => Effect.Effect<void>,
@@ -111,13 +108,9 @@ export interface AtomCommand<W, A, E> {
 }
 
 export type AtomCommandConcurrency<W> =
-  /** Every invocation runs independently. */
   | { readonly mode: "parallel" }
   | {
-      /**
-       * `serial` preserves every invocation in FIFO order, `singleFlight` shares an active
-       * invocation, and `latest` coalesces queued invocations to the newest input.
-       */
+      /** serial is FIFO, singleFlight shares active work, latest coalesces queued work. */
       readonly mode: "serial" | "singleFlight" | "latest";
       readonly key: (input: W) => string;
     };
@@ -279,7 +272,6 @@ export function createAtomCommandScheduler(): AtomCommandScheduler {
   };
 }
 
-/** Runs one effect inside an existing command scheduler lane. */
 export function scheduleAtomCommandEffect<W, A, E, R>(
   registry: AtomRegistry.AtomRegistry,
   scheduler: AtomCommandScheduler,
@@ -353,11 +345,7 @@ export async function executeAtomCommand<A, E>(
 }
 
 export interface AtomQueryOptions extends AtomCommandOptions {
-  /**
-   * Force a fresh execution instead of accepting a value the atom already
-   * holds (e.g. an SWR-cached result within its stale window). Used by
-   * verification flows where a cached failure must not satisfy a retry.
-   */
+  /** Forces execution instead of accepting cached data, including cached retry failures. */
   readonly refresh?: boolean;
   /** Interrupt the query wait when its caller no longer wants the result. */
   readonly signal?: AbortSignal;
@@ -479,13 +467,7 @@ function runInEnvironment<A, E, R>(
   );
 }
 
-/**
- * Refreshes a query when `signal` changes, but only while something reads it.
- * `Atom.makeRefreshOnSignal` subscribes to the signal, so a query that outlives its view on an
- * idle TTL still re-runs on every change. Reading the signal as a dependency instead lets the
- * registry re-run a mounted query right away and only mark an idle one stale, which then
- * refreshes on its next read.
- */
+// Signal dependencies mark idle queries stale instead of rerunning them throughout their idle TTL.
 const refreshOnSignalWhileRead =
   <V>(signal: Atom.Atom<unknown>, isFinal: (value: V) => boolean) =>
   <A extends V>(self: Atom.Atom<A>): Atom.Atom<A> => {
@@ -574,10 +556,8 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         );
         const emit = (value: A) =>
           Effect.sync(() => get.setSelf(AsyncResult.success(value, { waiting: true }))).pipe(
-            // A value set while the atom builds wins over the build's own
-            // result, so a query that then settled synchronously would stay
-            // waiting forever. Suspend on a promise (`yieldNow` is drained
-            // inside the build) so the settled result arrives asynchronously.
+            // Values set during atom construction beat its result; defer synchronous settlement
+            // with a promise because yieldNow is drained inside the build.
             Effect.andThen(Effect.promise(() => Promise.resolve())),
           );
         const execute = (): Effect.Effect<

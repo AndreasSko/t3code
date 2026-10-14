@@ -4,16 +4,10 @@ import { appAtomRegistry } from "./atom-registry";
 
 interface ThreadComposerError {
   readonly message: string;
-  /** The queued message this error is about, when it is about one. */
   readonly messageId: string | null;
 }
 
-/**
- * Why a thread's last message did not go out, shown above that thread's
- * composer. The outbox drain can reject a message after the user has left the
- * thread, so the reason is kept per thread until they dismiss it, send again,
- * or the message it describes is delivered after all. Keyed by `scopedThreadKey`.
- */
+/** Keep errors per scoped thread because the outbox can reject delivery after the user navigates away. */
 export const threadComposerErrorsAtom = Atom.make<Readonly<Record<string, ThreadComposerError>>>(
   {},
 ).pipe(Atom.keepAlive, Atom.withLabel("mobile:thread-composer-errors"));

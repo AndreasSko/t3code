@@ -5,14 +5,9 @@ import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalSt
 import type { Atom } from "effect/reactivity";
 
 /**
- * Whether the Home route can be seen. Home stays mounted under a pushed
- * Thread, and native-stack never freezes the route directly below the focused
- * one on Fabric, so Home has to stop its own work.
- *
- * Driven by the native appear/disappear events rather than focus. A form sheet
- * over Home blurs it but leaves it on screen, and the presenting screen gets no
- * disappear event for it. Home becomes visible as soon as a back swipe or pop
- * starts revealing it, so the list is fresh during the transition.
+ * Fabric leaves Home active beneath a pushed Thread, so hidden work must pause.
+ * Track visibility rather than focus: a form sheet blurs Home while leaving it visible.
+ * Resume at appearance start so back swipes reveal fresh list data.
  */
 export function useHomeRouteVisible(): boolean {
   const navigation =

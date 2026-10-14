@@ -205,11 +205,7 @@ export async function navigateAfterThreadDeletion(navigate: () => Promise<void>)
   }
 }
 
-/**
- * Marks a thread unread. Servers with visited tracking own the unread marker
- * (thread.mark-unread rewinds the server-side visited watermark, syncing the
- * marker to every device); older servers keep the browser-local marker.
- */
+/** Visited-capable servers own unread watermarks across devices; other servers use browser-local markers. */
 function useMarkThreadUnread() {
   const markThreadUnreadMutation = useAtomCommand(threadEnvironment.markUnread, {
     reportFailure: false,
@@ -231,12 +227,7 @@ function useMarkThreadUnread() {
   );
 }
 
-/**
- * Clears a thread's Woke marker by recording a visit at the wake time.
- * Servers with visited tracking own the watermark (thread.visit keeps the
- * later of the stored and supplied values, so this syncs to every device);
- * older servers keep the browser-local watermark.
- */
+/** Record a visit at wake time; server max(stored,supplied) preserves newer visits across devices. */
 export function useAcknowledgeThreadWoke() {
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
@@ -327,10 +318,7 @@ export function useThreadActions() {
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
-  // Keep a ref so archiveThread can call handleNewThread without appearing in
-  // its dependency array — handleNewThread is inherently unstable (depends on
-  // the projects list) and would otherwise cascade new references into every
-  // sidebar row via archiveThread → attemptArchiveThread.
+  // Use a ref because unstable handleNewThread dependencies would cascade through every sidebar row.
   const handleNewThreadRef = useRef(handleNewThread);
   handleNewThreadRef.current = handleNewThread;
 
@@ -411,7 +399,6 @@ export function useThreadActions() {
       showThreadUndoNotice({
         action: "Archived",
         claim: action,
-        // Undo also brings the reader back when archiving moved them to a draft.
         undo: () => unarchiveThread(threadRef, { navigate: shouldNavigateToDraft }),
         failureTitle: "Failed to undo archive",
       });
@@ -443,7 +430,6 @@ export function useThreadActions() {
       if (permissionFailure) return permissionFailure;
       const resolved = resolveThreadTarget(target);
       if (!resolved) {
-        // Thread not in main store (e.g. archived thread) — dispatch delete directly.
         const result = await deleteThreadMutation({
           environmentId: target.environmentId,
           input: { threadId: target.threadId },
@@ -678,7 +664,6 @@ export function useThreadActions() {
     [unsettleThreadMutation],
   );
 
-  /** Turns automatic settlement (inactivity, merged PR) on or off for one thread. */
   const setThreadAutoSettle = useCallback(
     async (target: ScopedThreadRef, enabled: boolean) => {
       if (!readEnvironmentSupportsAutoSettleOptOut(target.environmentId)) {
@@ -712,12 +697,7 @@ export function useThreadActions() {
           ),
         );
       }
-      // Every pin path places the thread at the top of the arranged run:
-      // callers with a better anchor (the sidebar, which knows the displayed
-      // order) pass their own key; everyone else (chat header, context menus)
-      // gets the default so the same action never places differently.
-      // orderKey rides only to servers that decode it; pre-reorder servers
-      // get the bare pin they understand and the thread stays keyless.
+      // Place pins at the run's top unless callers supply a better anchor; send orderKey only to capable servers.
       const orderKey = readEnvironmentSupportsPinReorder(target.environmentId)
         ? (opts.orderKey ?? topOfPinnedRunOrderKey())
         : undefined;
@@ -964,7 +944,6 @@ export function useThreadActions() {
         action.finish();
         return result;
       }
-      // Snooze hides the row, so keep its confirmation in the sidebar.
       showThreadUndoNotice({
         action: "Snoozed",
         claim: action,

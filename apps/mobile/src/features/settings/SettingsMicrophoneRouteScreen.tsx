@@ -89,9 +89,8 @@ const KINDS: Record<
 };
 
 /**
- * Microphone kinds and remembered devices, in the order voice input prefers
- * them. iOS only. A device joins the list the first time it is connected
- * during dictation; until then its kind's row ranks it.
+ * iOS remembers devices first connected during dictation; until then their
+ * kind's row determines preference.
  */
 export function SettingsMicrophoneRouteScreen() {
   const insets = useSafeAreaInsets();

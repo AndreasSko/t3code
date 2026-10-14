@@ -24,18 +24,12 @@ function reportScratchFailure(title: string, error: unknown) {
   );
 }
 
-/**
- * Threads without a project live in the environment's scratch project, a
- * plain folder the server owns (users see it as "No project"). The server
- * creates it on first use; after that it is an ordinary project on the
- * non-git path, and each thread gets its own subfolder.
- */
+/** Projectless threads use a server-owned scratch project; each thread gets its own subfolder. */
 export function useScratchProject() {
   const { environments } = useEnvironments();
   const openScratch = useAtomCommand(projectEnvironment.openScratch, { reportFailure: false });
   const handleNewThread = useNewThreadHandler();
 
-  /** The scratch folder of a connected environment, or null when it offers none. */
   const scratchWorkspaceRootFor = useCallback(
     (environmentId: EnvironmentId | null): string | null => {
       const environment = environments.find((entry) => entry.environmentId === environmentId);

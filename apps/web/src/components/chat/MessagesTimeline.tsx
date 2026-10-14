@@ -305,13 +305,7 @@ import {
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
 
-// ---------------------------------------------------------------------------
-// Context — shared state consumed by every row component via Context.
-// Propagates through LegendList's memo boundaries for shared callbacks and
-// non-row-scoped state. `nowIso` is intentionally excluded — self-ticking
-// components (LiveElapsed) handle it.
-// ---------------------------------------------------------------------------
-
+// Keep ticking clocks out of shared row context; self-ticking elapsed components avoid re-rendering every row.
 interface TimelineRowSharedState {
   citationRequest: AssistantCitationTarget | null;
   listRef: React.RefObject<LegendListRef | null>;
@@ -438,10 +432,6 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
   animated: true,
 } as const satisfies MaintainScrollAtEndOptions;
 
-// ---------------------------------------------------------------------------
-// Props (public API)
-// ---------------------------------------------------------------------------
-
 export interface MessagesTimelineHistoryControls {
   readonly hasMoreHistory: boolean;
   readonly loading: boolean;
@@ -547,10 +537,6 @@ interface MessagesTimelineProps {
   activeFindMatch?: ThreadFindMatch | null;
   findNavigationId?: number;
 }
-
-// ---------------------------------------------------------------------------
-// MessagesTimeline — list owner
-// ---------------------------------------------------------------------------
 
 export function MessagesTimeline(props: MessagesTimelineProps) {
   const find = useContext(ThreadFindTimelineContext);
@@ -2065,10 +2051,6 @@ function TimelineMinimapNavigationButton({
   );
 }
 
-// ---------------------------------------------------------------------------
-// TimelineRowContent — the actual row component
-// ---------------------------------------------------------------------------
-
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
@@ -3508,11 +3490,6 @@ const V2SubagentGroup = memo(function V2SubagentGroup({
   );
 });
 
-// ---------------------------------------------------------------------------
-// Extracted row sections — own their state / store subscriptions so changes
-// re-render only the affected row, not the entire list.
-// ---------------------------------------------------------------------------
-
 /** Renders standalone activity or one bounded, virtualized expanded tool group. */
 const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
@@ -3609,7 +3586,7 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
   );
 }
 
-// Matches the grouped WorkLog row's min-h-6.
+// Match WorkLog's min-h-6: expanded-content height subtracts this 24px baseline from measured rows.
 const compactWorkEntryHeight = 24;
 
 function ExpandedWorkGroupEntries({
@@ -4324,10 +4301,6 @@ function AssistantChangedFilesSectionInner({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Leaf components
-// ---------------------------------------------------------------------------
-
 function UserMessageMentionChip(props: {
   record: Extract<KnownComposerContextRecord, { kind: "mention" }>;
   copyMarkdown: string;
@@ -4963,11 +4936,6 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
   );
 }
 
-// ---------------------------------------------------------------------------
-// Structural sharing — reuse old row references when data hasn't changed
-// so LegendList (and React) can skip re-rendering unchanged items.
-// ---------------------------------------------------------------------------
-
 /** Content-stable projection of the runs the handoff rows read. The incoming
  *  array is rebuilt on every projection event (status/timestamp churn), but
  *  the returned reference only changes when a run's identity-relevant fields
@@ -5020,10 +4988,6 @@ function useStableRows(rows: MessagesTimelineRow[], identity: string): MessagesT
     return nextState.result;
   }, [identity, rows]);
 }
-
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
 
 type WorkEntryIconName =
   | "bot"

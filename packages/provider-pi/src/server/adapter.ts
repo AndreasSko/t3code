@@ -1,27 +1,6 @@
 /**
- * PiAdapterV2 — orchestrator-v2 adapter for the Pi coding agent
- * (https://pi.dev), driving `pi --mode rpc` over stdio JSONL via `PiRpc.ts`.
- *
- * Design intent: honor the user's Pi customizations. The process is spawned
- * with no `--no-*` flags, so the user's extensions, skills, prompt templates,
- * AGENTS.md / SYSTEM.md context, settings.json, custom models, and auth all
- * load exactly as they do in the `pi` TUI. Sessions are stored by Pi itself
- * (default `~/.pi/agent/sessions/`), and the session file path is the durable
- * `nativeThreadRef`, so a thread started in T3 can be resumed from the TUI
- * and vice versa.
- *
- * Turn lifecycle: `agent_settled` is the only terminal signal. `agent_end`
- * merely closes one low-level run — compaction retries, auto-retries, and
- * queued continuations may still follow it, so the turn stays open until Pi
- * reports the session settled. An extension can start detached compaction as
- * that signal unwinds, so the adapter confirms Pi is idle before terminalizing.
- *
- * Extension UI: Pi extensions raise dialogs through `extension_ui_request`.
- * Dialog methods become v2 runtime requests (`confirm` → approval_request,
- * `select`/`input`/`editor` → user_input_request); answers travel back as
- * `extension_ui_response`. `notify` becomes a completed activity item.
- * Terminal-only decoration such as status, widget, title, and editor-text
- * updates has no matching T3 surface and is ignored.
+ * Native session files let Pi's TUI and T3 resume the same thread.
+ * agent_end is not terminal; confirm idle after agent_settled because detached compaction can start as it unwinds.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -237,7 +216,6 @@ export interface PiAdapterV2Options {
   };
 }
 
-/** Concatenate the `text` fields of a Pi content-block array. */
 function contentText(content: unknown): string {
   if (!Array.isArray(content)) {
     return typeof content === "string" ? content : "";
@@ -357,8 +335,6 @@ function providerRef(
 
 const PI_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
-// ── per-session state ─────────────────────────────────────────
-
 interface PiStreamItemState {
   readonly nativeItemId: string;
   readonly kind: "assistant_message" | "reasoning";
@@ -426,7 +402,6 @@ interface ActivePiTurn {
   readonly promptMayBeCommandOnly: boolean;
   /** Pi reports context as unknown immediately after compaction; keep its estimate for the meter. */
   latestCompactionAfterTokens: number | null;
-  /** Last streamed usage total already emitted on the running turn. */
   lastLiveUsedTokens: number | null;
   /** Invalidates idle snapshots when new work starts after a settle probe. */
   settleProbeGeneration: number;
@@ -486,8 +461,6 @@ interface PiWake {
   readonly state: PiThreadState;
   readonly events: Array<PiRpcRecord>;
 }
-
-// ── adapter ───────────────────────────────────────────────────
 
 export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
   options: PiAdapterV2Options,
@@ -645,7 +618,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       // explicitly.
       let baselineModel: { provider: string; modelId: string } | null = null;
       let baselineThinking: string | null = null;
-      /** Context window of the model Pi currently runs, from get_state and set_model. */
       let contextWindow: number | null = null;
       const modelContextWindows = new Map<string, number>();
       let modelsDiscovered = false;
@@ -770,11 +742,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       };
 
       /**
-       * Pi only reports context usage through `get_session_stats`, so the
-       * settled turn carries it on the base's per-turn `tokenUsage` (#8144).
-       * Usage is secondary telemetry: the request is bounded and a provider
-       * version without stats simply leaves the turn without a report, which
-       * keeps the meter on the last turn that had one.
+       * Settled context usage comes from get_session_stats (#8144).
+       * Bound this optional read; unsupported providers leave the last reported meter intact.
        */
       const readTokenUsage = (fallbackUsedTokens: number | null, updatedAt: DateTime.Utc) =>
         request({ type: "get_session_stats" }, 2_000).pipe(
@@ -944,8 +913,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         });
       });
 
-      // ── streaming text / reasoning ────────────────────────
-
       const emitStreamItem = (turn: ActivePiTurn, item: PiStreamItemState, streaming: boolean) =>
         Effect.gen(function* () {
           const emittedAt = yield* DateTime.now;
@@ -1067,8 +1034,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           (item) => completeStreamItem(turn, item),
           { discard: true },
         );
-
-      // ── tools ─────────────────────────────────────────────
 
       const emitToolItem = Effect.fnUntraced(function* (
         turn: ActivePiTurn,
@@ -1268,8 +1233,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           });
         }
       });
-
-      // ── extension UI prompts ──────────────────────────────
 
       const cancelPrompt = (pending: PendingPiPrompt, resolvedAt: DateTime.Utc) =>
         Effect.gen(function* () {
@@ -1526,8 +1489,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         });
       });
 
-      // ── turn lifecycle ────────────────────────────────────
-
       /** One `get_entries` listing, or null when the request failed or named no leaf. */
       const listSessionEntries = (since: string | null, timeoutMs: number) =>
         request({ type: "get_entries", ...(since === null ? {} : { since }) }, timeoutMs).pipe(
@@ -1715,8 +1676,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           });
         }
       });
-
-      // ── event pump ────────────────────────────────────────
 
       const scheduleSettleProbe = (
         turn: ActivePiTurn,
@@ -2289,8 +2248,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         Effect.forkIn(scope),
       );
 
-      // ── session runtime ───────────────────────────────────
-
       const registerThread = Effect.fnUntraced(function* (
         threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput,
         publish = true,
@@ -2563,7 +2520,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 }),
             ),
           ),
-        // The run executor routes a bare `/compact` here instead of startTurn.
         // Pi's start path already turns that text into the RPC compact call.
         compactThread: (turnInput) =>
           runtime.startTurn({
@@ -3034,7 +2990,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             // the earliest turn being discarded.
             const forkEntryId = piRollbackForkEntry(rollbackInput);
             if (forkEntryId === null) {
-              // Nothing after the target: the conversation is already there.
               return piThreadSnapshot(state.providerThread);
             }
             if (forkEntryId === undefined) {
@@ -3421,8 +3376,6 @@ function piUiResponse(
   if (typeof answer === "string") return { value: answer };
   return { cancelled: true };
 }
-
-// ── driver ────────────────────────────────────────────────────
 
 export type PiAdapterV2DriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner

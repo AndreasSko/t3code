@@ -1,11 +1,4 @@
-/**
- * A `SourceControlHost.SourceControlHost` for provider tests. Settings start from the defaults
- * or what the test supplies, and `TestSourceControlHostSettings` patches them mid-test the way a
- * client's settings write would. Process runs and git operations go to what the test supplies;
- * anything else dies, so an unexpected CLI or git call is visible.
- *
- * @module source-control-testing/TestSourceControlHost
- */
+/** Defaults/patchable settings with injected process/git operations; unexpected operations die. */
 import {
   DEFAULT_SERVER_SETTINGS,
   type ServerSettings,
@@ -25,7 +18,6 @@ export interface TestSourceControlHostOptions {
   readonly git?: Partial<SourceControlHost.SourceControlHost["Service"]["git"]>;
 }
 
-/** Lets a test change the settings its `layer` reports. */
 export class TestSourceControlHostSettings extends Context.Service<
   TestSourceControlHostSettings,
   { readonly update: (patch: ServerSettingsPatch) => Effect.Effect<void> }
@@ -74,7 +66,6 @@ export const layer = (
     }),
   );
 
-/** A successful run's output, for tests that script CLI responses. */
 export const processOutput = (
   stdout: string,
   options?: {

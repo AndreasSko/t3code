@@ -160,7 +160,6 @@ export function UsagePage() {
   const shownWindow = shown?.window ?? window;
   const shownHourly = shownWindow.resolution === "hour";
   const refreshingUsage = isRefreshing && !showingLimits;
-  // Usage kept from another window is all old, so every figure stays muted.
   const showingKept = shown !== null && shown.window !== window;
   const loading = useMemo(() => {
     if (showingKept) {
@@ -231,7 +230,6 @@ export function UsagePage() {
     [breakdown, merged.models, metric],
   );
   const providersWithData = useMemo(() => providersWithUsage(merged.providers), [merged.providers]);
-  // A provider still refreshing keeps its row and line before its usage lands.
   const activeProviders = useMemo(
     () =>
       PROVIDER_ORDER.filter(
@@ -376,7 +374,6 @@ export function UsagePage() {
     if (showingLimits && connectedLimitsEnvironments) autoRefreshLimits();
   }, [showingLimits, connectedLimitsEnvironments]);
 
-  // Names the period on screen, which is the previous one until the new one answers.
   const windowLabel =
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone)}`
@@ -1142,7 +1139,6 @@ function CursorEnableLimits({
   );
 }
 
-/** Brand mark for the harness a row belongs to. */
 function ProviderMark({
   provider,
   className,
@@ -1186,10 +1182,7 @@ function Metric({
   );
 }
 
-/**
- * Explains failed or incompatible environments and deduplicated transcripts.
- * Shown inside the environment filter so arriving results do not move the page.
- */
+/** Keep coverage notices in the environment filter so arriving results do not shift the page. */
 function UsageCoverageNotice({
   environments,
   duplicateSources,
@@ -1233,7 +1226,6 @@ function UsageCoverageNotice({
   );
 }
 
-/** Environment selection, with each environment's scan status in the menu. */
 function UsageEnvironmentFilter({
   environments,
   selectedEnvironments,
@@ -1370,7 +1362,6 @@ function UsageEnvironmentFilter({
   );
 }
 
-/** Provider visibility shared by every tab. Stored as the hidden set. */
 function UsageProviderFilter({
   hiddenProviders,
   onChange,
@@ -1430,11 +1421,6 @@ function UsageProviderFilter({
   );
 }
 
-/**
- * Stand-in with the loaded page's shape, using the shared `Skeleton` bars so it
- * breathes with the same `animate-skeleton` pulse as every other loading state.
- * Replaced by results as soon as the first environment answers.
- */
 function UsageSkeleton() {
   return (
     <>

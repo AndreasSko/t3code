@@ -75,8 +75,7 @@ const PROJECT_FAVICON_VERSION_PREFIX = "v";
 // Clients draw project icons from a 96px thumbnail at most.
 const PROJECT_FAVICON_ICNS_MIN_SIZE = 96;
 const INLINE_VIDEO_MIME_TYPE_PATTERN = /^video\/[\w!#$&^.+-]+$/i;
-// Extensions a document viewer or audio player may request inline. The extension comes from
-// the attachment id the server assigned, never from the client's mime type.
+// Inline types come from the server-assigned attachment id, never client MIME claims.
 const INLINE_PREVIEW_MIME_TYPES: Record<string, string> = {
   pdf: "application/pdf",
   html: "text/html",
@@ -123,8 +122,7 @@ const AssetClaimsSchema = Schema.Union([
     version: Schema.Literal(1),
     kind: Schema.Literal("attachment"),
     attachmentId: Schema.String,
-    /** Decided at mint time. Absent tokens (from before this field) serve
-        inline, which is only ever the image case. */
+    /** Fixed at mint time; an absent claim defaults to inline for image-only tokens. */
     download: Schema.optionalKey(Schema.Boolean),
     /** Display name and mime the caller supplied at mint time; drive the
         download filename and Content-Type. */
@@ -244,10 +242,7 @@ export const readMcpAppHtml = Effect.fn("AssetAccess.readMcpAppHtml")(function* 
   return bytes;
 });
 
-/**
- * Decodes one image a tool returned inline; null when the stored item has no
- * such image, or it is larger than a provider turn accepts.
- */
+/** Null when no inline tool image exists or it exceeds the provider turn limit. */
 const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {
   readonly threadId: ThreadId;
   readonly itemId: TurnItemId;
@@ -335,12 +330,7 @@ const resolveCanonicalWorkspaceFileForRequest = (input: {
     Effect.orElseSucceed(() => null),
   );
 
-/**
- * Reads pixel dimensions from an image's header so clients can reserve the
- * exact box before the bytes arrive. Best effort: an unreadable or unsupported
- * file just leaves the field out, and the client measures after decode. Only
- * formats the parser understands are opened; SVG and the rest are skipped.
- */
+// Read supported image headers so clients reserve space before the bytes arrive.
 const HEADER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 /** From the identity-checked, non-blocking handle the caller already holds. */
@@ -570,11 +560,8 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       break;
     }
     case "draft-workspace-file": {
-      // The draft names its workspace root in the resource itself; an explicit
-      // root only overrides it.
       const draftWorkspaceRoot = input.workspaceRoot ?? input.resource.cwd;
       if (path.isAbsolute(input.resource.path)) {
-        // An absolute draft path serves exactly like an absolute media path.
         const finalized = yield* finalizeAbsoluteMediaFileAsset({
           requestedPath: input.resource.path,
           resource: input.resource,
@@ -616,10 +603,8 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
           resource: input.resource,
         });
       }
-      // Generic files carry their extension inside the attachment id (that
-      // shape resolves the on-disk path); images do not. Videos and images
-      // render inline. Other generic files download unless a viewer requests
-      // a supported document or audio format inline.
+      // Generic attachment ids include the extension; image ids do not.
+      // Only supported document/audio types may override generic-file downloads.
       const extension = parseAttachmentFileExtension(input.resource.attachmentId);
       const isGenericFile = extension !== null;
       const videoMimeType = input.resource.mimeType?.split(";", 1)[0]?.trim() ?? "";

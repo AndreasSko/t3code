@@ -73,13 +73,8 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
     const nextAccount = isSignedIn && userId ? userId : null;
     observedAccountRef.current = nextAccount;
 
-    // Every sign-in or account switch that completes during this session (a
-    // cold start observes undefined → account and must not re-prompt) requests
-    // the T3 Connect onboarding sheet — account transitions clear the
-    // connected environments, so each new session starts with no devices to
-    // reach. The request itself is issued after the cleanup transition inside
-    // activateSession, so the sheet never lists the previous account's
-    // environments; sign-out drops any not-yet-presented request instead.
+    // Present onboarding after account cleanup so it never lists the previous account's environments.
+    // Cold-start activation does not re-prompt.
     const isAccountTransition =
       previousObservedAccount !== undefined && previousObservedAccount !== nextAccount;
     if (isAccountTransition && nextAccount === null) {
@@ -183,9 +178,7 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
   useEffect(
     () => () => {
       previousTokenProviderRef.current = null;
-      // Unmounting is not a sign-out: the user is usually still signed in, so
-      // detach the provider without ending lock-screen activities or wiping the
-      // persisted registration (a remount reuses both).
+      // A provider remount must preserve lock-screen activities and persisted registration.
       releaseAgentAwarenessRelayTokenProvider();
       setManagedRelaySession(appAtomRegistry, null);
     },

@@ -115,14 +115,7 @@ export interface ThreadMoveAvailability {
   readonly canMoveDown: boolean;
 }
 
-/**
- * Batch form of "call `createThreadMovePlanner` once per card": one pass over
- * the section answers up/down availability for every ordered row, so list
- * construction stays linear instead of one full planner probe (array copies,
- * hidden-key rescans) per row on the minute-tick rebuild path. The mirror of
- * the planner's plan rules lives in the body below; the reference-parity test
- * pins them row-by-row, including adversarial keys and hidden reservations.
- */
+/** Computes availability in one pass to avoid a full planner probe per row on list rebuilds. */
 export function computeThreadMoveAvailability(input: {
   readonly ordered: readonly OrderRow[];
   readonly allThreads?: readonly OrderRow[];
@@ -134,13 +127,11 @@ export function computeThreadMoveAvailability(input: {
   // A reorder in flight locks the whole list until its receipt lands.
   if (input.pendingOrder != null) return result;
   const rows = input.ordered;
-  // With no neighbor there is no up/down move, so skip the allThreads indexes.
   if (rows.length < 2) {
     for (const row of rows) result.set(rowId(row), { canMoveUp: false, canMoveDown: false });
     return result;
   }
-  // Plain loops: this runs per section on every Home rebuild over all shells,
-  // and the map/filter/spread chains it replaces dominated it with garbage.
+  // Plain loops avoid allocating intermediate arrays on every Home rebuild.
   const orderedIds: string[] = [];
   const indexById = new Map<string, number>();
   for (const row of rows) {
@@ -160,21 +151,7 @@ export function computeThreadMoveAvailability(input: {
   keysById.forEach((key, id) => {
     if (key != null && !indexById.has(id)) reservedKeys.add(key);
   });
-  // Mirror of `planPinnedReorder` for adjacent swaps, hoisted so every row is
-  // answered in O(1) amortized instead of one planner probe per row:
-  //
-  // Fast path (both neighbors keyed): the fresh key between the landing
-  // neighbors, walking forward while hidden reserved keys block it. The walk
-  // depends only on the neighbor key pair - each adjacency is probed by at
-  // most two rows (down of the left member, up of the right member) - so the
-  // memo keeps even a fully adversarial reserved-key layout linear per build.
-  //
-  // Rewrite path (keyless/unusable neighbor, or key space exhausted): fresh
-  // spread keys for every row; only positions whose current key differs get
-  // written. A swap permutes two rows without changing the multiset, so the
-  // assignment set differs from the unswapped baseline at at most those two
-  // positions, and mismatch/writability tallies computed once per section
-  // answer each row with a constant-size delta.
+  // Memoize neighbor-key searches and compare only swapped positions to keep availability checks linear.
   const midpoints = new Map<string, string | null>();
   const fastPathKey = (beforeKey: string | null, afterKey: string | null): string | null => {
     const memoKey = `${beforeKey ?? ""}\u0000${afterKey ?? ""}`;
@@ -208,7 +185,6 @@ export function computeThreadMoveAvailability(input: {
         writes -= 1;
         if (!writableRow[position]) unwritableWrites -= 1;
       }
-      // After the swap this position holds the row that was at `other`.
       if (currentKeys[other] !== spreadKeys[position]) {
         writes += 1;
         if (!writableRow[other]) unwritableWrites += 1;
@@ -243,10 +219,8 @@ export function computeThreadMoveAvailability(input: {
       const afterKey = afterId === null ? null : (keysById.get(afterId) ?? null);
       if ((beforeId === null || beforeKey != null) && (afterId === null || afterKey != null)) {
         const key = fastPathKey(beforeKey, afterKey);
-        // A fresh key is a single-write plan for the (writable) moved row.
         if (key !== null) return true;
       }
-      // Keyless neighbor or exhausted key space: the section rewrite runs.
       return rewriteViable(Math.min(index, shifted));
     };
     result.set(movedId, {
@@ -310,8 +284,7 @@ export function applyPendingThreadOrder<T extends OrderRow>(
   );
 }
 
-/** Match desktop re-entry: a pin wakes the thread on the server; Active clears
- * each underlying parked state before assigning its destination order key. */
+/** Pinning wakes the thread on the server; Active clears parked states before assigning its order key. */
 export function threadDropLifecycle(
   thread: EnvironmentThreadShell,
   section: "pinned" | "active",
@@ -328,7 +301,6 @@ export function threadDropLifecycle(
 
 export type ThreadDragSection = "pinned" | "active" | "snoozed" | "settled";
 
-/** The action shown during hover describes the lifecycle change made on drop. */
 export function threadDragAction(source: ThreadDragSection, destination: ThreadDragSection) {
   if (destination === "snoozed") return null;
   if (destination === "settled") return source === "settled" ? null : "Settle";

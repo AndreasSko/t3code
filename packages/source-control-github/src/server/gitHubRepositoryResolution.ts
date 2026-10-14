@@ -4,14 +4,12 @@ import {
   isSshRemoteUrl,
 } from "@t3tools/shared/sourceControl";
 
-/** A repository on a GitHub host: the API it is read through, and its owner and name. */
 export interface GitHubRepositoryLocator {
   readonly host: string;
   readonly owner: string;
   readonly name: string;
 }
 
-/** The fetch remotes in `git remote -v` output, by name. */
 export function parseFetchRemotes(
   remotes: string,
 ): ReadonlyArray<{ readonly name: string; readonly url: string }> {
@@ -22,16 +20,8 @@ export function parseFetchRemotes(
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
 
-/**
- * The repository `gh pr list` reads in a checkout, picked the way gh picks one without a
- * prompt: the remote `gh repo set-default` marked, else the first of upstream, github, origin
- * (in any case), else the only remote. `remotes` is `git remote -v` output and `resolved` is the output of
- * `git config --get-regexp '^remote\..*\.gh-resolved$'`.
- *
- * Null whenever gh might weigh the remotes differently: a remote on another host or under an
- * SSH alias, more than one mark, or several remotes with none of those names. Callers then
- * fall back to the provider's remote, then to the best-ranked remote on the host.
- */
+/** Prefer gh-resolved, then upstream/github/origin, then the sole remote.
+ * remotes is git remote -v output; resolved is remote.*.gh-resolved config. Null for ambiguous hosts/marks. */
 export function selectGitHubBaseRepository(input: {
   readonly remotes: string;
   readonly resolved: string;
@@ -68,11 +58,7 @@ export function selectGitHubBaseRepository(input: {
     : null;
 }
 
-/**
- * The repository `gh` would act on in a checkout, from its remotes: the remote `gh` would pick,
- * else the best-ranked remote on the host. `host` is the API host it settled on, which a caller
- * names when no repository was found there. GH_REPO is the caller's to check first.
- */
+/** Caller checks GH_REPO first. Resolve gh's chosen remote, then the best remote on its API host. */
 export function resolveGitHubRepository(input: {
   readonly remotes: string;
   readonly resolved: string;
@@ -162,18 +148,12 @@ export function parsePullRequestReference(
           number: Number(match[3]),
         };
       }
-    } catch {
-      // Not a URL after all; read it as a branch.
-    }
+    } catch {}
   }
   return { kind: "branch", headSelector: trimmed };
 }
 
-/**
- * The GitHub host a remote URL is served from, or null for a remote that is not GitHub. An SSH
- * alias (`git@github-work:owner/repo`) names no API host of its own; it is read through
- * `github.com`, which is what such an alias almost always stands for (issue #6198).
- */
+/** Dotless SSH aliases have no API host; github-named aliases use github.com (issue #6198). */
 export function gitHubApiHostForRemote(remoteUrl: string): string | null {
   const provider = detectSourceControlProviderFromRemoteUrl(remoteUrl);
   if (provider === null) return null;

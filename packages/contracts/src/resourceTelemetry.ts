@@ -279,7 +279,6 @@ export const DesktopHostTelemetryHello = Schema.Struct({
 });
 export type DesktopHostTelemetryHello = typeof DesktopHostTelemetryHello.Type;
 
-/** Terminal marker for a server-triggered desktop update run. */
 export const DesktopUpdateRemoteOutcome = Schema.Literals([
   "ready-to-install",
   "up-to-date",
@@ -288,10 +287,8 @@ export const DesktopUpdateRemoteOutcome = Schema.Literals([
 export type DesktopUpdateRemoteOutcome = typeof DesktopUpdateRemoteOutcome.Type;
 
 /**
- * Desktop main -> server: the desktop app's update state. Sent once when the
- * backend attaches and again on every state change, so the server always
- * knows whether the app on its machine can be updated and how a
- * server-triggered run is progressing.
+ * Desktop reports on backend attach and every update-state change so
+ * remote clients can track server-triggered runs.
  */
 export const DesktopUpdateStatusReport = Schema.Struct({
   version: Schema.Literal(1),
@@ -330,9 +327,8 @@ export type DesktopTelemetrySetHostPowerIntervals =
   typeof DesktopTelemetrySetHostPowerIntervals.Type;
 
 /**
- * Server -> desktop main: run the app's own update flow now (check ->
- * download -> quit-and-install) with no local confirmation. The remote click
- * on the machine that sent the RPC is the consent.
+ * The remote RPC is consent to check, download and quit-and-install
+ * through the desktop's update flow without another local confirmation.
  */
 export const DesktopTelemetryRequestDesktopUpdate = Schema.Struct({
   version: Schema.Literal(1),

@@ -16,11 +16,7 @@ export function isPasteAsTextShortcut(
   );
 }
 
-/**
- * Large clipboard text becomes a file so an agent can inspect it selectively.
- * The threshold is byte-based: character counts substantially understate the
- * context cost of some Unicode-heavy clipboard contents.
- */
+/** Fold large text into files by byte size; character counts understate Unicode context cost. */
 export function pastedTextDisposition(input: {
   readonly text: string;
   readonly canAttach: boolean;

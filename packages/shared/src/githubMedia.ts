@@ -1,14 +1,6 @@
 /**
- * Media a pull request body points at on GitHub's own hosts. In a private repository GitHub
- * answers an unauthenticated request for one with 404 — a screenshot dropped into a description
- * becomes `github.com/user-attachments/assets/<id>`, and a file committed alongside the code
- * becomes a `raw.githubusercontent.com` path — so the renderer, which carries no GitHub session,
- * draws a broken image where the reviewer expects the evidence. The server can fetch these with
- * the `gh` credential and hand the bytes back.
- *
- * Only hosts where a credential is what decides the answer belong here. `objects.githubusercontent.com`
- * and the `private-user-images` links GitHub's own HTML carries are already signed and load on their
- * own, and a token does nothing for them once that signature expires.
+ * Private GitHub media returns unauthenticated 404s; fetch with gh because the renderer has no session.
+ * Signed objects/private-user-images URLs load directly; credentials cannot rescue expired signatures.
  */
 
 const RAW_HOST = "raw.githubusercontent.com";
@@ -25,10 +17,7 @@ function canonicalUrl(host: string, url: URL): string {
   return `https://${host}${url.pathname}${url.search}`;
 }
 
-/**
- * The URL to fetch with a GitHub credential for `source`, or null when the source is not
- * GitHub-hosted media — those keep loading directly, exactly as they do today.
- */
+/** Returns the credentialed GitHub fetch URL, or null for media that should load directly. */
 export function githubMediaFetchUrl(source: string): string | null {
   let url: URL;
   try {

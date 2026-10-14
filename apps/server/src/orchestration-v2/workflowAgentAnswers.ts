@@ -1,15 +1,6 @@
-// Path joining only; the filesystem access lives in readContainedWorkflowFile.
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * Reads what a workflow member actually answered.
- *
- * A member agent never becomes a provider task and emits nothing on the event
- * stream, so the transcript the harness writes is the only full record of its
- * turn — the progress snapshot carries a capped excerpt. The path is derived
- * here from the run's transcript directory and the member's provider id rather
- * than accepted from the caller, and the read itself is contained by
- * readContainedWorkflowFile.
- */
+// Workflow members emit no task events; harness JSONL is their only full answer record.
+// Derive member transcript paths from run handles and contain the filesystem read.
 import * as NodePath from "node:path";
 
 import { OrchestrationWorkflowFileError } from "@t3tools/contracts";
@@ -24,13 +15,8 @@ const TRANSCRIPT_BYTE_CAP = 512 * 1024;
 const AGENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
- * Collects the assistant text of each turn in the harness's JSONL.
- *
- * Two shapes have to be handled: `attachment` lines and `isMeta` user lines are
- * harness bookkeeping (hook output, skill listings, injected context) and are
- * never conversation, and one assistant API message is split across several
- * lines sharing a `message.id`, so those are joined into a single turn rather
- * than read as separate ones.
+ * Ignore harness bookkeeping in attachment/isMeta lines; it is not conversation.
+ * Join assistant API fragments sharing a message.id into a single turn.
  */
 export function parseWorkflowAgentAnswers(contents: string): ReadonlyArray<string> {
   const turns: string[] = [];

@@ -15,11 +15,7 @@ interface Props {
   move?: { readonly label: string; readonly onMove: () => void };
 }
 
-/**
- * A server tab's address was a file its browser cannot show (a PDF), so the
- * browser downloaded it. Offers the address in the user's own browser, or the
- * file the server already saved.
- */
+/** Server browsers download unsupported PDFs; offer the original URL or saved file. */
 export function PreviewFileNotShown({
   url,
   fileName,
@@ -59,7 +55,6 @@ export function PreviewFileNotShown({
   );
 }
 
-/** Theme-aware tailwind port of Chromium's "This site can't be reached" page. */
 export function PreviewUnreachable({ url, code, description, onReload, move }: Props) {
   const [showDetails, setShowDetails] = useState(false);
   const host = safeHost(url) ?? url;

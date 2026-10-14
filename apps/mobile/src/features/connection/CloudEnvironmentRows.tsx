@@ -34,23 +34,10 @@ interface CloudEnvironmentRowsProps {
   readonly onRemoveEnvironment: (environmentId: EnvironmentId) => void;
   readonly showcaseAvailableEnvironments?: ReadonlyArray<RelayEnvironmentView>;
   readonly showcaseSignedIn?: boolean;
-  /**
-   * Hide the "T3 Connect" section title when the host provides its own header.
-   */
   readonly showHeader?: boolean;
 }
 
-/**
- * "T3 Connect" section: every environment published to the signed-in account,
- * with connect switches, availability status, and loading/error
- * states. Shared between the Settings environments screen and the T3 Connect
- * onboarding sheet.
- *
- * Already-connected relay environments render even without cloud config or a
- * signed-in account — they are registered on this device and must stay
- * reachable and removable. Only discovery (the available list, refresh, and
- * its errors) requires a signed-in session.
- */
+/** Saved environments must stay reachable and removable without cloud config or sign-in. */
 export function CloudEnvironmentRows(props: CloudEnvironmentRowsProps) {
   // Showcase captures run without a Clerk publishable key, so `ClerkProvider`
   // is never mounted and any `useAuth` call throws — the fixture states whether
@@ -191,11 +178,7 @@ function CloudEnvironmentRowsContent(
   );
 }
 
-/**
- * A saved T3 Connect environment. The switch turns it on or off; off keeps the
- * registration and cache but drops the connection and hides its errors.
- * Long-press removes it from this device.
- */
+/** Disabling preserves registration and cache; removing forgets this device's connection. */
 function ConnectedCloudEnvironmentRow(props: {
   readonly environment: ConnectedEnvironmentSummary;
   /** Discovery's view of the server, for the glyph before the first connection. */

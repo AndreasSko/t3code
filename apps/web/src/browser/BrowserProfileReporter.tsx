@@ -13,12 +13,8 @@ const selectProfiles = (settings: { readonly browserProfiles: ReadonlyArray<Brow
 const selectDefaultProfileId = (settings: { readonly browserDefaultProfileId: string }) =>
   settings.browserDefaultProfileId;
 
-/**
- * Tells each environment that hosts browser tabs which profiles this client
- * has, so agents can open tabs under them. Profiles live in client settings;
- * the server keeps only the latest report in memory. A reconnect brings a new
- * server config, which sends the report again.
- */
+/** Profiles live in client settings; each environment keeps only an in-memory report,
+ * which must be resent after reconnecting. */
 export function BrowserProfileReporter() {
   const hydrated = useClientSettingsHydrated();
   const profiles = useClientSettings(selectProfiles);

@@ -12,9 +12,8 @@ import * as ThreadUndo from "../hooks/threadUndo";
 import { releaseDraftAttachments } from "./attachmentUploadQueue";
 
 /**
- * Discards a draft's unsent content behind the sidebar undo notice. A new-thread
- * draft (DraftId) loses its whole session; a thread draft only loses its
- * composer content. Uploads are released once the undo window closes.
+ * Release uploads after the undo window; DraftId discards the session, while real threads lose only unsent
+ * content.
  */
 export function discardComposerDraft(target: ComposerThreadTarget): void {
   const store = useComposerDraftStore.getState();

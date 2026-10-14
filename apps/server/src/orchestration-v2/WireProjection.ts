@@ -101,8 +101,7 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
     }
     case "command_execution": {
       const { output, ...projected } = item;
-      // Clients used this preview to recognize provider-reported failures. Keep
-      // the outcome without retaining or serializing the output that proved it.
+      // Preserve failure detection without retaining or serializing the full output.
       const failed =
         item.outputIndicatesFailure === true ||
         (item.exitCode !== undefined && item.exitCode !== 0) ||
@@ -167,11 +166,8 @@ function boundDynamicValue(value: unknown): unknown {
     : truncateDetail(json, MAX_ON_DEMAND_BYTES);
 }
 
-/**
- * A tool output for a detail read, without image bytes. When the rest is too
- * large to send whole, its truncated text still comes with the image markers,
- * in order, so clients can load each image by index.
- */
+// Preserve image marker order when truncating tool text so clients can
+// still fetch each image by index.
 function boundToolOutput(output: unknown): unknown {
   const omitted = omitToolOutputImageData(output);
   const bounded = boundDynamicValue(omitted);
@@ -185,11 +181,7 @@ function boundToolOutput(output: unknown): unknown {
       ];
 }
 
-/**
- * Projects one item for an on-demand detail read: keeps the input and output
- * the timeline withholds, bounded so a huge result cannot stall the socket.
- * Image bytes are left out; clients load them as `tool-output-image` assets.
- */
+/** Bound expanded tool input/output so large results cannot stall the socket; fetch image bytes separately. */
 export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "command_execution":

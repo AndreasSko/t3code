@@ -321,7 +321,6 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
   return { track, reapOrphans };
 });
 
-/** Tracks servers under `stateDir`, the server's own state directory. */
 export const layer = (input: { readonly stateDir: string }) =>
   Layer.effect(
     OpenCodeServerLedger,

@@ -10,9 +10,7 @@ import {
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { useThemeEditorStore } from "./themeEditorStore";
 
-// The host mounts above the router on every page, but the editor body only
-// renders once a session opens; lazy-loading it keeps the editor UI out of
-// the startup chunk.
+// Lazy-load the editor body to keep it out of every page's startup chunk.
 const ThemeEditorPanel = lazy(() =>
   import("./ThemeEditorPanel").then((module) => ({ default: module.ThemeEditorPanel })),
 );
@@ -25,11 +23,7 @@ function useThemeDefinition(id: string | null | undefined) {
   );
 }
 
-/**
- * Renders the theme editor above the router. The editor paints its draft on
- * the live app, so it has to outlive the settings route: the point is to walk
- * through threads, panels, and pages while the colors are being tuned.
- */
+/** Mount above the router so live-theme editing survives navigation across app surfaces. */
 export function ThemeEditorHost() {
   const session = useThemeEditorStore((store) => store.session);
   const closeThemeEditor = useThemeEditorStore((store) => store.closeThemeEditor);
@@ -38,16 +32,12 @@ export function ThemeEditorHost() {
   const editingTheme = useThemeDefinition(session?.editingThemeId);
   const seedTheme = useThemeDefinition(session?.seedThemeId);
 
-  // The panel reports which path it actually took: a theme removed while its
-  // editor is open resolves to null there, so the save becomes a create even
-  // though the session still names it.
+  // A theme removed mid-edit becomes a create; use the panel's actual save path.
   const handleSaved = useCallback(
     (
       savedTheme: ThemeDefinition,
       { created, mergedAppearance }: { created: boolean; mergedAppearance?: ThemeAppearance },
     ) => {
-      // A merge completed an existing theme's light/dark pair; activating the
-      // whole theme shows the new palette right away.
       if (mergedAppearance) {
         if (!setTheme(savedTheme.id)) {
           toastManager.add(
@@ -69,9 +59,7 @@ export function ThemeEditorHost() {
         return true;
       }
       if (!created) {
-        // The edited theme may be showing through the base preference or either
-        // half of the mix; the preference itself is untouched (a setTheme here
-        // would clear the mix), the palette just needs re-applying.
+        // Reapply active palettes without setTheme, which would clear the light/dark mix.
         const wasActive =
           getThemeDefinition(theme)?.id === savedTheme.id ||
           themeHalves?.light === savedTheme.id ||

@@ -3,14 +3,8 @@ import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils";
 
 /**
- * Truncates in the middle, the way Finder does, for strings that carry meaning at both ends:
- * branch names, paths, worktree names, shas. A tail-cut `fix/cache-main-20260918-180825` loses
- * the date that tells two branches apart; a path loses its file name.
- *
- * CSS has no middle ellipsis, so the string is split into a head that truncates and a tail
- * that does not. No measuring and no observers, so it costs the same as `truncate` in a long
- * list and works inside `content-visibility` skipping. Both halves are real text: selection
- * and copy give the whole string, and a screen reader reads it through.
+ * CSS has no middle ellipsis; split head and tail without measuring so long virtualized lists stay cheap.
+ * Both halves remain real text for selection, copying, and screen readers.
  */
 export function MiddleTruncate({
   value,
@@ -56,9 +50,8 @@ const DEFAULT_TAIL = 10;
 const MAX_SEGMENT_TAIL = 16;
 
 /**
- * Where to cut. A path keeps its last segment when that is short enough to be the useful
- * part; anything else keeps a fixed count. Nothing is split when the tail would be most of
- * the string, since then the head could never show enough to be worth an ellipsis.
+ * Keep a short last path segment, otherwise a fixed tail; skip splitting when too little head would remain
+ * before the ellipsis.
  */
 export function splitForMiddleTruncate(
   value: string,

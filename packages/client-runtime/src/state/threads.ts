@@ -150,11 +150,8 @@ function matchesThreadSnapshot(
   );
 }
 
-// A retained "live" state stays live: the cursor resume that follows only
-// replays what the thread missed, and on servers that send the completion
-// marker the first replayed event moves the status to "synchronizing" on its
-// own. Downgrading here would flash a sync label on every return to a
-// recently viewed thread.
+// Retained live states resume missing events without flashing sync on return;
+// replayed events establish synchronization progress when needed.
 function cachedThreadState(value: EnvironmentThreadState): EnvironmentThreadState {
   return {
     ...value,
@@ -367,9 +364,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     },
   ) {
     const waiting = yield* Ref.get(awaitingCompletion);
-    // Atomic with concurrent history meta updates: never get-then-set the whole
-    // state when only the projection changes. Bounded installs pass history so
-    // projection + cursor persist together in one enqueue.
+    // Update projection and history atomically so concurrent cursor changes cannot be clobbered.
     const next = yield* SubscriptionRef.updateAndGet(state, (previous) => {
       const history =
         options?.history !== undefined
@@ -390,9 +385,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         history,
       };
     });
-    // Active projections can update many times per second and retain large tool
-    // payloads. Persist once the run settles so cache encoding stays off the
-    // streaming path. Progressive meta rides along when the window is incomplete.
+    // Persist after settlement so large tool payload encoding stays off the streaming path.
     if (shouldPersistThread(thread, next.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
       yield* Queue.offer(
@@ -470,9 +463,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (fresh.length === 0) return;
 
     const waiting = yield* Ref.get(awaitingCompletion);
-    // Apply against the latest projection/history in one update so a concurrent
-    // loadEarlier merge (or history-meta patch) cannot be clobbered by a stale
-    // get-then-set rebuild.
+    // Apply against current projection/history atomically to preserve concurrent load-earlier merges.
     type EventApplyResult =
       | { readonly _tag: "noop" }
       | { readonly _tag: "delete" }
@@ -499,9 +490,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         return [{ _tag: "delete" }, current];
       }
 
-      // Incomplete progressive windows only (hasMore or open cursor). Do not
-      // use expanded: it remains true after the last page as a cache marker.
-      // Full/web and fully-loaded timelines keep default append-on-miss.
+      // expanded remains true after paging ends; only an incomplete window changes append-on-miss behavior.
       const partial =
         current.history.hasMoreHistory || current.history.historyCursor !== null
           ? {
@@ -510,9 +499,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             }
           : undefined;
       const next = applyOrchestrationV2ProjectionEvent(current.data.value, item.event, partial);
-      // True no-op when the reducer deliberately returns the current projection
-      // reference (e.g. dropped old partial-timeline turn-item). Do not clear
-      // stream error/status or enqueue persistence.
+      // Reducer identity no-ops must not clear stream errors/status or enqueue persistence.
       if (next === null || next === current.data.value) {
         return [{ _tag: "noop" }, current];
       }
@@ -777,9 +764,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       service.changes.pipe(Stream.filter(ConnectionWakeups.shouldResubscribeAfterWakeup)),
   });
 
-  // Only the first subscription after a warm live resume keeps the retained
-  // status. A replacement session or foreground resubscribe on the same scope
-  // may have missed events, so those show sync progress until confirmed.
+  // Only the first warm resume retains live status; later resubscriptions show sync until confirmed.
   const resumingLive = yield* Ref.make(initialState.status === "live");
   const markSynchronizing = Effect.gen(function* () {
     if (yield* Ref.get(resumingLive)) return;
@@ -798,9 +783,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ORCHESTRATION_V2_WS_METHODS.subscribeThread,
       Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* (session) {
         let current = yield* SubscriptionRef.get(state);
-        // A prior definitive miss (or delete event) already cleared this thread.
-        // Park the subscription attempt without opening the socket so we do not
-        // retry forever against a known-missing id.
+        // Park known-deleted threads without socket attempts so they do not retry forever.
         if (current.status === "deleted") {
           return yield* Effect.never;
         }
@@ -835,9 +818,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               if (canLoadHistory && httpResult.history !== undefined) {
                 yield* Ref.set(acceptsBoundedSocketSnapshots, true);
               }
-              // Atomic projection + progressive meta so a settled bounded window
-              // never persists as a complete full-timeline cache entry. Socket
-              // snapshots still go through applyItem (resetHistory).
+              // Install projection and progressive metadata atomically so bounded windows cannot cache as full histories.
               yield* applyLock.withPermits(1)(
                 Effect.gen(function* () {
                   yield* SubscriptionRef.set(lastSequence, httpResult.snapshot.snapshotSequence);
@@ -866,7 +847,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               return yield* Effect.never;
             }
             case "unavailable": {
-              // Transient HTTP failure: fall through to the socket path.
               break;
             }
           }

@@ -64,9 +64,8 @@ type AppUpdateYmlConfig = typeof AppUpdateYmlConfig.Type;
 
 const UpdateInfo = Schema.Struct({
   version: Schema.String,
-  // Left unvalidated on purpose: a malformed release-notes payload must never
-  // fail the decode and block the update state transition. The shape is
-  // validated defensively in normalizeDesktopUpdateReleaseNotes.
+  // Malformed release notes must not block update state transitions; validate
+  // their shape later in normalizeDesktopUpdateReleaseNotes.
   releaseNotes: Schema.optional(Schema.Unknown),
 });
 
@@ -176,7 +175,6 @@ export class DesktopUpdates extends Context.Service<
     readonly isActionActive: Effect.Effect<boolean>;
     /** True only while an install owns the updater action reservation. */
     readonly isInstallActive: Effect.Effect<boolean>;
-    /** Current state plus a stream of every later state change. */
     readonly subscribe: Effect.Effect<
       {
         readonly latest: DesktopUpdateState;
@@ -587,9 +585,8 @@ export const make = Effect.gen(function* () {
     );
   }).pipe(Effect.withSpan("desktop.updates.downloadAvailableUpdate"));
 
-  // Tells the primary backend that the coming stop is an update restart, so it
-  // keeps its managed tunnel for the backend the updated app starts. Best
-  // effort: without the marker the backend only re-provisions its tunnel.
+  // Mark update shutdown so the next backend can keep its managed tunnel;
+  // without the marker it safely re-provisions.
   const updateRestartMarkerDir = environment.path.join(environment.baseDir, "runtime");
   const updateRestartMarkerPath = environment.path.join(
     updateRestartMarkerDir,

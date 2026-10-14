@@ -1,14 +1,5 @@
-/**
- * A device host is a machine with simulators or emulators on it. The service
- * layer only ever talks to this interface, so a future SSH or cloud host slots
- * in beside `LocalDeviceHost` without touching discovery, the proxy, or the
- * MCP tools.
- *
- * Every ready host presents a loopback origin where expo-device-hub answers.
- * Hosts add an agent-device daemon endpoint only after agent access is granted.
- * For the local host both run on this machine; a remote host would forward
- * them here.
- */
+// Ready hosts expose forwarded loopback hub origins; agent endpoints appear
+// only after agent access is granted. The service uses host-independent transport.
 import type {
   DeviceHostId,
   DeviceHostSummary,
@@ -87,11 +78,6 @@ export interface AgentDeviceEndpoint {
 export interface DeviceHostReady {
   readonly nodePath: string;
   readonly hub: DeviceHubEndpoint;
-  /**
-   * Runs a host command (`xcrun`, `adb`, or a helper bundled with the hub)
-   * where the devices live. On the local host this is a plain spawn; a
-   * remote host would run it over its transport.
-   */
   readonly run: (
     command: string,
     args: ReadonlyArray<string>,
@@ -117,10 +103,7 @@ export class DeviceHost extends Context.Service<
     readonly platformAvailability: (
       platform: DevicePlatform,
     ) => Effect.Effect<DevicePlatformAvailability>;
-    /**
-     * Installs tools on first use and starts the helper processes. Idempotent:
-     * concurrent callers share one start, and a ready host returns immediately.
-     */
+    /** Concurrent callers share one lazy install/start; ready hosts return immediately. */
     readonly ensureReady: (
       onPhase: (phase: "installing" | "starting", detail?: string) => Effect.Effect<void>,
     ) => Effect.Effect<DeviceHostReady, DeviceHostError | NodeRuntimeUnavailableError>;

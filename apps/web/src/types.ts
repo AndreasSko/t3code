@@ -63,10 +63,7 @@ export type ChatAttachment = ChatImageAttachment | ChatFileAttachment | ChatUnkn
 // The union has an open member (`type: string`), so a literal comparison does
 // not narrow. Use these guards wherever type-specific fields are read.
 export function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {
-  // Messages sent before pictures were typed by content carry `file`; they are still
-  // pictures, and reading them as such is what lets them render instead of listing. Only
-  // `file` is reclassified: an attachment type this client does not know yet is not a
-  // picture by default, whatever its name says.
+  // Reclassify legacy image files only; unknown attachment types must remain inert.
   if (attachment.type === "image") return true;
   return attachment.type === "file" && imageMimeType(attachment) !== null;
 }

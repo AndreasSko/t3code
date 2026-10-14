@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-/** Minute-quantized UI clock ("YYYY-MM-DDTHH:MM"). One module-level timer
-    feeds every consumer through useSyncExternalStore. */
+/** One shared timer supplies minute-quantized YYYY-MM-DDTHH:MM snapshots to every consumer. */
 
 function currentMinute(): string {
   return new Date().toISOString().slice(0, 16);
@@ -21,8 +20,7 @@ function tick(): void {
 }
 
 function startTimer(): void {
-  // Align to the next UTC minute boundary, then tick every 60s. Ticks re-read
-  // the clock, so a throttled or late timer self-corrects when it fires.
+  // Reread the clock at each UTC minute boundary so throttled or delayed timers self-correct.
   timerIsInterval = false;
   timerId = window.setTimeout(
     () => {
@@ -50,11 +48,8 @@ function subscribe(listener: () => void): () => void {
 }
 
 function getSnapshot(): string {
-  // With no timer running (no subscribers yet — e.g. the first render after
-  // a full unmount), the stored minute may be stale; re-read it so a fresh
-  // mount renders the current minute instead of waiting for the first tick.
-  // While the timer runs the cached value is returned untouched, as
-  // useSyncExternalStore requires between change notifications.
+  // Without a timer the cached minute may be stale; reread on mount. With a timer, keep snapshots stable
+  // between notifications as useSyncExternalStore requires.
   if (timerId === null) {
     nowMinute = currentMinute();
   }

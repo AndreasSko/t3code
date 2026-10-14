@@ -1,7 +1,4 @@
-/**
- * V2 drivers fold live account usage events directly into their managed
- * snapshots. Retained as an empty layer for the shared server composition.
- */
+/** The shared server composition expects this layer; provider drivers own snapshot updates. */
 import * as Layer from "effect/Layer";
 
 export const layer = Layer.empty;

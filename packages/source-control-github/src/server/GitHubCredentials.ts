@@ -35,7 +35,6 @@ export interface GitHubCredential {
   readonly fingerprint: string;
 }
 
-/** Nothing in the environment, and no `gh` on PATH to ask. */
 export class GitHubCliMissingError extends Schema.TaggedError<GitHubCliMissingError>()(
   "GitHubCliMissingError",
   { host: Schema.String },
@@ -45,7 +44,6 @@ export class GitHubCliMissingError extends Schema.TaggedError<GitHubCliMissingEr
   }
 }
 
-/** `gh` is installed but holds no login for the host, or not the account chosen in Settings. */
 export class GitHubNotSignedInError extends Schema.TaggedError<GitHubNotSignedInError>()(
   "GitHubNotSignedInError",
   { host: Schema.String, account: Schema.optional(Schema.String) },
@@ -57,7 +55,6 @@ export class GitHubNotSignedInError extends Schema.TaggedError<GitHubNotSignedIn
   }
 }
 
-/** The user turned the host off in Settings. */
 export class GitHubHostDisabledError extends Schema.TaggedError<GitHubHostDisabledError>()(
   "GitHubHostDisabledError",
   { host: Schema.String },
@@ -67,7 +64,6 @@ export class GitHubHostDisabledError extends Schema.TaggedError<GitHubHostDisabl
   }
 }
 
-/** `gh auth token` timed out or failed for a reason other than having no login. */
 export class GitHubCliFailedError extends Schema.TaggedError<GitHubCliFailedError>()(
   "GitHubCliFailedError",
   { host: Schema.String, cause: Schema.Defect() },
@@ -77,17 +73,13 @@ export class GitHubCliFailedError extends Schema.TaggedError<GitHubCliFailedErro
   }
 }
 
-/** There is no token for the host. */
 export type GitHubCredentialUnavailableError =
   | GitHubCliMissingError
   | GitHubNotSignedInError
   | GitHubHostDisabledError
   | GitHubCliFailedError;
 
-/**
- * Where GitHub tokens come from. Callers ask per host and never see how the token was found,
- * so another source (an in-app OAuth login) slots in here without touching any of them.
- */
+/** Host-scoped token source; callers remain independent of credential storage. */
 export class GitHubCredentials extends Context.Service<
   GitHubCredentials,
   {
@@ -108,11 +100,8 @@ function isGitHubDotCom(host: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com");
 }
 
-/**
- * The environment token for a host, in gh's precedence order. gh hands `GH_ENTERPRISE_TOKEN` to
- * any non-github.com host; here it only goes to the host `GH_HOST` names, because a remote URL
- * picks the host and a hostile one must not receive an enterprise token.
- */
+/** Scope enterprise environment tokens to GH_HOST, since an untrusted remote chooses the host.
+ * Other token precedence follows gh. */
 export function environmentToken(
   host: string,
   env: Readonly<Record<string, string | undefined>>,
@@ -246,8 +235,7 @@ export const make = Effect.gen(function* () {
       if (choice?.enabled === false) {
         return yield* new GitHubHostDisabledError({ host });
       }
-      // A token saved in Settings is the most deliberate choice, so it comes before the
-      // environment and gh. It is read from the secret store each time, so it needs no cache.
+      // Saved tokens win over environment/gh and are read fresh from the secret store.
       const saved = yield* savedToken(host);
       if (saved !== null) {
         return {

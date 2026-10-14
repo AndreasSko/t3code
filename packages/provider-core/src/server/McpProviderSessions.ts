@@ -1,9 +1,6 @@
 /**
- * The T3 MCP credential each thread's provider session should expose to its
- * agent. The session manager writes it before a session starts; adapters read
- * it when they build provider launch options.
- *
- * @module provider-core/server/McpProviderSessions
+ * Session managers publish thread MCP credentials before startup;
+ * adapters read them while constructing launch options.
  */
 import type { ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";

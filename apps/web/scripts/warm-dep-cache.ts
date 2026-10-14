@@ -1,13 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - setup-script bootstrap, runs before any Effect runtime exists.
-/**
- * Pre-warms Vite's dependency-optimizer cache (`node_modules/.vite/deps`) so
- * the first `vp run dev` in a fresh worktree doesn't stall the initial page
- * load on a full optimize pass. Run by the t3.json worktree setup script;
- * safe to re-run — a valid cache makes this a fast no-op.
- *
- * The cache cannot be shared between worktrees: Vite's config hash includes
- * the absolute project root, so each worktree must warm its own.
- */
+/** Vite hashes the absolute root, so each worktree needs its own dependency cache to avoid a slow first load. */
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 

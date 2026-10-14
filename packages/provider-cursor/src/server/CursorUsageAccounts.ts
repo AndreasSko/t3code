@@ -1,14 +1,6 @@
 /**
- * CursorUsageAccounts - Cursor's account usage as a usage source, answered
- * from a cache.
- *
- * Cursor's account API is slow, so a read answers from the cached account
- * history and marks itself `refreshing` while a background refresh runs;
- * `awaitRefresh` waits for that refresh instead. The caches persist in the
- * server's state directory, so a restart only refetches the newest edge. See
- * `accountCache`.
- *
- * @module provider-cursor/server/CursorUsageAccounts
+ * Cursor's slow account API is cached on disk; reads return stale data while refreshing.
+ * awaitRefresh waits for fresh data, and persisted history limits restarts to the newest edge.
  */
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -49,7 +41,6 @@ const decodeCacheFile = Schema.decodeUnknownEffect(
 export class CursorUsageAccounts extends Context.Service<
   CursorUsageAccounts,
   {
-    /** This environment's Cursor account usage source, if it has one to report. */
     readonly scan: (input: {
       /** From the same settings snapshot as the rest of the usage read. */
       readonly keychainUsageEnabled: boolean;
@@ -71,13 +62,11 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
 
   const cachePath = path.join(host.paths.stateDir, CURSOR_ACCOUNT_CACHE_FILE_NAME);
-  /** Account caches by credential source. */
   const caches = new Map<string, CursorAccountCache>();
   let cacheDirty = false;
   /**
-   * The last failed refresh per credential source, standing for a TTL so a
-   * client refetching a broken login does not refetch Cursor each time. A
-   * `null` error means there is no login: no source to report.
+   * Cache failures for a TTL so broken logins do not trigger repeated API calls.
+   * A null error means there is no login and no source to report.
    */
   const failures = new Map<string, { readonly atMs: number; readonly error: string | null }>();
   /** The refresh in flight per credential source, which every read joins. */
@@ -127,7 +116,6 @@ const make = Effect.gen(function* () {
   // A write still running at shutdown finishes first, so the next start keeps it.
   yield* Effect.addFinalizer(() => awaitPersisted);
 
-  /** Fetches what one account cache is missing, then persists it if anything changed. */
   const refreshAccount = Effect.fn("CursorUsageAccounts.refreshAccount")(function* (
     credential: CursorCredentialSource,
     credentialKey: string,
@@ -179,7 +167,6 @@ const make = Effect.gen(function* () {
     yield* schedulePersist;
   });
 
-  /** Joins the refresh in flight, or starts one. */
   const startRefresh = (
     credential: CursorCredentialSource,
     credentialKey: string,
@@ -214,11 +201,7 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  /**
-   * The account source. A cache inside its TTL, or a refresh that failed
-   * inside it, answers directly. Otherwise a refresh starts: `awaitRefresh`
-   * waits for it, and anything else answers from the cache marked `refreshing`.
-   */
+  /** Reuse successes and failures within their TTL; awaitRefresh waits for a needed refresh. */
   const accountSource = Effect.fn("CursorUsageAccounts.accountSource")(function* (
     credential: CursorCredentialSource,
     authPath: string,

@@ -46,18 +46,9 @@ function quotaFromHeaders(
   return { resource, limit, remaining, resetAtMs: reset * 1_000 };
 }
 
-/**
- * Keeps the last tenth of each GitHub quota for interactive requests. A background sweep that
- * would dip below it is refused until the quota resets, so a user's next click still has budget.
- *
- * The balance is GitHub's own count from the latest answer's headers, so it already includes
- * what anything else spent with the same token, such as an agent's `gh` commands. Requests in
- * flight together all see that one balance; the reserve absorbs what they spend before their
- * answers land. Nothing is debited locally, because a 304 or a request that never reached GitHub
- * spends nothing, and a local count would drift below GitHub's for the rest of the window.
- *
- * Interactive requests may spend the reserve, but not a quota GitHub already reported empty.
- */
+/** Reserve the last tenth for interactive requests, which still cannot spend a reported empty quota.
+ * Trust GitHub's latest balance; local debits drift on free 304s and requests that never reached it.
+ * Concurrent requests share that balance; the reserve absorbs their in-flight spend. */
 export class GitHubQuota extends Context.Service<
   GitHubQuota,
   {
@@ -101,10 +92,7 @@ const make = Effect.gen(function* () {
       const key = keyOf(host, quota.resource, yield* SourceControlRateLimit.CredentialScope);
       yield* Ref.update(snapshots, (current) => {
         const previous = current.get(key);
-        // The latest answer wins. GitHub serves requests from several regions, so a later answer
-        // can report more left in the same window, and keeping the lower one would hold
-        // background work at the reserve until the reset. An answer from an older window says
-        // nothing of this one.
+        // Latest answers can report a higher balance across regions; ignore only older reset windows.
         if (previous !== undefined && quota.resetAtMs < previous.resetAtMs) return current;
         const next = new Map(current);
         next.set(key, {

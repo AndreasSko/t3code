@@ -127,7 +127,6 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     const htmlRender = readHtmlRenderReference(data.htmlRender);
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
     const mcpApp = readMcpAppReference(data[MCP_APP_OUTPUT_KEY]);
-    // Kept under its stored key, so the compact wire output reads back the same way.
     if (mcpApp !== undefined) output[MCP_APP_OUTPUT_KEY] = mcpApp;
     const nestedThreadId = Predicate.isObject(data.thread)
       ? boundedId(data.thread.threadId)
@@ -182,7 +181,6 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
   return Object.keys(output).length === 0 ? undefined : output;
 }
 
-/** The page a completed `html_render` tool call published, if this item is one. */
 export function htmlRenderFromToolItem(item: {
   readonly toolName: string | null | undefined;
   readonly output?: unknown;
@@ -192,13 +190,8 @@ export function htmlRenderFromToolItem(item: {
   return output?.isError ? undefined : output?.htmlRender;
 }
 
-/**
- * The MCP App a completed tool call carries, if any. The adapter that captured
- * it put the reference in the output, beside the tool's own result. A tool's
- * result can imitate that shape, so the reference only counts when it names
- * the very server and tool the item records: a server can then only ever
- * point at an app of its own.
- */
+/** Accept an app reference only when it names this item's server and tool,
+ * so a tool result cannot point at another server's app. */
 export function mcpAppFromToolItem(item: {
   readonly toolName: string | null | undefined;
   readonly output?: unknown;
@@ -227,12 +220,7 @@ export interface ToolOutputImage {
   readonly data?: string;
 }
 
-/**
- * Reads one image block in the MCP `{ data, mimeType }` shape or the Anthropic
- * `{ source: { type: "base64", media_type, data } }` shape Claude stores.
- * Only raster types are recognized, so the server never serves an agent's SVG
- * or HTML inline.
- */
+/** Reads MCP and Anthropic base64 image blocks; raster only so SVG/HTML cannot be served inline. */
 export function readToolOutputImage(block: unknown): ToolOutputImage | null {
   if (!Predicate.isObject(block) || block.type !== "image") return null;
   const source = Predicate.isObject(block.source) ? block.source : undefined;
@@ -246,7 +234,6 @@ export function readToolOutputImage(block: unknown): ToolOutputImage | null {
   return typeof data === "string" ? { ...image, data } : image;
 }
 
-/** Tools return a block, a list of blocks, or an MCP result with a `content` list. */
 function outputBlocks(value: unknown): ReadonlyArray<unknown> {
   if (Array.isArray(value)) return value;
   if (Predicate.isObject(value) && Array.isArray(value.content)) return value.content;
@@ -260,11 +247,7 @@ export const MAX_TOOL_OUTPUT_IMAGES = 8;
 export const MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH =
   Math.ceil(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / 3) * 4;
 
-/**
- * The blocks `toolOutputImages` reads, by reference. These hold the only image
- * bytes in a tool output that a `tool-output-image` asset can serve, up to
- * `MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH`.
- */
+/** Image blocks by reference; the asset reader enforces the base64 size limit. */
 export function toolOutputImageBlocks(value: unknown): ReadonlyArray<unknown> {
   const blocks: unknown[] = [];
   for (const block of outputBlocks(value)) {
@@ -275,10 +258,7 @@ export function toolOutputImageBlocks(value: unknown): ReadonlyArray<unknown> {
   return blocks;
 }
 
-/**
- * The first images in a tool output, in order. The order is the
- * `tool-output-image` asset index, so servers and clients agree on it.
- */
+/** Asset indices follow this order; servers and clients must agree. */
 export function toolOutputImages(value: unknown): ReadonlyArray<ToolOutputImage> {
   return toolOutputImageBlocks(value).flatMap((block) => readToolOutputImage(block) ?? []);
 }

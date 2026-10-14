@@ -74,12 +74,8 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
   return top + Math.max(1, height);
 }
 
-/**
- * Whether the timeline's real rows extend past the viewport left above the
- * composer. The list's own content length includes the composer inset
- * spacer, so this measures from the last row instead. Unknown row geometry
- * or an unmeasured viewport counts as fitting.
- */
+/** Measure the last real row because list content length includes the composer spacer.
+ * Unknown geometry counts as fitting. */
 export function timelineContentOverflowsViewport(
   state: TimelineListMeasurementState | undefined,
   input: { readonly composerInset: number; readonly anchorOffset: number },

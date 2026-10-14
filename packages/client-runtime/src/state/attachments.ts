@@ -17,11 +17,7 @@ import {
   type AtomCommand,
 } from "./runtime.ts";
 
-/**
- * RPC commands for pending chat attachment uploads. Mirrors
- * `createAssetEnvironmentAtoms`: each client instantiates it with its own
- * connection runtime (`attachmentEnvironment` in web and mobile).
- */
+/** Instantiate with each client's connection runtime for pending attachment uploads. */
 export function createAttachmentEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -37,15 +33,7 @@ export function createAttachmentEnvironmentAtoms<R, E>(
   };
 }
 
-/**
- * Whether a failed asset lookup means the attachment no longer exists on the
- * server, as opposed to a transient transport failure. Pending uploads expire,
- * so this is the signal to upload the bytes again rather than retry the lookup.
- *
- * A structural `_tag` check rather than a schema check: the squashed cause of
- * a failed RPC is not guaranteed to be a decoded error class instance, only a
- * tagged value.
- */
+/** Missing uploads need new bytes; structural _tag checks accept squashed RPC errors without class identity. */
 export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -60,12 +48,7 @@ export type PersistedAttachmentVerification =
   | { readonly status: "missing" }
   | { readonly status: "failed"; readonly error: unknown };
 
-/**
- * Checks that a previously uploaded pending attachment still exists on the
- * server by minting an asset URL for it. `verified` means the send can reuse
- * the stored bytes, `missing` means the upload expired and the bytes must be
- * uploaded again, `failed` means the server could not be asked.
- */
+/** Verified bytes can be reused; missing bytes must be uploaded again; failed means existence could not be verified. */
 export async function verifyPersistedAttachmentUpload<A, E>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly createAssetUrl: (query: {
@@ -83,9 +66,7 @@ export async function verifyPersistedAttachmentUpload<A, E>(input: {
       environmentId: input.environmentId,
       input: { resource: { _tag: "attachment", attachmentId: input.attachmentId } },
     }),
-    // `refresh` forces a server round trip: the asset URL query atom caches
-    // results (SWR), so a retry right after a transient failure would
-    // otherwise re-observe the cached failure and never ask the server.
+    // Force a round trip so retries do not reuse a cached SWR failure.
     { reportFailure: false, reportDefect: false, refresh: true },
   );
   if (result._tag === "Success") {
@@ -140,16 +121,8 @@ export type AttachmentUploadCycleResult =
       readonly error: unknown;
     };
 
-/**
- * The platform-neutral upload cycle: mint a signed upload URL, resolve it
- * against the environment's HTTP base, and hand the bytes to a
- * platform-specific transport (XHR on web, `expo-file-system` on mobile).
- *
- * The cycle never deletes the minted pending upload on failure: callers keep
- * the returned `attachmentId` and decide between retry and release. The one
- * exception is `onMinted` returning `"cancel"`, where the caller already
- * abandoned the upload and the fresh mint is deleted before returning.
- */
+/** Mint then transfer through the platform transport; callers own retry/release on failure.
+ * onMinted="cancel" deletes the fresh mint before returning. */
 export async function runAttachmentUploadCycle<E, RE>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly createUploadUrl: AttachmentCreateUploadUrlCommand<E>;
@@ -207,12 +180,7 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
   return { status: "uploaded", attachmentId };
 }
 
-/**
- * The effective per-file byte limit for a server that advertises
- * `capabilities.fileAttachments.maxUploadBytes`. The contract caps what a
- * turn may reference, so a larger advertised value must not admit files the
- * send would then refuse.
- */
+/** Clamp advertised limits to the send contract so uploads cannot succeed only to fail dispatch. */
 export function clampFileAttachmentUploadBytes(advertisedMaxUploadBytes: number): number {
   return Math.min(advertisedMaxUploadBytes, PROVIDER_SEND_TURN_MAX_FILE_BYTES);
 }
@@ -224,7 +192,6 @@ export function formatAttachmentSize(sizeBytes: number): string {
     : `${Math.max(1, Math.ceil(sizeBytes / 1024))} KB`;
 }
 
-/** User-facing rejection for a file over the effective upload limit. */
 export function fileAttachmentTooLargeMessage(name: string, maxUploadBytes: number): string {
   const maxUploadSize =
     maxUploadBytes >= 1024 * 1024 && maxUploadBytes % (1024 * 1024) === 0

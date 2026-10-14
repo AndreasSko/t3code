@@ -1,12 +1,4 @@
-/**
- * Host setup the shared headless browser needs, and the one command that does
- * it. Every failure here names that command, so the server log, an agent's tool
- * error, and the viewer all offer the same fix: `sudo t3 browser setup`.
- *
- * T3 never turns Chrome's sandbox off by itself. A host that cannot give it one
- * gets the command instead, and only the operator's explicit
- * `T3CODE_SERVER_BROWSER_SANDBOX=0` launches without it.
- */
+/** Disable Chrome's sandbox only when the operator sets T3CODE_SERVER_BROWSER_SANDBOX=0. */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -20,7 +12,6 @@ export const SETUP_SUBCOMMAND = "browser setup";
 /** What Chrome prints before aborting when it cannot sandbox itself. */
 export const NO_SANDBOX_SIGNATURE = "No usable sandbox";
 
-/** Whether an operator explicitly allowed Chrome to run without its sandbox. */
 export const sandboxDisabled = (env: Readonly<Record<string, string | undefined>>) =>
   env.T3CODE_SERVER_BROWSER_SANDBOX === "0";
 
@@ -29,9 +20,8 @@ const USERNS_RESTRICTION = "/proc/sys/kernel/apparmor_restrict_unprivileged_user
 export const APPARMOR_PROFILE_PATH = "/etc/apparmor.d/t3-chrome-headless-shell";
 
 /**
- * Lets T3's headless browser, in any T3 home and at any pinned version, create
- * the user namespace Chrome's sandbox runs in. Modelled on the profile Ubuntu
- * ships for Google Chrome; `unconfined` adds nothing beyond `userns`.
+ * Permit Chrome's sandbox user namespace in any T3 home and pinned version.
+ * As in Ubuntu's Chrome profile, unconfined adds nothing beyond userns.
  */
 export const APPARMOR_PROFILE = `# Written by \`t3 browser setup\`: lets T3 Code's headless browser use Chrome's sandbox.
 abi <abi/4.0>,
@@ -45,9 +35,8 @@ profile t3-chrome-headless-shell /**/tools/chrome-headless-shell/*/*/chrome-head
 `;
 
 /**
- * Chrome's Debian dependencies that minimal images leave out, from the headless
- * shell's deb.deps. Ubuntu 24.04 and Debian 13 renamed some with a `t64`
- * suffix; setup installs whichever name the host's apt offers.
+ * Dependencies come from the headless shell's deb.deps; Ubuntu 24.04 and Debian 13 use t64 aliases.
+ * Setup chooses whichever name the host's apt offers.
  */
 export const DEBIAN_PACKAGES: ReadonlyArray<ReadonlyArray<string>> = [
   ["libnss3"],
@@ -93,11 +82,7 @@ const MISSING_LIBRARY = /^\s*(\S+) => not found$/gm;
 /** glibc's loader abort, naming the first library it could not load. */
 const LOADER_ERROR = /error while loading shared libraries: ([^:\s]+)/;
 
-/**
- * After a launch fails, names the host setup it is missing: the sandbox, from
- * Chrome's own abort message, or shared libraries the loader refuses. Undefined
- * when neither explains it. Linux only; other hosts never need either.
- */
+/** Diagnose sandbox or shared-library launch failures; undefined means neither explains the failure. */
 export const diagnoseLaunchFailure = Effect.fn("PreviewBrowserHost.diagnoseLaunchFailure")(
   function* (input: {
     readonly executable: string;
@@ -117,10 +102,8 @@ export const diagnoseLaunchFailure = Effect.fn("PreviewBrowserHost.diagnoseLaunc
 );
 
 /**
- * Shared libraries the loader cannot find for `executable`. The browser's own
- * `--version` decides whether any are missing; `ldd` only lists them after the
- * real loader fails, because it can report libraries a host provides another
- * way (NixOS's nix-ld).
+ * Probe --version before ldd: NixOS's nix-ld can provide libraries ldd reports missing.
+ * Consult ldd only after the real loader fails.
  */
 export const missingLibraries = Effect.fn("PreviewBrowserHost.missingLibraries")(function* (
   executable: string,
@@ -141,11 +124,7 @@ export const missingLibraries = Effect.fn("PreviewBrowserHost.missingLibraries")
   return listed.length > 0 ? listed : [loaderError];
 });
 
-/**
- * Whether Chrome's sandbox will be blocked here: the host restricts user
- * namespaces and T3's AppArmor profile is not installed. Readable without
- * root, so the server checks it at startup.
- */
+/** User-namespace restrictions are readable without root, so startup can check for the required AppArmor profile. */
 export const sandboxBlocked = Effect.gen(function* () {
   if ((yield* HostProcess.Platform) !== "linux") return false;
   const fs = yield* FileSystem.FileSystem;

@@ -99,7 +99,7 @@ export function getReviewDiffPrewarmSections(input: {
   return pendingSections;
 }
 
-/** Warms one nearby section per idle period, after navigation animations finish. */
+/** Warms one nearby section per idle period. */
 export function useReviewDiffPrewarming(input: {
   readonly threadKey: string | null;
   readonly sections: ReadonlyArray<ReviewSectionItem>;

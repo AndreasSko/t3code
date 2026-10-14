@@ -1,10 +1,3 @@
-/**
- * A `ProviderHost.ProviderHost` for driver and adapter tests. Its directories live in a
- * scoped temp directory, settings are fixed, and background work always runs
- * unless the test says otherwise.
- *
- * @module provider-testing/TestProviderHost
- */
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as Context from "effect/Context";

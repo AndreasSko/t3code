@@ -46,11 +46,8 @@ export function useShortcutModifierState(ignoreEditable = false): ShortcutModifi
           : shortcutModifierStateAfterKeyboardEvent(stateRef.current, event),
       );
     };
-    // Dictation tools (Wispr Flow) paste with a synthetic ⌘V whose Meta keyup
-    // never reaches the page, so the tracked state stays "⌘ held" forever and
-    // the thread jump hints stick on screen. A paste is never jump intent, so
-    // treat it like a blur and reset. A physically held modifier re-registers
-    // on the next real key event.
+    // Dictation can synthesize Meta+V without keyup; reset on paste so jump hints do not stick. A physically
+    // held modifier registers again on the next real key event.
     const onResetEvent = () => {
       updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
     };
@@ -105,12 +102,8 @@ export function shortcutModifierStateAfterKeyboardEvent(
       [normalizedModifierKey]: event.type === "keydown",
     };
   } else {
-    // Flags on non-modifier keys may only clear a bit, never set one. After a
-    // dictation tool's synthetic ⌘V (Wispr Flow), the browser can keep
-    // reporting metaKey=true on real key events (Enter to submit) until the
-    // user physically taps ⌘. Trusting that flag would mark ⌘ as held and
-    // stick the thread jump hints. Setting a bit requires a real modifier
-    // keydown, handled above.
+    // Set held modifiers only on real modifier keydown; synthetic dictation Meta+V can leave metaKey stuck true
+    // on later non-modifier events, which may only clear bits.
     nextState = {
       metaKey: currentState.metaKey && event.metaKey,
       ctrlKey: currentState.ctrlKey && event.ctrlKey,

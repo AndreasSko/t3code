@@ -27,7 +27,6 @@ export interface MuseSdkHost {
   >;
   readonly initializeResult: Pick<SpawnedMspConnection["initializeResult"], "grantedCapabilities">;
   readonly exited: Promise<ProcessExit>;
-  /** The last lines Muse wrote to stderr, for explaining an unexpected exit. */
   readonly stderrTail?: () => ReadonlyArray<string>;
   readonly close: () => Promise<void>;
 }
@@ -76,12 +75,9 @@ export function museVerbatimPath(path: string): string {
 }
 
 /**
- * A workspace root in the form `turn/start` accepts. On Windows Muse rejects
- * anything but the verbatim canonical path, true case and long names
- * included, so resolve with the native realpath, which unlike
- * FileSystem.realPath fixes case and expands 8.3 names. Muse itself still
- * starts in the plain path: the `muse.cmd` launcher runs under cmd.exe, which
- * cannot use a verbatim directory.
+ * Windows turn/start requires verbatim native canonical paths, including case and long names.
+ * Node realpath fixes case and expands 8.3 names; FileSystem.realPath does not.
+ * Launch Muse in the plain path because cmd.exe cannot use a verbatim working directory.
  */
 export const museWorkspaceRoot = Effect.fn("museWorkspaceRoot")(function* (path: string) {
   if ((yield* HostProcess.Platform) !== "win32") return path;
@@ -101,13 +97,8 @@ function windowsEnvironmentValue(environment: NodeJS.ProcessEnv, name: string) {
 }
 
 /**
- * How to start Muse. The SDK spawns without a shell, which finds the `muse`
- * launcher on PATH everywhere but Windows. There Node neither looks a bare
- * `muse` up with PATHEXT (ENOENT) nor runs a `.cmd` file such as Muse's own
- * launcher (EINVAL) without a shell, so resolve the binary like any other
- * command and run a `.cmd` or `.bat` under cmd.exe. Node quotes a path with
- * spaces, and inside those quotes cmd takes every character literally. A path
- * without spaces is not quoted, so its metacharacters are escaped instead.
+ * Windows needs PATHEXT resolution and cmd.exe for .cmd/.bat launchers.
+ * Quoted paths preserve metacharacters; unquoted paths must escape them.
  */
 export const museLaunch = Effect.fn("museLaunch")(function* (
   binaryPath: string,
@@ -172,7 +163,6 @@ export async function createMuseSdkHost(
     command: launch.command,
     args: [...launch.args, ...(options.launchArgs ?? []), ...museServeArgs(options)],
     ...(options.cwd ? { cwd: options.cwd } : {}),
-    // Callers pass an environment already built with makeMuseEnvironment.
     env: options.environment ?? makeMuseEnvironment(),
     // A healthy host exits at once; this only bounds a hung one on close.
     shutdownTimeoutMs: 10_000,

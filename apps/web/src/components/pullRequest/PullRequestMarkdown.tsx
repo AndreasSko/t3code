@@ -18,11 +18,8 @@ export const PullRequestMarkdownContext = createContext<{
   threadRef: ScopedThreadRef | null;
 } | null>(null);
 
-/**
- * A video GitHub hosts for the repository. It plays through a signed asset URL the server
- * fetches with the repository's GitHub credential, which is what a private repository's
- * uploads need; the URL is re-signed on retry, so a stale one recovers without a reload.
- */
+/** Private GitHub uploads need signed URLs fetched with repository credentials;
+ * retry re-signs stale capabilities. */
 function PullRequestGitHubVideo({
   environmentId,
   cwd,
@@ -42,8 +39,7 @@ function PullRequestGitHubVideo({
   );
   const assetUrl = useAssetUrlState(environmentId, resource);
   const refreshAssetUrl = useAssetUrlRefresh(environmentId, resource);
-  // A server too old to sign this resource, or one with no route to GitHub, still leaves a
-  // public repository's video playing exactly as it did before.
+  // Fall back to public media when the server cannot sign this resource.
   const src =
     assetUrl._tag === "Success" ? assetUrl.url : assetUrl._tag === "Failure" ? fetchUrl : null;
   return (
@@ -129,9 +125,7 @@ export function PullRequestMarkdown({
           );
         }
         return (
-          // A plain anchor rather than the page's openExternal button: the desktop window
-          // turns a blocked _blank into openExternal itself, and in a browser tab — where
-          // there is no shell to call — this is the only one of the two that goes anywhere.
+          // Plain anchors work in web tabs without a desktop shell; desktop handles blocked _blank externally.
           <a
             key={segment.id}
             href={segment.url}

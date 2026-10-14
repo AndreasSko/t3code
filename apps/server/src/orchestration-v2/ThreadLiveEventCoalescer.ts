@@ -40,11 +40,7 @@ function stableToolCallIdentity(input: ThreadLiveEvent): string | null {
   return input.event.type === "turn-item.updated" ? input.event.payload.id : null;
 }
 
-/**
- * Retain only the latest in-flight update for each stable tool-call id in a
- * live run. Item IDs distinguish parallel calls with the same label.
- * Survivors remain in sequence order; terminal updates are never discarded.
- */
+/** Keep the newest in-flight update per stable item ID, preserving sequence order and every terminal. */
 export function coalesceLiveToolUpdatedEvents(
   events: ReadonlyArray<ThreadLiveEvent>,
 ): ReadonlyArray<ThreadLiveEvent> {

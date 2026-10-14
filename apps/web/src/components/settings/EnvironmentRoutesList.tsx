@@ -36,11 +36,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-/**
- * The ways this client reaches one saved machine, preferred first. Drag to
- * reorder; the first route that answers is used and the connection moves back
- * up when a better one is reachable again. Shown under the machine's row.
- */
+/** Use the first responding route and return to better routes when available. */
 export function EnvironmentRoutesList({
   environment,
   onAddRoute,
@@ -50,8 +46,7 @@ export function EnvironmentRoutesList({
 }) {
   const saved = connectionRoutes(environment.entry);
   const savedIds = saved.map((route) => connectionRouteId(route.target));
-  // A dropped order shows until the catalog matches it, so the row does not
-  // jump back while the reorder is being saved.
+  // Hold optimistic order until catalog confirmation to avoid a jump during save.
   const [pending, setPending] = useState<ReadonlyArray<string> | null>(null);
   const order: Array<string> =
     pending !== null &&
@@ -118,9 +113,7 @@ export function EnvironmentRoutesList({
                 route={route}
                 position={index + 1}
                 inUse={connectionRouteId(route.target) === activeRouteId}
-                // The last route goes with the machine; that is "Remove from
-                // this device", not a route action. A learned route would be
-                // learned again, so it is only reordered.
+                // The last route belongs to machine removal; learned routes would reappear, so only reorder them.
                 removable={routes.length > 1 && !isLearned(route)}
                 onRemove={() => void confirmRemove(route)}
               />

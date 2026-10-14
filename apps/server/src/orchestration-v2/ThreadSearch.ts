@@ -44,7 +44,6 @@ function foldAsciiCase(value: string): string {
   return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
 }
 
-/** At most 240 characters, centred near the first match. */
 function buildSearchSnippet(text: string, query: string): string {
   const normalizedText = text.replace(/\s+/g, " ").trim();
   if (normalizedText.length <= 240) {
@@ -61,11 +60,7 @@ function buildSearchSnippet(text: string, query: string): string {
   }`;
 }
 
-/**
- * Searches the finished user and assistant messages of active V2 threads in
- * active projects. Legacy V1 transcripts that have not been imported yet are
- * not searched.
- */
+/** Search finished user/assistant messages in active threads/projects; unimported V1 transcripts are excluded. */
 export class ThreadSearch extends Context.Service<
   ThreadSearch,
   {

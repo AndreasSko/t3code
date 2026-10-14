@@ -289,8 +289,7 @@ export function SnapShotSettings() {
       if (!current) return;
       if (current.macPermissions) requested = "access";
       if (!settings.snapShotEnabled && captureSetupInitialStep(current, requested) !== "access") {
-        // Opening setup is the opt-in. Restore registration before resuming a
-        // later step, just as Continue does on the access step.
+        // Opting into setup must restore registration before resuming later steps.
         current = await save({ snapShotEnabled: true });
         if (!current) {
           // A settings write can succeed even if the following status check

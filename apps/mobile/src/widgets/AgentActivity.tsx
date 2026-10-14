@@ -65,12 +65,8 @@ export function AgentActivity(
   const monochrome =
     environment.widgetRenderingMode === "accented" || environment.widgetRenderingMode === "vibrant";
 
-  // Status tints mirror the web sidebar's pills
-  // (apps/web/src/components/Sidebar.logic.ts resolveThreadStatusPill): amber
-  // for approval, indigo for input, sky for working, emerald for completed.
-  // On iPhone the LA sits on a dark material, but macOS (iPhone Mirroring /
-  // Mac notification center) renders it on a light one — so pick the web
-  // palette's light (-600) or dark (-300) variant off the color scheme.
+  // Match the web status palette; iPhone Mirroring and Mac notifications need
+  // its light variant, while iPhone Live Activities use the dark variant.
   const isLightScheme = environment.colorScheme === "light";
   const phaseTint = (phase: AgentActivityPhase | undefined): Foreground => {
     if (environment.isLuminanceReduced) {
@@ -97,8 +93,7 @@ export function AgentActivity(
     }
   };
 
-  // Order attention-first so whatever needs the user floats to the top of every
-  // presentation, then failures, then in-flight work, then finished/stale.
+  // Put agents needing attention first in every presentation.
   const phasePriority = (phase: AgentActivityPhase): number => {
     if (phase === "waiting_for_approval" || phase === "waiting_for_input") return 0;
     if (phase === "failed") return 1;
@@ -129,27 +124,18 @@ export function AgentActivity(
   const failedRow = activities.find((row) => row.phase === "failed");
   const heroRow = attentionRow ?? failedRow ?? row0;
   const tint = phaseTint(heroRow?.phase);
-  // Headline count leans on the accent when a human is actually blocked.
   const headerTint = attentionRow
     ? phaseTint(attentionRow.phase)
     : failedRow
       ? phaseTint(failedRow.phase)
       : tint;
 
-  // With nothing active the aggregate only carries recently finished work, so
-  // "0 active agents" (and a lone "0" in the expanded island) read as broken.
-  // Lead with the outcome instead. The outcome is derived here from the rows
-  // rather than taken from the server subtitle (which keys off the newest
-  // terminal row): every presentation — header text, tint, count slots,
-  // minimal glyph — must agree, and a failure anywhere should dominate a
-  // newer success.
+  // Derive the finished outcome from all rows so every presentation agrees
+  // and any failure dominates a newer success.
   const allDone = props.activeCount === 0;
   const doneLabel = failedRow ? "Failed" : "Done";
   const outcomeLabel = failedRow ? "Agent work failed" : "Agent work completed";
 
-  // Header copy: "5 active agents" + (", 1 needs attention"). The banner renders
-  // the two parts in-line so the attention half can carry the accent color;
-  // `summary` is the short form for tight spots (expanded center, watch card).
   const agentWord = props.activeCount === 1 ? "agent" : "agents";
   const agentsLabel = allDone
     ? outcomeLabel
@@ -175,8 +161,6 @@ export function AgentActivity(
       ? `t3code://${deepLinkRow.deepLink.slice(1)}`
       : null;
 
-  // A scannable status glyph per phase — reads faster than colored words and
-  // ties the compact / expanded / banner / watch presentations together.
   type SFName = NonNullable<ComponentProps<typeof Image>["systemName"]>;
   const phaseSymbol = (phase: AgentActivityPhase): SFName => {
     switch (phase) {
@@ -206,11 +190,7 @@ export function AgentActivity(
     </HStack>
   );
 
-  // Single-line row used by every presentation: glyph, title, inline project,
-  // status. The project and status carry layoutPriority(1) so when space runs
-  // out it's the title that truncates, never the (short) project name or the
-  // status label. Single-line keeps rows inside the expanded island's hard
-  // height budget (~160pt) and lets the banner fit more agents.
+  // Single-line rows fit the expanded island's ~160pt height budget.
   const renderCompactRow = (row: AgentActivityRowProps) => (
     <HStack spacing={7} alignment="center">
       <Text
@@ -222,12 +202,8 @@ export function AgentActivity(
       >
         {row.threadTitle}
       </Text>
-      {/* No layoutPriority and no frame on the project: two bare texts take
-          their ideal width when it fits and shrink proportionally only when it
-          doesn't — so short rows never truncate, and long title + long project
-          truncate together. (A maxWidth frame is greedy and reserved its full
-          width even for short names; layoutPriority let the project starve the
-          title.) */}
+      {/* Bare texts share width proportionally; frames reserve excess space and
+      layoutPriority lets the project starve the title. */}
       <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryForeground), lineLimit(1)]}>
         {row.projectTitle}
       </Text>
@@ -244,12 +220,8 @@ export function AgentActivity(
     </HStack>
   );
 
-  // The branded T3 mark. `assetName` resolves the template image set bundled in
-  // the widget extension's asset catalog. Image views only honor `resizable`
-  // directly (frame/foregroundStyle are dropped), so we size it via a container
-  // frame the resizable image fills and tint it through the container's
-  // foreground style, which the template image inherits. The 3:2 frame matches
-  // the glyph's aspect ratio so it never distorts.
+  // Template images ignore direct frame/foregroundStyle modifiers, so apply
+  // them to a container. The 3:2 frame preserves the mark's aspect ratio.
   const renderLogo = (height: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
@@ -268,9 +240,7 @@ export function AgentActivity(
           ...(deepLink ? [widgetURL(deepLink)] : []),
         ]}
       >
-        {/* Logo pinned to the leading edge; the status texts centered across the
-            full width (ZStack so the logo doesn't skew the centering). No footer —
-            overflow beyond the visible rows is inferable from the count. */}
+        {/* ZStack centers the status text without the leading logo skewing it. */}
         <ZStack>
           <HStack spacing={0} alignment="center">
             {renderLogo(13, primaryForeground)}
@@ -281,8 +251,6 @@ export function AgentActivity(
             <Text
               modifiers={[
                 font({ weight: "semibold", size: 13 }),
-                // The all-done header carries the outcome tint (emerald /
-                // red) the way the Done/Failed status labels do.
                 foregroundStyle(allDone ? headerTint : primaryForeground),
                 lineLimit(1),
               ]}
@@ -313,8 +281,7 @@ export function AgentActivity(
         {row4 ? renderCompactRow(row4) : null}
       </VStack>
     ),
-    // Compact card for the watchOS Smart Stack + CarPlay (the `.small` family):
-    // brand + count, then the single most important agent with its status glyph.
+    // The .small family serves the watchOS Smart Stack and CarPlay.
     bannerSmall: (
       <VStack alignment="leading" spacing={5} modifiers={[padding({ all: 10 })]}>
         <HStack spacing={7} alignment="center">
@@ -359,9 +326,7 @@ export function AgentActivity(
           : activeLabel}
       </Text>
     ),
-    // The shared/minimal form is a ~22pt circle — a single signal reads there,
-    // the wordmark does not. Show the blocking/outcome phase glyph, else the
-    // mark (all-done shows the hero row's checkmark/cross).
+    // The minimal form is a ~22pt circle, too small for the wordmark.
     minimal:
       (attentionRow || failedRow || allDone) && heroRow
         ? renderGlyph(phaseSymbol(heroRow.phase), 13, phaseTint(heroRow.phase))
@@ -374,19 +339,12 @@ export function AgentActivity(
         </Text>
       </HStack>
     ),
-    // No center content: the phase glyphs + statuses in expandedBottom already
-    // carry the attention signal, and the expanded island's height budget is
-    // tight enough that a summary line there pushed the third row off.
+    // Extra center content would exceed the expanded island's height budget.
     expandedCenter: null,
-    // No trailing content: a timestamp is glanceable-lock-screen info, not
-    // useful in a view the user is actively holding open — and the trailing
-    // region hugs the island's corner radius, which clipped it anyway.
+    // The trailing region hugs the island's corner radius and clips timestamps.
     expandedTrailing: null,
     expandedBottom: (
-      // Vertical padding only: the expanded region provides its own horizontal
-      // content margins, so `all` padding double-indented the rows.
-      // Horizontal padding keeps both edges clear of the island's corner
-      // curvature (right edge clipped status labels; titles hugged the left).
+      // Horizontal padding keeps rows clear of the island's corner curvature.
       <VStack
         alignment="leading"
         spacing={5}

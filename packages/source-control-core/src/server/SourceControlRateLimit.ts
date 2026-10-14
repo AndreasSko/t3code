@@ -20,11 +20,8 @@ export const CredentialScope = Context.Reference<string>(
   },
 );
 
-/**
- * Set by interactive callers (a user's read or write, not a background sweep). A host may let
- * requests made under it spend a reserved quota and go through a rate-limit pause: a user acting
- * on a change request should not be refused because a background read exhausted the quota.
- */
+/** Interactive requests may spend reserved quota and pass background pauses
+ * so a user action is not blocked by an exhausted sweep budget. */
 export const Interactive = Context.Reference<boolean>(
   "@t3tools/source-control-core/server/SourceControlRateLimit/Interactive",
   { defaultValue: () => false },

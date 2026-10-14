@@ -1,14 +1,5 @@
-/**
- * Records a Grok ACP replay transcript from a live `grok agent stdio` process.
- *
- * The fixture's own scenario (the same commands and steps the replay test
- * dispatches) runs through the real orchestrator and the real GrokAdapterV2;
- * only the ACP runtime's protocol logger is swapped for a tee. Outbound frames
- * are therefore exactly what T3 sends, and inbound frames exactly what Grok
- * answered. Run from apps/server with the Grok CLI on PATH (or T3_GROK_BIN):
- *
- *   node scripts/record-grok-acp-replay-fixture.ts --scenario simple
- */
+/** Record through the real Grok adapter and orchestrator so outbound frames match production.
+ * From apps/server: node scripts/record-grok-acp-replay-fixture.ts --scenario simple */
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { type ProviderReplayEntry } from "@t3tools/contracts";
 import { GrokSettings } from "@t3tools/provider-grok/settings";
@@ -114,12 +105,8 @@ function makeWireTee() {
         }),
     };
   };
-  // Grok runs its own wake turns (`task-completed-*`, `notifications-*`,
-  // `subagent-completed-*`) after T3's run can already have settled, and its
-  // session roster can report idle before them. Grok is done when no session
-  // has a queued or running prompt (`x.ai/queue/changed` vs `turn_completed`),
-  // no background task still runs (`background_tasks`), and every spawned
-  // subagent finished (`subagent_spawned` vs `subagent_finished`).
+  // Grok can report idle before its own wake turns; wait for all prompt queues,
+  // background tasks, and spawned subagents to finish.
   const grokHasPendingWork = () => {
     const queues = new Map<unknown, Record<string, unknown>>();
     const tasks = new Map<unknown, ReadonlyArray<unknown>>();
@@ -332,7 +319,6 @@ function normalizeInboundFrame(frame: Record<string, unknown>): Record<string, u
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu;
 
-/** Collects Grok session and background task ids in first-seen order. */
 function collectSessionIds(entries: ReadonlyArray<ProviderReplayEntry>): ReadonlyArray<string> {
   const ids: Array<string> = [];
   const add = (value: unknown) => {
@@ -422,10 +408,8 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
   const scenario = {
     name: `${fixtureName}/grok-record`,
     commands: materialized.commands,
-    // Background fixtures pace replay with gates and with receipts that drive
-    // the finish debounce on the test clock. Live, Grok and wall time pace
-    // themselves, so a fixture that gates records its dispatches only and then
-    // waits for Grok to idle, and a held run is simply waited for.
+    // Live Grok paces its own background work; record gated dispatches and wait
+    // for idle instead of driving replay's gates and debounce receipts.
     steps: materialized.steps.some(
       (step) =>
         step.type === "release_replay_gate" || step.type === "release_replay_gate_after_waiting",
@@ -450,7 +434,6 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
         hostPlatform: yield* HostProcess.Platform,
         selfInvocation: yield* resolveSelfInvocation(),
         continuationRequests: yield* ProviderContinuationRequests.ProviderContinuationRequests,
-        // Production's runtime factory, with the protocol logger teeing raw lines.
         makeRuntime: ({ runtimePolicy, ...input }) =>
           makeGrokAcpRuntime({
             ...input,
@@ -494,12 +477,8 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
     ),
   );
 
-  // Same deterministic runtime as replay (TestClock, seeded ids), so the
-  // scenario's clock steps order dispatches exactly as they will on replay.
-  // Background scenarios keep the session open until Grok's own wake turns
-  // finish, so the transcript holds everything replay will emit.
-  // A wake turn is admitted shortly after the frame that triggers it, so Grok
-  // must also stay quiet for a few seconds.
+  // Keep background sessions open through Grok's wake turns and a quiet period,
+  // since a wake is admitted shortly after the frame that triggers it.
   let quietPolls = 0;
   let seenFrames = -1;
   const waitForGrokIdle = Effect.sleep("1 second").pipe(

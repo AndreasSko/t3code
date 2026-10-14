@@ -168,8 +168,7 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
-    // Finds or creates the environment's Scratch project and resolves once the
-    // project is in the client store, since drafts key off its stored path.
+    // Wait for Scratch in the client store because drafts need its stored path.
     openScratch: createEnvironmentCommand(runtime, {
       label: "environment-data:projects:open-scratch",
       execute: (
@@ -196,7 +195,6 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
-    // Makes a new folder and repository from just a name, then the project.
     createNew: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:create-new",
       tag: WS_METHODS.projectsCreateNew,

@@ -20,22 +20,13 @@ export type DuoControlState = {
   error: string | null;
 };
 
-/**
- * Whether the reporting display is the one the fold shows: the cover when closed, the inner
- * display when open. A fold across the closed position hands off in steps, and the outgoing
- * display first reports the incoming one's orientation, so an unsettled screen's orientation
- * does not say how the phone is held. Stands such as Tent can also rest unsettled on the cover.
- */
+/** Hinge handoff reports the incoming orientation on the outgoing display first; wait for display identity to settle. */
 export function duoScreenSettled(screen: Pick<DeviceScreenSize, "screenId" | "hingeAngle">) {
   const angle = screen.hingeAngle ?? (screen.screenId === 1 ? 0 : 180);
   return (screen.screenId === 1) === (angle === 0);
 }
 
-/**
- * The fold the device is in and the way it is held. Missing hinge fields fall back the same way
- * the 3D view does, so controls never disagree with what is drawn. The inner panel is mounted a
- * quarter turn from the cover, so its landscape orientation means a vertical phone.
- */
+/** Matches the 3D view's hinge defaults; the inner panel is mounted a quarter turn from the cover. */
 export function duoFoldState(
   screen: Pick<DeviceScreenSize, "orientation" | "screenId" | "hingeAngle" | "hingePose">,
 ) {
@@ -49,11 +40,7 @@ export function duoFoldState(
   } as const;
 }
 
-/**
- * The rotation that holds the phone vertical or horizontal. Native rotation is
- * read in the frame of the display active when it arrives, and the inner panel
- * is mounted a quarter turn from the cover.
- */
+/** Reads rotation in the arriving display's frame; inner and cover panels differ by a quarter turn. */
 export function duoHoldOrientation(
   vertical: boolean,
   screenId: number | undefined,

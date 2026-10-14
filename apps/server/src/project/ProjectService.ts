@@ -217,10 +217,7 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  /**
-   * Plan one command against rows read under its locks, then commit its event or
-   * its rejection. A reused command id resolves to the receipt it already has.
-   */
+  /** Reused command ids return their original receipts even when re-planning produces a different outcome. */
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
@@ -453,7 +450,6 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  /** Refuse a non-empty project without force, else delete its live threads first. */
   const deleteChildThreads = Effect.fn("ProjectService.deleteChildThreads")(function* (
     input: ProjectDeleteInput,
   ) {
@@ -488,11 +484,8 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  // A machine-disabled provider instance that a deleted project's override
-  // once turned on must not stay probed and alive forever. Nothing else
-  // removes the entry, so deletion is where it goes; best-effort because a
-  // settings write failure should not block the deletion it is cleaning up
-  // after, and a server crash before a replay never revisits this project.
+  // Remove overrides so machine-disabled providers are not left enabled and probed.
+  // Settings failures must not block project deletion.
   const clearProjectSettingsOverrides = (projectId: ProjectId) =>
     serverSettings.updateSettings({ projectSettingsOverrides: { [projectId]: null } }).pipe(
       Effect.asVoid,

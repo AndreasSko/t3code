@@ -55,8 +55,7 @@ export function useAttachedTerminalSession(input: {
         }),
   );
   const output = attach.data?.output ?? EMPTY_TERMINAL_BUFFER_STATE.output;
-  // Installed native binaries still accept initialBuffer. Keep materialization
-  // at this mobile boundary until the native streaming API is released.
+  // Native binaries require initialBuffer; materialize output at this boundary.
   const buffer = useMemo(() => terminalOutputText(output), [output]);
 
   return useMemo(() => {

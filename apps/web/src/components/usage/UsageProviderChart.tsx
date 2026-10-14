@@ -36,7 +36,6 @@ interface UsageProviderChartProps {
   readonly timeZone: string;
 }
 
-/** One day's per-provider values, shared by the paths and the hover readout. */
 export interface DayColumn {
   readonly bands: readonly {
     readonly provider: UsageProviderKind;
@@ -157,14 +156,7 @@ function areaPath(line: string) {
   return line === "" ? "" : `${line} L${VIEW_WIDTH},${VIEW_HEIGHT} L0,${VIEW_HEIGHT} Z`;
 }
 
-/**
- * Builds a scale whose maximum is a readable 1/2/5 x 10^n step at or above the
- * peak.
- *
- * Rounding the maximum *up* is the point: stopping at the last step below the
- * peak leaves the tallest day drawn past the top of the plot, where it is
- * clipped.
- */
+/** Round the maximum up to a 1/2/5 x 10^n step so peaks cannot draw above the plot. */
 export function niceScale(peak: number, count: number): { max: number; ticks: readonly number[] } {
   if (peak <= 0) return { max: 0, ticks: [0] };
 
@@ -181,11 +173,7 @@ export function niceScale(peak: number, count: number): { max: number; ticks: re
 
 const PLACEHOLDER_TICKS = Array.from({ length: TICK_COUNT + 1 }, (_, index) => index);
 
-/**
- * Scales to the largest single provider-period. With nothing to show yet while
- * providers load, unlabeled placeholder gridlines hold their usual spacing so
- * nothing shifts on arrival.
- */
+/** Use placeholder gridlines while providers load so their arrival does not shift the plot. */
 export function chartScale(
   columns: readonly DayColumn[],
   loadingProviders: ReadonlySet<UsageProviderKind>,
@@ -207,7 +195,6 @@ function valueToY(value: number, max: number) {
   return max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
 }
 
-/** Per-provider paths in paint order, heaviest first. */
 function buildChart(
   periods: readonly string[],
   byPeriod: ReadonlyMap<string, DailyTotals | HourlyTotals>,

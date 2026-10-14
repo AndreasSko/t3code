@@ -210,10 +210,7 @@ export function createAssetEnvironmentAtoms<R, E>(
   };
 }
 
-/**
- * Keeps project icons visible while their environment reconnects. Each resource
- * owns its last resolved URL, including a confirmed missing-icon response.
- */
+/** Retains each icon's last URL or confirmed absence across environment reconnects. */
 export function createProjectFaviconUrlAtomFamily(input: {
   readonly imageCache?: ProjectFaviconCache;
   readonly createUrl: (target: {
@@ -223,7 +220,6 @@ export function createProjectFaviconUrlAtomFamily(input: {
   readonly preparedConnection: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<Option.Option<{ readonly httpBaseUrl: string }>>;
-  /** The environment's tracked clones, empty when it reports none. */
   readonly projectClones?: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<ReadonlyArray<ProjectCloneSnapshot>>;
@@ -236,9 +232,7 @@ export function createProjectFaviconUrlAtomFamily(input: {
     const [environmentId, cwd, path] = decodeKey(JSON.parse(key));
     const resource = { _tag: "project-favicon" as const, cwd, ...(path ? { path } : {}) };
     const query = input.createUrl({ environmentId, input: { resource } });
-    // A cloned project exists before its files do, and the server reports its
-    // icon missing until the clone lands. Ask again whenever the clone's phase
-    // changes: the first list a client sees may already say done.
+    // Projects exist before cloned files do; retry the icon on clone phase changes, including an initial done state.
     const request = projectClones
       ? query.pipe(
           Atom.makeRefreshOnSignal(

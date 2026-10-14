@@ -6,8 +6,7 @@ interface FileRevealHandle {
   scrollTo(target: CodeViewScrollTarget): void;
 }
 
-// Wait for a mounted viewer and expanded rows, then apply each tree click once.
-// Keep scope stable until the diff or external file selection changes.
+// Apply each reveal once; keep scope stable until the diff or external selection changes.
 export function useCodeViewFileReveal<TScope>(
   viewer: FileRevealHandle | null,
   scope: TScope,

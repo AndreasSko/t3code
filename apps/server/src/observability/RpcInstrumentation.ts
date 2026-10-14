@@ -9,11 +9,7 @@ import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts"
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
-/**
- * The `rpc.aggregate` span attribute of every WebSocket RPC. Trace queries and dashboards group by
- * these labels, so they keep their historical values even where they differ from the method
- * prefix. Adding an RPC to `WsRpcGroup` without a label is a type error.
- */
+// Keep aggregate labels stable for dashboards; adding an RPC without one must fail typechecking.
 const RPC_AGGREGATES = {
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
@@ -222,20 +218,13 @@ const RPC_METHODS_WITH_TRACING_DISABLED: ReadonlySet<string> = new Set([
   WS_METHODS.serverSignalProcess,
 ]);
 
-/**
- * Records each WebSocket RPC's span and request metrics. `ws.ts` adds it to the server's group
- * after `RpcScopeAuthorization`, so it wraps authorization and also records rejected calls.
- */
+/** ws.ts installs this after authorization so rejected calls also get spans and metrics. */
 export class RpcInstrumentation extends RpcMiddleware.Service<RpcInstrumentation>()(
   "t3/server/RpcInstrumentation",
 ) {}
 
-/**
- * Wraps each WebSocket RPC call in its `ws.rpc.<method>` span and records its request counter and
- * duration. For a stream RPC, the middleware receives the whole stream run, so the span and the
- * metrics cover the subscription until it ends, fails, or is interrupted. Methods in
- * `RPC_METHODS_WITH_TRACING_DISABLED` record metrics but no spans, for the call or anything it runs.
- */
+/** Stream RPC metrics span the subscription lifetime; tracing-disabled
+ * methods retain metrics while suppressing spans for the call and its work. */
 export const rpcInstrumentationLayer = Layer.succeed(RpcInstrumentation)((effect, { rpc }) => {
   const method = rpc._tag;
   const measured = effect.pipe(

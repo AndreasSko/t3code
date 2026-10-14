@@ -1,25 +1,6 @@
 /**
- * The OpenCode 2 runtime behind the `opencode` driver. It talks to the
- * instance's `opencode serve` process through the HTTP client and reads that
- * server's `/api/event` stream, routed here by session id.
- *
- * A turn is one `session.prompt` (or `session.command`, or `session.compact`
- * for `/compact`); the session's next `session.execution.*` terminal ends it.
- * A steer is another prompt with `delivery: "steer"`, which OpenCode reads at
- * the running execution's next step boundary, so it ends with the turn it
- * joined. Fork and rollback cut the native history before the user message a
- * turn prompted with (its `nativeTurnRef`). Each runtime mode is a set of
- * session permission rules, plan mode is also OpenCode's `plan` agent
- * (switched before the prompt like the model), and OpenCode's permission asks
- * and question forms become runtime requests on the asking session's thread, a
- * subagent's on its parent's.
- *
- * A `subagent` call runs in a child session shown as a subagent thread. A
- * background one outlives its turn; when it ends, OpenCode starts a parent
- * execution T3 did not ask for, which waits here for the continuation turn T3
- * opens for it.
- *
- * @module orchestration-v2/Adapters/OpenCode2AdapterV2
+ * Session execution events end turns; steers can extend a turn across executions.
+ * Unsolicited executions wait for the continuation turns T3 opens for them.
  */
 
 import {
@@ -194,7 +175,6 @@ const OpenCode2ProviderCapabilities = {
     nativeItemIds: "strong",
     nativeRequestIds: "strong",
   },
-  // OpenCode enforces each runtime mode through the session's permission rules.
   runtimePolicy: { enforcement: "native" },
 } satisfies OrchestrationV2ProviderCapabilities;
 
@@ -432,7 +412,6 @@ type RulesPolicy = Pick<
 >;
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
-/** A permission ask or question form shown to the user and not answered yet. */
 interface PendingRequest {
   readonly request: OrchestrationV2RuntimeRequest;
   readonly item: OrchestrationV2TurnItem;
@@ -582,7 +561,6 @@ const formQuestions = (
   return { questions };
 };
 
-/** T3's answers in OpenCode's shape: a list for a multi-select, text otherwise. */
 const formAnswer = (form: NativeForm, answers: Readonly<Record<string, unknown>>) => {
   const answer: Record<string, string | ReadonlyArray<string>> = {};
   for (const field of form.fields) {
@@ -649,7 +627,6 @@ const stringField = (record: Readonly<Record<string, unknown>> | undefined, key:
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 };
 
-/** How a background subagent ended, from the `state` of OpenCode's report to its parent. */
 const reportOutcome = (state: string | undefined) =>
   state === "completed"
     ? ("completed" as const)
@@ -678,9 +655,7 @@ const INSTRUCTIONS_KEY = "t3-code";
 const RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = "2 seconds";
 const RECONCILE_TIMEOUT = "15 seconds";
-/** How long a new turn waits for a reconnect in progress. */
 const RECONNECT_WAIT = "30 seconds";
-/** A background subagent's result when its end was lost with the event stream. */
 const LOST_BACKGROUND =
   "T3 Code lost its connection to OpenCode while this subagent ran, so its result is not shown.";
 /** How long a turn waits on the directory's commands or skills before sending the text as is. */
@@ -699,7 +674,6 @@ export const OPENCODE_2_STILL_STOPPING =
   "OpenCode is still stopping the previous turn. Send the message again in a moment.";
 const REQUEST_REPLY_TIMEOUT = "10 seconds";
 
-/** Whether an answer to a paused request reached the server, trying twice. */
 const deliver = <E>(answer: Effect.Effect<void, E>) =>
   answer.pipe(
     Effect.retry({ times: 1 }),
@@ -711,14 +685,8 @@ const deliver = <E>(answer: Effect.Effect<void, E>) =>
 type ModelRef = ReturnType<typeof Model.Ref.make>;
 
 /**
- * The user message ids T3 prompts under. OpenCode takes a client id (it must
- * start with `msg_`) and answers a repeat of one in the same session with the
- * item it already has, so a retried request never queues a second message,
- * and a turn knows the message fork and rollback cut at before OpenCode
- * answers. The id is unique across the whole server, which refuses it in any
- * other session (409), so it names the session: another T3 database or
- * environment on the same server repeats thread ids and run ordinals, never
- * session ids. A turn keeps its id in `nativeTurnRef`.
+ * IDs must start with msg_ and be unique across the server; the session prevents cross-environment collisions.
+ * Repeating an ID is idempotent; preselecting it gives fork/rollback a boundary before OpenCode answers.
  */
 const turnPromptId = (sessionId: string, attemptId: string) =>
   SessionMessage.ID.make(`msg_t3_turn_${sessionId}:${attemptId}`);
@@ -772,7 +740,6 @@ const boundaryAfter = (
   );
 };
 
-// Errors already in the adapter channel keep their tag; only lower-level ones are wrapped.
 const isProviderAdapterError = Schema.is(ProviderAdapter.ProviderAdapterV2Error);
 
 /**
@@ -797,7 +764,7 @@ const sameModel = (left: ModelRef, right: ModelRef | undefined) =>
   left.id === right?.id &&
   (left.variant ?? "default") === (right?.variant ?? "default");
 
-/** OpenCode's own agents for T3's interaction modes; plan mode is its read-only `plan` agent. */
+// OpenCode's plan agent is read-only.
 const agentFor = (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
   input.runtimePolicy.interactionMode === "plan" ? "plan" : "build";
 
@@ -807,10 +774,8 @@ const commandOf = (text: string) => {
   return match === null ? undefined : { name: match[1]!, text: match[2] ?? "" };
 };
 
-/** Whether a prompt names any skill at all, before the directory's skills are read. */
 const SKILL_MENTION = new RegExp(SKILL_MENTION_PATTERN.source, "u");
 
-/** The workspace skills a prompt names with the composer's `$skill` tokens. */
 const skillsNamed = (text: string, known: ReadonlySet<string>) => [
   ...new Set(
     [...text.matchAll(SKILL_MENTION_PATTERN)].flatMap((match) =>
@@ -841,10 +806,6 @@ const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["s
         hasSubagents: turn.usedSubagents,
       };
 
-/**
- * The adapter for one provider instance. It talks to the instance's
- * {@link OpenCode2Server.OpenCode2Server}, which the driver builds from the instance's settings.
- */
 export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: ProviderInstanceId) {
   const server = yield* OpenCode2Server.OpenCode2Server;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -891,7 +852,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     // OpenCode config can change a model's limits, and this one runtime serves
     // the instance's threads in every directory.
     const contextWindows = new Map<string, Map<string, number>>();
-    /** A thread without a worktree runs where T3 does, as its session is created. */
     const directoryOf = (cwd: string | null | undefined) => cwd ?? host.paths.cwd;
     const windowOf = (cwd: string | null | undefined, model: string) =>
       contextWindows.get(directoryOf(cwd))?.get(model);
@@ -942,7 +902,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const emit = (event: ProviderAdapter.ProviderAdapterV2Event) =>
       Queue.offer(events, event).pipe(Effect.asVoid);
     const ownerOf = (sessionId: string) => childOwners.get(sessionId) ?? threads.get(sessionId);
-    /** Marks a run T3 ended while OpenCode may still run it (see `unsettled`). */
     const markUnsettled = (state: ThreadState) => {
       state.unsettled = true;
       state.unsettledStarted = busy.has(state.sessionId);
@@ -977,14 +936,12 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       instructions: undefined,
     });
 
-    /** The thread whose session started this one, through any nesting. */
     const rootOf = (state: ThreadState): ThreadState => {
       let current = state;
       while (current.subagent !== undefined) current = current.subagent.call.state;
       return current;
     };
 
-    /** A thread's session and its subagents' sessions, through any nesting. */
     const sessionsOf = (thread: ThreadState): ReadonlyArray<ThreadState> => [
       thread,
       ...[...threads.values()].filter((state) => {
@@ -1042,7 +999,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       (state.subagent !== undefined && busy.has(state.sessionId)) ||
       [...state.calls.values()].some((call) => call.background);
 
-    /** Work that outlives the thread's turn, on its own session or its subagents'. */
     const hasBackground = (thread: ThreadState) => sessionsOf(thread).some(owesWork);
 
     const setSessionStatus = (
@@ -1300,7 +1256,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       usedSubagents: false,
     });
 
-    /** A subagent call as its parent turn's item, node and subagent row. */
     const emitSubagent = Effect.fnUntraced(function* (call: SubagentCall) {
       const updatedAt = yield* DateTime.now;
       const { turn, state } = call;
@@ -1390,11 +1345,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       yield* syncRoster(rootOf(call.state));
     });
 
-    /**
-     * Lists a thread's background subagents on its provider thread, as typed
-     * `subagent` work: the thread shows it waits on them after its turn ends,
-     * and a Stop reaches them. Emitted only when the list changes.
-     */
+    /** Publishes changed background-work rosters so the thread waits on its subagents and Stop reaches them. */
     const syncRoster = Effect.fnUntraced(function* (state: ThreadState) {
       const roster = runningCalls(state)
         .filter((call) => call.background)
@@ -1736,7 +1687,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         }
       }
       const completedAt = yield* DateTime.now;
-      // Blocks still open when the execution ends are final as they stand.
       for (const open of turn.texts.values()) {
         yield* emitText(state, turn, open.block, open.kind, (text) => text, true);
       }
@@ -2205,7 +2155,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       type === "session.execution.failed" ||
       type === "session.execution.interrupted";
 
-    /** A `subagent` call's item, made when the model starts it. */
     const startCall = Effect.fnUntraced(function* (
       state: ThreadState,
       turn: ActiveTurn,
@@ -2235,10 +2184,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       yield* emitSubagent(call);
     });
 
-    /**
-     * One event for a session's running turn: its text, tools, steps and end.
-     * A `subagent` call is its item and child thread rather than a tool.
-     */
     const onTurnEvent = Effect.fnUntraced(function* (
       state: ThreadState,
       turn: ActiveTurn,
@@ -2310,7 +2255,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         case "session.tool.failed": {
           const aborted = event.data.error.type === "aborted";
           const call = state.calls.get(event.data.id);
-          // A refused call (unknown agent, the nesting limit) is a failed subagent.
           if (call !== undefined) {
             return yield* settleCall(
               call,
@@ -2375,12 +2319,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     });
 
     /**
-     * An execution OpenCode started on a thread's session with no turn of T3's
-     * running: the parent's answer to a background subagent's report. It is
-     * held for the continuation turn it asks for, or stopped when it only
-     * reports subagents a Stop ended.
-     */
-    /**
      * Takes the reports an execution OpenCode started on its own delivers. When
      * they all report subagents a Stop ended, that execution only answers the
      * Stop, so it is stopped and `stopped` is true.
@@ -2427,7 +2365,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       yield* offerWake(state, wake);
     });
 
-    /** A background subagent's end, as OpenCode queues it for its parent. */
     const onReport = Effect.fnUntraced(function* (
       state: ThreadState,
       inboxId: string,
@@ -2500,7 +2437,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       yield* finishTurn(state, end);
     });
 
-    /** Ends a turn held for its steers once none is left to deliver. */
     const endIfSettled = (state: ThreadState, turn: ActiveTurn) =>
       turn.heldEnd !== undefined && turn.steers.size === 0
         ? finishTurn(state, turn.heldEnd)
@@ -2679,7 +2615,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         const turn = state.active;
         if (turn !== undefined && turn.steers.delete(event.data.inboxID)) {
           turn.settledInbox.add(event.data.inboxID);
-          // A cancelled steer may leave a held turn nothing to wait for.
           if (event.type === "session.inbox.cancelled") yield* endIfSettled(state, turn);
         }
         return;
@@ -2708,7 +2643,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       const turn = state.active;
       if (turn === undefined) {
-        // OpenCode started the thread's session on its own.
         if (started && state.subagent === undefined) return yield* onWake(state);
         return;
       }
@@ -2855,7 +2789,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         return;
       }
       const active = yield* client.session.active();
-      // An execution that ended while the stream was down never said so.
       for (const sessionId of busy) if (!(sessionId in active)) busy.delete(sessionId);
       // A run `unsettled` waits on is over once its session is idle: any start
       // from here is a new execution's, even if the run's own start was lost in
@@ -2864,7 +2797,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       for (const state of threads.values()) {
         if (state.unsettled && !(state.sessionId in active)) state.unsettledStarted = true;
       }
-      // A stray that stopped meanwhile runs nothing to stop.
       for (const childId of strays.keys()) if (!(childId in active)) strays.delete(childId);
       for (const [sessionId, state] of running) {
         const turn = state.active;
@@ -2888,7 +2820,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         );
       }
       for (const state of background) {
-        // A subagent still running keeps its call; its end arrives on the new stream.
         for (const call of runningCalls(state)) {
           const child = call.child?.sessionId;
           if (child === undefined || !(child in active)) {
@@ -3105,7 +3036,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       );
     });
 
-    /** Writes the session's rules for `policy` when they differ from what it has. */
     const writeRules = Effect.fnUntraced(function* (state: ThreadState, policy: RulesPolicy) {
       // A subagent's session may use its thread's T3 server, the root's.
       const rules = yield* rulesFor(state, policy, rootOf(state).providerThread.appThreadId);
@@ -3119,7 +3049,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       state.policy = policy;
     });
 
-    /** Names the session after its thread when they differ. */
     const writeTitle = Effect.fnUntraced(function* (state: ThreadState, title: string) {
       const next = title.trim();
       // An empty title asks OpenCode to generate one.
@@ -3160,13 +3089,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     };
 
     /**
-     * Refuses to cut or copy a session's history while something writes to
-     * it: a turn of T3's, an execution seen running on the stream (a held
-     * follow-up), or a run on the server this runtime does not own: one a
-     * timed-out Stop or an unanswered request left behind, or any run on a
-     * session loaded after the server outlived T3. Only that last case asks
-     * the server. A rollback also waits for background subagents, whose
-     * reports wake the session into the history it would cut.
+     * Refuse history changes while a native execution can still write it.
+     * Rollback also waits for background subagents, whose reports wake the history it would cut.
      */
     const ensureQuiet = Effect.fnUntraced(function* (
       sessionId: string,
@@ -3359,12 +3283,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     );
 
     /**
-     * T3's MCP server for this thread, and the per-turn instructions. The MCP
-     * server is registered for the session's directory under the thread's own
-     * name and credential (the session rules allow only it), and removed when
-     * the thread unloads or the session closes. OpenCode 2 has no per-prompt
-     * system field, so the instructions are a session instructions entry,
-     * which applies from the next step; it is only rewritten when it changes.
+     * Register MCP per directory with the thread's name and credential; session rules isolate it.
+     * OpenCode 2 has no per-prompt system field, so changed instructions use a session entry from the next step.
      */
     const prepareTurn = Effect.fnUntraced(function* (
       sessionId: string,
@@ -3489,7 +3409,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         return turn;
       });
 
-    /** Feeds a held execution's events to the turn now running on its session. */
     const replay = Effect.fnUntraced(function* (wake: Wake) {
       wake.dropped = true;
       for (const event of wake.events) yield* route(event, sessionOfEvent(event), true);
@@ -3642,7 +3561,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         const reached = yield* client.session
           .interrupt({ sessionID: Session.ID.make(childId) })
           .pipe(
-            // A session that is gone runs nothing.
             Effect.catchTags({ SessionNotFoundError: () => Effect.void }),
             Effect.timeout(INTERRUPT_TIMEOUT),
             Effect.tapCause((cause) =>
@@ -3686,17 +3604,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           }
         }),
       );
-      // Subagents of held executions this or an earlier Stop dropped.
       yield* stopStrays(state);
     });
 
-    /**
-     * What a turn sends: `/compact` compacts, `/name args` naming a workspace
-     * command runs it, and anything else is a prompt with the `$skill`s it
-     * names attached. Commands and skills are read from the session's
-     * directory only when the text could use them. A turn stopped meanwhile
-     * sends nothing.
-     */
+    /** Read directory commands and skills only when needed; a stopped turn sends nothing. */
     const submit = Effect.fnUntraced(function* (
       sessionId: string,
       turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
@@ -3712,7 +3623,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       };
       const text = turnInput.message.text.trim();
       const bare = turnInput.message.attachments.length === 0;
-      // The turn's own id, so fork and rollback cut before this turn's item.
       const id = turnPromptId(sessionId, turnInput.attemptId);
       if (bare && text === "/compact") {
         if (!sending()) return;
@@ -3961,7 +3871,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                   state.unsettled = false;
                 }
               }
-              // Installs the turn; every path after it ends the turn with a terminal.
               const begin = beginTurn(state, turnInput, afterUnsettled);
               if (stillStopping) {
                 yield* begin;
@@ -4001,7 +3910,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               // and its subagents still running hold the rules they started with.
               // Those run on whether or not this turn starts, so theirs are best effort.
               yield* writeRules(state, turnInput.runtimePolicy);
-              // A thread renamed since the last turn, or titled after its first prompt.
               yield* writeTitle(state, turnInput.appThread.title).pipe(
                 Effect.timeout(REQUEST_REPLY_TIMEOUT),
                 Effect.ignore({ log: true }),

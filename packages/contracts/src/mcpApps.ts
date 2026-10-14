@@ -2,11 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 
-/**
- * Requests an MCP App makes of its own MCP server, through the environment.
- * Each names the tool call that produced the app; the environment resolves the
- * app's server from that item, so an app can only reach the server it came from.
- */
+// Resolve the app's MCP server from its producing item so it cannot call another server.
 const McpAppTarget = {
   threadId: ThreadId,
   itemId: TurnItemId,
@@ -34,10 +30,7 @@ export const McpAppToolInfoInput = Schema.Struct({
 });
 export type McpAppToolInfoInput = typeof McpAppToolInfoInput.Type;
 
-/**
- * What a client needs to decide whether to ask before a call: whether the tool
- * exists for apps and whether its server declares it read-only.
- */
+/** Indicates whether an app may call the tool and whether the server declares it read-only. */
 export const McpAppToolInfo = Schema.Struct({
   callable: Schema.Boolean,
   readOnly: Schema.Boolean,
@@ -59,16 +52,10 @@ export const McpAppReadResourceResult = Schema.Struct({
 });
 export type McpAppReadResourceResult = typeof McpAppReadResourceResult.Type;
 
-/**
- * What an app wants the agent to know on its next turn (`ui/update-model-context`).
- * Each update replaces the app's previous one; no content clears it.
- */
+/** Each ui/update-model-context replaces prior context; absent content clears it. */
 export const McpAppUpdateModelContextInput = Schema.Struct({
   ...McpAppTarget,
-  /**
-   * The thread whose next turn gets the context: the one on screen, which is
-   * the app's own thread or a fork that shows it.
-   */
+  /** On-screen conversation receives context, including forks showing the app. */
   conversationThreadId: ThreadId,
   content: Schema.optional(Schema.Array(Schema.Unknown)),
   structuredContent: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),

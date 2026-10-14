@@ -50,11 +50,7 @@ export interface ExecuteGitInput {
   readonly timeoutMs?: number | null;
   readonly maxOutputBytes?: number;
   readonly appendTruncationMarker?: boolean;
-  /**
-   * With `appendTruncationMarker`, keep invoking the line callbacks after the
-   * buffered copy is full. For long-running commands whose output is only
-   * consumed through `progress`.
-   */
+  /** With appendTruncationMarker, progress callbacks continue after buffered output fills. */
   readonly keepLineCallbacksAfterTruncation?: boolean;
   readonly progress?: ExecuteGitProgress;
 }
@@ -119,16 +115,13 @@ export interface ExecuteGitProgress {
 }
 
 /**
- * Progress callbacks for `createWorktree`. Git prints `Updating files: 78% (2104/2700)`
- * to stderr during checkout, and `Submodule path 'x': checked out` during
- * submodule init. The tracker uses these to drive the worktree setup card.
+ * Git reports checkout progress as `Updating files: 78% (2104/2700)` on stderr.
+ * Submodule progress uses `Submodule path 'x': checked out` lines.
  */
 export interface CreateWorktreeProgress {
   /**
-   * Fires once `git worktree add` has created and registered the directory,
-   * before the (possibly long) submodule step. Git refuses an existing path,
-   * so a path reported here belongs to this call and is safe to remove on
-   * cancel.
+   * After worktree registration and before submodule setup.
+   * Git refuses existing paths, so this path belongs to the call and is safe to remove on cancel.
    */
   readonly onWorktreeClaimed?: (path: string) => Effect.Effect<void, never>;
   readonly onCheckoutProgress?: (input: {
@@ -150,11 +143,7 @@ export interface CreateWorktreeProgress {
 
 export interface CreateWorktreeOptions {
   readonly progress?: CreateWorktreeProgress;
-  /**
-   * The project-over-environment `worktreeSubmodules` setting. Null (or
-   * omitted, for callers without settings access) defers to the checkout's
-   * own t3.json.
-   */
+  /** Null or omitted defers to checkout t3.json; otherwise project settings override environment. */
   readonly submodules?: WorktreeSubmodules | null;
   /** The `worktreesDirectory` setting, used when the input has no explicit path. */
   readonly worktreesDirectory?: string;
@@ -403,10 +392,7 @@ export class GitVcsDriver extends Context.Service<
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
-    /**
-     * Absolute paths of every live worktree of the repository at `cwd`, the
-     * main checkout included. Worktrees whose directory is gone are left out.
-     */
+    /** Absolute paths of live worktrees, including the main checkout; absent directories are excluded. */
     readonly listWorktreePaths: (cwd: string) => Effect.Effect<string[], GitCommandError>;
     readonly deleteLocalBranch: (
       input: GitDeleteLocalBranchInput,
@@ -801,10 +787,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       return path.isAbsolute(gitCommonDir) ? gitCommonDir : path.resolve(cwd, gitCommonDir);
     });
 
-  // Git renames loose objects and refs into place without fsync by default, so
-  // an unclean restart can leave 0-byte files under refs/t3/** that break every
-  // later fetch and push. Checkpoint writes flush before they are published;
-  // macOS defaults to writeout-only, which does not reach the disk either.
+  // Flush checkpoint objects and refs to prevent zero-byte refs after an unclean restart.
+  // Force fsync because macOS writeout-only does not reach the disk.
   const durableWrite = [
     "-c",
     "core.fsync=objects,reference",

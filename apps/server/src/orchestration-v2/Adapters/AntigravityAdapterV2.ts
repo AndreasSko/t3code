@@ -84,11 +84,7 @@ export interface AntigravityAdapterV2Options {
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
 }
 
-/**
- * ACP 1.1.1 exposes subagent invocations as ordinary `start_subagent` tools
- * without child session ids. Project them as subagent items keyed by the tool
- * call so the timeline shows them as delegated work.
- */
+// ACP 1.1.1 omits child ids for start_subagent; key delegated items by tool call.
 const extractAntigravitySubagentUpdate: NonNullable<AcpAdapterV2Flavor["extractSubagentUpdate"]> = (
   toolCall,
 ) => {
@@ -112,7 +108,6 @@ const extractAntigravitySubagentUpdate: NonNullable<AcpAdapterV2Flavor["extractS
   };
 };
 
-/** The services the Antigravity flavor runs its runtime and session files with. */
 interface AntigravityFlavorServices {
   readonly crypto: Crypto.Crypto;
   readonly fileSystem: FileSystem.FileSystem;
@@ -123,15 +118,13 @@ interface AntigravityFlavorServices {
 export function makeAntigravityAcpAdapterFlavor(
   options: AntigravityAdapterV2Options & AntigravityFlavorServices,
 ): AcpAdapterV2Flavor {
-  // The attachments dir grant lets the agent read pasted files at the paths
-  // the turn text references. It is a leaf directory of uploads. A session
-  // without a workspace gets no workspace root rather than the server's cwd.
+  // Grant only the uploads leaf for pasted files; absent workspace must not
+  // default to the server cwd.
   const antigravityClientFileRoots = (cwd: string | null) =>
     cwd === null ? [options.host.paths.attachmentsDir] : [cwd, options.host.paths.attachmentsDir];
   const makeRuntime = (input: AcpAdapterV2RuntimeInput) =>
     Effect.gen(function* () {
-      // AcpAdapterV2 owns the runtime scope; sign-in and sign-out stop the
-      // process by closing a child of it, and the adapter respawns on the next turn.
+      // Auth closes a runtime child scope; the adapter respawns on the next turn.
       const scope = yield* Scope.fork(yield* Effect.scope);
       const runtime = yield* options
         .withProcess(

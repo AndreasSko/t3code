@@ -1,14 +1,5 @@
-/**
- * `t3 pair` - mint a pairing token for an already-running server and print it
- * as a QR code, without restarting anything.
- *
- * Discovery reads the `server-runtime.json` a live server persists next to its
- * database, then confirms the process is actually answering by fetching its
- * public environment descriptor. Inside a linked git worktree the worktree's
- * own `.t3` is checked first (matching dev-runner precedence); otherwise the
- * shared T3 home. `--tailscale` publishes the server over Tailscale Serve
- * HTTPS and pairs through the tailnet URL instead.
- */
+// Prefer a worktree's own runtime descriptor and verify liveness before minting
+// a token; --tailscale pairs through Tailscale Serve HTTPS.
 import {
   type AuthEnvironmentScope,
   AuthStandardClientScopes,
@@ -83,8 +74,6 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
   }
 }
 
-// Each tailscale failure gets its own class (same reasoning as
-// scripts/lib/dev-share.ts): distinct caller-visible message, distinct remedy.
 export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnavailableError>()(
   "TailscaleUnavailableError",
   { cause: Schema.Defect() },
@@ -130,7 +119,6 @@ export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupied
   }
 }
 
-/** The URL a browser or phone should pair through, absent Tailscale. */
 export const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
   state.devUrl ?? resolveHeadlessConnectionString(state.host, state.port);
 
@@ -145,12 +133,8 @@ export class DevServerNotProxiableError extends Schema.TaggedError<DevServerNotP
 
 const isDevServerNotProxiableError = Schema.is(DevServerNotProxiableError);
 
-/**
- * The local endpoint Tailscale Serve should proxy to. Dev servers are
- * single-origin, so the web dev server's port is the one to publish; the
- * backend rides along behind Vite's proxy. Serve targets are always plain
- * HTTP, so an HTTPS dev URL cannot be proxied and is rejected.
- */
+/** Publish the single-origin web dev port, including its backend proxy.
+ * Tailscale Serve targets require HTTP, so reject HTTPS dev URLs. */
 export const resolveTailscaleLocalTarget = (
   state: PersistedServerRuntimeState,
 ): { readonly localPort: number; readonly localHost?: string } | DevServerNotProxiableError => {
@@ -192,11 +176,7 @@ const formatPairOutput = (input: {
     "",
   ].join("\n");
 
-/**
- * Three outcomes, because they drive different decisions: a T3 descriptor
- * (pair with it), nothing answering (safe to configure Tailscale Serve), or
- * something answering that is not a T3 server (do NOT overwrite its mapping).
- */
+// Distinguish unreachable endpoints from non-T3 responders to avoid replacing another service.
 type EnvironmentProbeResult =
   | { readonly _tag: "descriptor"; readonly descriptor: ExecutionEnvironmentDescriptor }
   | { readonly _tag: "unreachable" }
@@ -210,18 +190,12 @@ const probeEnvironmentDescriptor = (
     const request = HttpClientRequest.get(new URL(WELL_KNOWN_ENVIRONMENT_PATH, baseUrl).toString());
     const response = yield* client.execute(request).pipe(
       Effect.timeout(PAIR_PROBE_TIMEOUT),
-      // Transport failure or timeout: nothing (reachable) is listening there.
       Effect.mapError(() => ({ _tag: "unreachable" }) as const),
     );
-    // Bad-gateway family means a proxy (Tailscale Serve) answered for a
-    // backend that is gone — a stale mapping, not a live occupant. Treating
-    // it as unreachable lets `t3 pair --tailscale` repair its own mapping
-    // after the server's port changed.
+    // Bad gateway means a stale proxy mapping, so pairing may safely repair it.
     if (response.status === 502 || response.status === 503 || response.status === 504) {
       return { _tag: "unreachable" } as const;
     }
-    // Anything else that answered HTTP but not with a valid descriptor is
-    // some other service.
     const descriptor = yield* HttpClientResponse.filterStatusOk(response).pipe(
       Effect.flatMap(HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)),
       Effect.mapError(() => ({ _tag: "not-a-t3-server" }) as const),
@@ -243,9 +217,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   if (explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0) {
     bases.push(yield* resolveBaseDir(explicitBaseDir));
   } else {
-    // Same precedence as dev-runner: inside a linked worktree its own `.t3`
-    // outranks the shared home, so `t3 pair` in a worktree pairs with the dev
-    // server under test rather than the daily-driver install.
+    // Prefer a worktree's .t3 to avoid pairing with the daily-driver install.
     const worktreeHome = yield* resolveWorktreeT3Home(process.cwd());
     if (worktreeHome !== undefined) {
       bases.push(worktreeHome);
@@ -268,9 +240,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (Option.isNone(state)) {
         continue;
       }
-      // The pid check guards against a dead server's state file whose port
-      // was since reused by a different server: pairing would then mint a
-      // token in the old database while the QR code points at the new server.
+      // A reused port may belong to another server; check the recorded PID before minting.
       if (!isProcessAlive(state.value.pid)) {
         continue;
       }
@@ -289,21 +259,15 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   return yield* new NoRunningServerError({ checkedStatePaths });
 });
 
-/**
- * Server config pointed at the discovered server's state directory, so the
- * minted token lands in the database the running server reads from. Built by
- * hand rather than through `resolveServerConfig` to keep the dev-vs-userdata
- * choice pinned to where the runtime state was actually found, independent of
- * ambient environment variables.
- */
+// Pin token storage to the discovered state directory; ambient config must
+// not redirect issuance to a different database.
 const makePairServerConfig = Effect.fn(function* (input: {
   readonly target: DiscoveredPairTarget;
   readonly logLevel: ServerConfig.ServerConfig["Service"]["logLevel"];
 }) {
   const { baseDir, variant, state } = input.target;
-  // The state-dir variant does not imply dev-ness: a worktree dev server uses
-  // an explicit home and therefore lands in `userdata`. The recorded devUrl is
-  // what actually marks a dev server.
+  // Worktree dev servers may use userdata via an explicit home; devUrl, not
+  // the state-directory variant, identifies development mode.
   const devUrl = state.devUrl !== undefined ? new URL(state.devUrl) : undefined;
   const derivedPaths = yield* ServerConfig.deriveServerPaths(
     baseDir,
@@ -374,19 +338,14 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       servePort: input.servePort,
     });
 
-    // Only an unreachable port, or a mapping already fronting this exact
-    // environment, is safe to (re)configure. Any other responder — T3 or not
-    // — must not have its mapping silently replaced.
+    // Reconfigure only unreachable ports or mappings for this exact environment.
     const existing = yield* probeEnvironmentDescriptor(baseUrl);
     if (existing._tag === "descriptor") {
       if (existing.descriptor.environmentId !== input.target.descriptor.environmentId) {
         return yield* new ServesOtherEnvironmentError({ servePort: input.servePort });
       }
-      // Matching environment id proves the mapping reaches this server, but
-      // not through which port: for a dev server it may front the backend
-      // (whose /.well-known also answers) while /pair only renders through
-      // the web origin. Reuse as-is for regular servers; fall through and
-      // repoint our own mapping at the web port for dev servers.
+      // A dev backend also serves the descriptor, but /pair needs the web origin;
+      // repoint our own dev mapping to the web port.
       if (input.target.state.devUrl === undefined) {
         return { baseUrl, notes };
       }

@@ -50,10 +50,8 @@ export const RelayDeviceRegistrationRequest = Schema.Struct({
   iosMajorVersion: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(18))),
   androidApiLevel: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(24))),
   appVersion: Schema.optional(TrimmedNonEmptyString),
-  // APNs routing for this install: the topic must match the app's bundle id
-  // (dev/preview/prod variants differ) and development-signed builds receive
-  // sandbox tokens. Optional so older app builds keep registering; the relay
-  // falls back to its configured defaults.
+  // APNs topics must match this install's bundle id; development builds use sandbox tokens.
+  // Older clients omit these fields and use relay defaults.
   bundleId: Schema.optional(TrimmedNonEmptyString),
   apsEnvironment: Schema.optional(RelayApnsEnvironment),
   pushToken: Schema.optional(TrimmedNonEmptyString),
@@ -468,8 +466,7 @@ export class RelayEnvironmentConnectNotAuthorizedError extends Schema.TaggedErro
   "RelayEnvironmentConnectNotAuthorizedError",
   {
     code: Schema.Literal("environment_connect_not_authorized"),
-    // Optional so responses from relays deployed before the reason was
-    // threaded through still decode.
+    // Optional so older relay responses decode.
     reason: Schema.optional(RelayEnvironmentConnectNotAuthorizedReason),
     traceId: TrimmedNonEmptyString,
   },
@@ -824,9 +821,8 @@ export const RelayEnvironmentStatusValue = Schema.Literals(["online", "offline"]
 export type RelayEnvironmentStatusValue = typeof RelayEnvironmentStatusValue.Type;
 
 /**
- * Why an environment is offline, when the relay knows more than "the host
- * did not answer". `tunnel_released`: the relay deleted the environment's
- * idle tunnel, and the host needs a current T3 Code build to get a new one.
+ * tunnel_released means the relay deleted an idle tunnel; the host needs a
+ * current T3 build to acquire a new one.
  */
 const RelayEnvironmentOfflineReason = Schema.Literals(["tunnel_released"]);
 type RelayEnvironmentOfflineReason = typeof RelayEnvironmentOfflineReason.Type;
@@ -874,10 +870,8 @@ export type RelayCloudEnvironmentHealthProofPayload =
   typeof RelayCloudEnvironmentHealthProofPayload.Type;
 
 /**
- * Sent with every webhook the relay forwards, signed with the relay's mint key
- * (`x-t3-relay-delivery`). The environment trusts the relay's delivery id,
- * receive time and trace context only when this verifies, since its webhook
- * URL can also be called directly.
+ * Verify the relay-minted x-t3-relay-delivery JWT before trusting delivery id,
+ * time or trace context: the webhook URL can also be called directly.
  */
 export const RelayHookDeliveryProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
@@ -1016,9 +1010,7 @@ export const RelayAgentActivitySnapshotResponse = Schema.Struct({
 });
 export type RelayAgentActivitySnapshotResponse = typeof RelayAgentActivitySnapshotResponse.Type;
 
-// Lets the app decide whether arming a Live Activity is worthwhile before
-// creating one (no empty lock-screen card when nothing is running) and seed
-// the card with the real aggregate instead of a placeholder.
+// Check activity before arming to avoid an empty Live Activity and seed real counts.
 export const RelayAgentActivitySnapshotEndpoint = HttpApiEndpoint.get(
   "getAgentActivitySnapshot",
   "/v1/mobile/agent-activity",
@@ -1230,12 +1222,9 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .middleware(RelayEnvironmentAuth);
 
 /**
- * Public, stateless webhook forwarding to an environment's managed tunnel.
- * Unauthenticated: the token in the path is the environment's credential, and
- * the relay only routes and forwards. Raw, so the body reaches the
- * environment byte for byte and signatures still verify there. `endpointKey`
- * names one managed endpoint (its tunnel's hash of user and environment), not
- * the environment id, which any account can link.
+ * The environment authenticates the path token; the relay only forwards.
+ * Preserve body bytes for signatures. endpointKey is the tunnel's user/environment
+ * hash because any account can link the same environment id.
  */
 const RelayHookParams = Schema.Struct({
   endpointKey: Schema.String,

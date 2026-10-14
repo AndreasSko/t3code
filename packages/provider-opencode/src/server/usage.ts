@@ -1,10 +1,3 @@
-/**
- * Usage history for OpenCode, read from its SQLite databases and legacy JSON
- * message store under each data directory.
- *
- * @module provider-opencode/server/usage
- */
-
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
   totalTokens,

@@ -12,13 +12,7 @@ function formatModelList(names: ReadonlyArray<string>): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-/**
- * Model picker notice for models the manifest announces but the installed
- * provider is too old to run, e.g. "Update Claude Code to v2.1.300 or newer to
- * use Claude Opus 6." With a search query, only gated models it matches are
- * named, so searching for one explains why it is missing. Null when nothing
- * gated matches.
- */
+/** Names matching manifest models gated by provider version, explaining why picker search results are missing. */
 export function formatProviderUpdateRequiredNotice(
   provider: Pick<ServerProvider, "driver" | "updateRequiredModels">,
   searchQuery = "",

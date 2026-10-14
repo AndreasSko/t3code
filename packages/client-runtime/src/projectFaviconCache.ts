@@ -81,12 +81,7 @@ async function readBounded(response: Response, maxBytes: number) {
   return bytes;
 }
 
-/**
- * Fetches an icon and inlines its bytes when they fit the cache limit, so SVGs
- * and small bitmaps are stored exactly as served. Larger bitmaps go through the
- * platform downscaler; larger SVGs stay remote because rasterizing them without
- * intrinsic dimensions is unreliable.
- */
+/** Cache small sources verbatim and downscale larger bitmaps; large SVGs stay remote without reliable dimensions. */
 export function createProjectFaviconImageLoader(input: {
   readonly fetch?: typeof fetch;
   readonly downscale: (

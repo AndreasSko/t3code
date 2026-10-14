@@ -68,8 +68,7 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       continue;
     }
 
-    // Header items are decorative section labels for the web fallback only —
-    // Electron's native menu has no equivalent affordance, so we skip them.
+    // Electron has no native section-header item, so omit web-only decorative labels.
     if (sourceItem.header === true) {
       continue;
     }
@@ -97,9 +96,8 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
   return normalizedItems;
 }
 
-// Renderer positions arrive in CSS pixels; popup() expects window points, so
-// page zoom must be factored in or menus drift proportionally to their
-// distance from the window origin.
+// Renderer coordinates use CSS pixels, but popup() expects window points;
+// account for page zoom to avoid position drift.
 const normalizePosition = (
   position: Option.Option<ElectronMenuPosition>,
   zoomFactor: number,

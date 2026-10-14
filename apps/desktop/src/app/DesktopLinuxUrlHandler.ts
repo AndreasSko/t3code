@@ -12,15 +12,8 @@ import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
-// Linux ships as an AppImage, so the .desktop entry users end up with is
-// created by whatever integration tool they use (AppImageLauncher names it
-// appimagekit_<hash>-….desktop) and its filename is not under our control.
-// Electron's app.setAsDefaultProtocolClient resolves the desktop id from
-// setDesktopName, which cannot match those files — so the browser keeps
-// prompting "Choose an application" for every OAuth callback. Instead, write
-// our own handler entry pointing at the current AppImage, refresh the desktop
-// MIME cache so desktop environments recognize that entry as a handler, and
-// use xdg-mime to record it as the scheme default in mimeapps.list.
+// AppImage integration tools choose unpredictable desktop ids, so Electron cannot resolve our handler.
+// Register a stable URL-only entry and refresh its MIME cache for OAuth callbacks.
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
 export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<DesktopLinuxUrlHandlerRegistrationError>()(
@@ -239,10 +232,8 @@ export const make = Effect.gen(function* () {
     );
 
     yield* updateDesktopDatabase.pipe(
-      // Some MIME implementations, including GIO, use mimeinfo.cache to verify
-      // that a desktop entry is associated with a scheme. Cache refresh is
-      // independently best-effort so a missing update-desktop-database executable
-      // does not prevent xdg-mime from recording the requested default.
+      // GIO checks mimeinfo.cache for scheme handlers; keep refresh best-effort so a
+      // missing update-desktop-database cannot prevent xdg-mime registration.
       Effect.catch((error) =>
         logWarning("desktop MIME cache refresh failed", {
           applicationsDir: environment.linuxApplicationsDir,
@@ -255,8 +246,7 @@ export const make = Effect.gen(function* () {
     yield* setDefaultHandler;
     yield* logInfo("registered URL scheme handler", { scheme });
   }).pipe(
-    // Registration is best-effort: a missing xdg-mime or read-only home must
-    // never block startup — the OS chooser remains as fallback.
+    // Registration must not block startup; the OS chooser remains the fallback.
     Effect.catch((error) =>
       logWarning("URL scheme handler registration failed", {
         scheme,

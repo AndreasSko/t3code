@@ -117,10 +117,6 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   return Exit.isSuccess(result) ? result.value : undefined;
 }
 
-/**
- * Formats OpenCode SDK and runtime failures, including errors with missing or
- * non-string messages.
- */
 export function openCodeRuntimeErrorDetail(cause: unknown): string {
   if (isOpenCodeRuntimeError(cause)) return cause.detail;
   // Effect's TimeoutError can be constructed without a message, so `message`
@@ -356,9 +352,7 @@ export function parseModelsCliOutput(stdout: string): {
             }
             provider.models[modelID] = model;
           }
-        } catch {
-          // Skip unparseable model JSON
-        }
+        } catch {}
       }
     }
     currentSlug = null;
@@ -366,12 +360,8 @@ export function parseModelsCliOutput(stdout: string): {
   };
 
   for (const line of lines) {
-    // A model's JSON body is a single `JSON.stringify` line starting with `{`,
-    // while a provider/model slug is a bare `provider/model` header. Only the
-    // latter can be a slug: without this guard a body line with no interior
-    // whitespace and a `/` in one of its values (e.g. an OpenRouter model whose
-    // `id` is `vendor/model`) matches SLUG_LINE_RE, so flushModel runs against
-    // an empty body and the model is silently dropped.
+    // JSON bodies can contain provider/model values that match SLUG_LINE_RE.
+    // Only bare headers may start a model, or compact JSON bodies are silently dropped.
     const slugMatch = line.trimStart().startsWith("{") ? null : SLUG_LINE_RE.exec(line);
     if (slugMatch) {
       flushModel();
@@ -405,9 +395,7 @@ export function parseAgentListCliOutput(stdout: string): ReadonlyArray<Agent> {
             permission,
             options: {},
           });
-        } catch {
-          // Skip unparseable agent
-        }
+        } catch {}
       }
     }
     currentHeader = null;
@@ -532,10 +520,8 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): Permissi
     ];
   }
 
-  // "Auto-accept edits" is documented as "auto-approve edits, ask before other
-  // actions", so prompting for every edit ignores the mode the user picked.
-  // "auto" is left asking on purpose: the docs say providers without an AI
-  // reviewer, OpenCode among them, fall back to Supervised for that mode.
+  // Auto-accept edits approves edits while shell commands still ask.
+  // Auto falls back to Supervised because OpenCode has no AI reviewer.
   const editAction = runtimeMode === "auto-accept-edits" ? "allow" : "ask";
 
   // Session rules override OpenCode's agent defaults. Allow reads and task
@@ -689,9 +675,6 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
     input,
   ) =>
     Effect.gen(function* () {
-      // Bind this server's lifetime to the caller's scope. When the caller's
-      // scope closes, the spawned child is killed and all associated fibers
-      // are interrupted automatically — no `close()` method needed.
       const runtimeScope = yield* Scope.Scope;
 
       const hostname = input.hostname ?? DEFAULT_HOSTNAME;
@@ -734,13 +717,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             env: {
               ...input.environment,
               ...(serverPassword !== undefined ? { OPENCODE_SERVER_PASSWORD: serverPassword } : {}),
-              // Respect an OPENCODE_CONFIG_CONTENT provided by the caller or
-              // the inherited process environment, only falling back to the
-              // empty config when neither is set. Setting it unconditionally
-              // previously clobbered the user's opencode config, hiding their
-              // providers/models. The value is set explicitly (rather than
-              // relying on inheritance) because `extendEnv` is false whenever
-              // `input.environment` is provided.
+              // Preserve the user's config to keep their providers and models.
+              // Set it explicitly because providing input.environment disables environment inheritance.
               OPENCODE_CONFIG_CONTENT: resolveOpenCodeConfigContent(input.environment),
             },
             extendEnv: input.environment === undefined,

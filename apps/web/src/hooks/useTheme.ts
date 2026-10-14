@@ -52,12 +52,7 @@ export function readThemeHalves(): ThemeHalves | null {
   return readStoredThemeHalves();
 }
 
-/**
- * The stored mix as written, without resolvability pruning. Flows that
- * rebuild the whole mix must capture this before a `setTheme` clears it: a
- * published id resolves only once its set has streamed in, and treating "not
- * resolvable yet" as "absent" silently rewrites that half.
- */
+/** Capture raw halves before setTheme clears them; unresolved published ids must not be treated as absent. */
 export function readThemeHalvesRaw(): { light?: string; dark?: string } {
   if (typeof window === "undefined") return {};
   return readStoredThemeHalvesRaw();
@@ -72,12 +67,7 @@ function readStoredThemeHalves(): ThemeHalves | null {
   }
 }
 
-/**
- * The stored mix as written, without resolvability pruning. An environment
- * published id resolves only once its set has streamed in, so a write that
- * merged over the pruned parse would silently erase that half whenever the
- * other one changed before the set arrived.
- */
+/** Merge over raw stored halves so changing one cannot erase an unresolved published half. */
 function readStoredThemeHalvesRaw(): { light?: string; dark?: string } {
   try {
     const value: unknown = JSON.parse(
@@ -159,9 +149,7 @@ function readStoredFollowSystem(theme: Theme): boolean {
     const raw = window.localStorage.getItem(THEME_FOLLOW_SYSTEM_STORAGE_KEY);
     if (raw === "true") return true;
     if (raw === "false") return false;
-  } catch {
-    // Fall back to the legacy theme value when the separate preference is unavailable.
-  }
+  } catch {}
 
   return theme === "system";
 }
@@ -175,9 +163,7 @@ export function readAppearanceModePreference(theme: Theme): ThemePreferenceMode 
     try {
       const raw = window.localStorage.getItem(THEME_APPEARANCE_MODE_STORAGE_KEY);
       if (isThemePreferenceMode(raw)) return raw;
-    } catch {
-      // Fall back to the legacy preference below when storage is unavailable.
-    }
+    } catch {}
   }
 
   if (readStoredFollowSystem(theme)) return "system";
@@ -306,8 +292,7 @@ export function syncBrowserChromeTheme() {
 
   document.documentElement.style.backgroundColor = backgroundColor;
   document.body.style.backgroundColor = backgroundColor;
-  // Update every theme-color meta so any element another layer added (for
-  // example a media-scoped one) carries the resolved color too.
+  // Update all theme-color metas, including media-scoped elements added by other layers.
   const themeColorMetas = document.querySelectorAll<HTMLMetaElement>(
     `meta[name="${THEME_COLOR_META_NAME}"]`,
   );
@@ -487,8 +472,7 @@ function subscribe(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   listeners.push(listener);
 
-  // The system-preference and cross-tab listeners are shared by all
-  // subscribers; each event applies the theme once and notifies everyone.
+  // Share system and storage listeners so each event applies the theme only once.
   if (!removeWindowListeners) {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
@@ -658,7 +642,6 @@ export function useTheme() {
     emitChange();
   }, []);
 
-  // Keep DOM in sync on mount/change
   useEffect(() => {
     applyTheme(theme);
   }, [snapshot.appearanceMode, theme]);

@@ -52,8 +52,6 @@ export class ElectronProtocolUnregistrationError extends Schema.TaggedError<Elec
   }
 }
 
-// The scheme either proxies to a dev server (`targetOrigin`) or serves the
-// built client from disk (`assetDirectory`).
 export type DesktopProtocolRegistrationInput = {
   readonly scheme: string;
   readonly clerkFrontendApiHostname: string | undefined;
@@ -80,11 +78,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "https://challenges.cloudflare.com",
   ];
 
-  // The renderer connects directly to user-configured environments in addition to
-  // the build-configured Clerk, relay, and OTLP endpoints. Those environment
-  // origins are not known when this response policy is created, so restrict
-  // connections by the network schemes the client supports instead of by host.
-  // GLTFLoader fetches embedded textures through blob URLs after parsing the model.
+  // Environment origins are chosen at runtime, so restrict network schemes rather than hosts.
+  // GLTFLoader needs blob URLs for embedded textures.
   const connectSources = ["'self'", "blob:", "http:", "https:", "ws:", "wss:"];
 
   return [
@@ -161,8 +156,8 @@ const netFetch = (url: string, init: RequestInit) =>
     catch: (cause) => new ElectronProtocolFetchError({ cause }),
   });
 
-// The dev renderer target can briefly refuse connections while Vite restarts:
-// retry idempotent requests after 50ms, then 150ms, and keep the last failure.
+// Vite restarts can refuse connections; retry GET/HEAD after 50ms, then 150ms,
+// retaining the last failure.
 const fetchWithTransientRetry = (url: string, init: RequestInit) =>
   netFetch(url, init).pipe(
     Effect.retry({ schedule: Schedule.exponential("50 millis", 3), times: 2 }),
@@ -213,9 +208,7 @@ const proxyRequest = Effect.fn("desktop.protocol.proxyRequest")(function* (
   return withContentSecurityPolicy(response, contentSecurityPolicy);
 });
 
-// Serves the packaged web client without a backend: files resolve within the
-// asset directory, and any other path falls back to index.html so the SPA
-// router handles it, except for asset-shaped misses (`/missing.js`) which 404.
+// SPA routes fall back to index.html, but asset-shaped misses must remain 404s.
 const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
   request: Request,
   assetDirectory: string,

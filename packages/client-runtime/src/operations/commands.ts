@@ -128,9 +128,8 @@ export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly modelSelection?: ModelSelection;
   readonly branch?: string | null;
   readonly worktreePath?: string | null;
-  /** Kick off an async title regeneration for the thread. */
   readonly regenerateTitle?: boolean;
-  /** Link (object) or unlink (null) a pull request (#8160). */
+  /** Object links a pull request; null unlinks it. */
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   /** Apply only while no message or run has landed on the thread. */
   readonly expectedEmpty?: boolean;
@@ -156,7 +155,7 @@ interface StartThreadBootstrap {
     readonly createdAt: string;
   };
   readonly prepareWorktree?: {
-    /** V2 worktree launches always fail rather than falling back to the project checkout. */
+    /** Worktree launches always fail rather than falling back to the project checkout. */
     readonly requireWorktree?: boolean;
     readonly projectCwd: string;
     readonly baseBranch: string;
@@ -187,7 +186,7 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
 export interface InterruptThreadTurnInput extends ThreadCommandInput {
   readonly runId?: RunId;
   readonly subagentId?: NodeId;
-  /** Temporary caller compatibility while UI naming moves from turns to runs. */
+  /** Compatibility alias for runId. */
   readonly turnId?: string;
 }
 
@@ -249,12 +248,7 @@ export interface RetryWorkspacePreparationInput extends ThreadCommandInput {
 export interface EditQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
   readonly text: string;
-  /**
-   * Full replacement attachment list for the queued message. Omitted =
-   * text-only edit that leaves attachments untouched. `dataUrl` entries are
-   * persisted against `messageId` (the queued run's user message) before
-   * dispatch, so `messageId` is required whenever attachments are present.
-   */
+  /** Omit attachments to preserve them; replacement dataUrl entries require the queued messageId. */
   readonly edit?: {
     readonly messageId: MessageId;
     readonly attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment>;
@@ -777,11 +771,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
   });
 });
 
-/**
- * Stop for the thread's latest work: interrupts the active run, or the settled run whose
- * background work still runs. With no run to stop, it ends the thread's pull request
- * watches, the only background work that has no run.
- */
+/** Stops the latest active or background run; without one, stops the thread's pull request watches. */
 export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThreadTurn")(function* (
   input: InterruptThreadTurnInput,
 ) {

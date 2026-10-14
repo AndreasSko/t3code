@@ -1,6 +1,5 @@
 import * as Effect from "effect/Effect";
 
-/** GraphQL variables by name, each with the type it is declared as and the value it carries. */
 export type GraphQlVariables = Readonly<Record<string, readonly [type: string, value: unknown]>>;
 
 export interface GraphQlDocument {
@@ -8,21 +7,10 @@ export interface GraphQlDocument {
   readonly variables: Readonly<Record<string, unknown>>;
 }
 
-/**
- * One document asking the same field for many items, each under its own alias: the prefix and
- * the item's position (`s0`, `s1`, …), or its `key` when the answer is easier read by one. GitHub
- * has no bulk form of most lookups, so aliases are how a batch travels in one request.
- *
- * Every value travels as a variable renamed per alias (`$s0_owner`), and `field` is handed those
- * placeholders rather than the values: nothing an item holds is written into the document.
- * `shared` variables are declared once and referenced by their own name; `within` nests the aliased
- * fields inside one parent selection, such as a single repository.
- *
- * Null for no items, since a document with no selection is not a document.
- */
+/** Batch fields with aliases; values use renamed variables, never interpolation into the document.
+ * shared declares common variables, within nests selections, and no items returns null. */
 export function aliasedGraphQlDocument<Item, Variables extends GraphQlVariables>(input: {
   readonly operation: "query" | "mutation";
-  /** The operation's name, which tells one batch from another in logs and recorded traffic. */
   readonly name?: string;
   readonly alias: string;
   readonly key?: (item: Item, index: number) => number;
@@ -61,14 +49,8 @@ export function aliasedGraphQlDocument<Item, Variables extends GraphQlVariables>
   };
 }
 
-/**
- * The pages of a GraphQL connection, read one after another from `from` (the first page by
- * default) until GitHub has no more, `until` is satisfied, or `maxPages` have been read. `read` is
- * handed the pages so far, for reads that size or check the next page by what has already arrived.
- *
- * `truncated` says pages remained when reading stopped. A cursor GitHub hands back a second time
- * would page forever, so it stops the read as truncated too.
- */
+/** read receives prior pages; until/maxPages bound the walk.
+ * Repeated cursors stop as truncated, as do other bounds before exhaustion. */
 export const readGraphQlPages = <Page, E, R>(
   read: (after: string | null, pages: ReadonlyArray<Page>) => Effect.Effect<Page, E, R>,
   options: {

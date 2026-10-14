@@ -7,10 +7,7 @@ const DIRECTIVE_PATTERN =
 const TS_DIRECTIVE_PATTERN = /^\s*\*?\s*@ts-(?:expect-error|ignore|nocheck)(?![\w-])(.*)$/su;
 const EMPTY_COMMENT_PATTERN = /^[\s*]*$/u;
 
-/**
- * Reports a directive that disables a lint rule or the type checker without saying why. The reason
- * is a `-- reason` suffix (text after the directive, for `@ts-*`) or a comment on the line above.
- */
+/** Suppressions need a `-- reason` suffix, text after @ts-*, or an explanatory comment above. */
 export default defineRule({
   meta: {
     type: "suggestion",

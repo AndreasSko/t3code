@@ -9,10 +9,8 @@ import {
 } from "unbash";
 
 /**
- * Code in another language inside a shell command: a `bash -lc "…"` script, a
- * `python3 -c '…'` argument, or a heredoc fed to an interpreter or written to
- * a file. `starts[i]` and `ends[i]` are the span of the original command that
- * spells `text[i]`, so a quoted `\"` maps back to both of its characters.
+ * starts[i]/ends[i] map each decoded script character to its original command span, including escaped
+ * quotes.
  */
 export interface EmbeddedScript {
   readonly language: string;
@@ -33,7 +31,6 @@ interface Interpreter {
   readonly inline: (flag: string) => boolean;
   /** Options that consume the next argument. */
   readonly valueOptions?: ReadonlySet<string>;
-  /** Options after which the script comes from a file or module instead. */
   readonly scriptFileOptions?: ReadonlySet<string>;
   /** "always" for SQL shells, which read statements from stdin next to their database argument. */
   readonly stdin: "always" | "without-script-file" | "never";
@@ -150,7 +147,6 @@ const INTERPRETERS: Record<string, Interpreter> = {
 INTERPRETERS.powershell = INTERPRETERS.pwsh!;
 INTERPRETERS.mariadb = INTERPRETERS.mysql!;
 
-// Commands that run the next word as the program, with the options that consume a value.
 const PROGRAM_WRAPPERS: Record<string, ReadonlySet<string>> = {
   env: new Set(["-u", "--unset", "-C", "--chdir"]),
   sudo: new Set(["-u", "--user", "-g", "--group", "-C", "-D", "--chdir"]),
@@ -161,7 +157,6 @@ const PROGRAM_WRAPPERS: Record<string, ReadonlySet<string>> = {
   builtin: new Set(),
 };
 
-// Heredoc delimiters that name their language, as in `<<'SQL'`.
 const DELIMITER_LANGUAGES: Record<string, string> = {
   py: "python",
   python: "python",
@@ -189,10 +184,8 @@ const DELIMITER_LANGUAGES: Record<string, string> = {
 };
 
 /**
- * The scripts embedded in a shell command, outermost first, so a highlighter
- * painting them in order lets a nested script override the one containing it.
- * Returns nothing for a command that does not parse cleanly; where a broken
- * quote ends cannot be trusted.
+ * Return scripts outermost first so nested highlighting overrides parents; broken syntax has no trusted
+ * spans.
  */
 export function embeddedScripts(command: string): EmbeddedScript[] {
   const identity = Array.from({ length: command.length }, (_, index) => index);
@@ -228,7 +221,6 @@ function isNode(value: unknown): value is { readonly type: string } {
   return typeof value === "object" && value !== null && "type" in value;
 }
 
-/** Visits every simple command, including those inside `$(…)`, loops and subshells. */
 function forEachCommand(
   node: unknown,
   visit: (command: Command) => void,
@@ -341,7 +333,6 @@ function commandScripts(
   return scripts;
 }
 
-/** Whether a redirection without a descriptor, or with `fd`, targets file descriptor `fd`. */
 function isDescriptor(descriptor: HereDoc["descriptor"], fd: number): boolean {
   return (
     descriptor === undefined || (descriptor.type === "FileDescriptor" && descriptor.value === fd)
@@ -354,7 +345,6 @@ interface ScriptArgument {
   readonly inValue: boolean;
 }
 
-/** The script arguments, and whether the script comes from a file instead. */
 function interpreterArgs(
   interpreter: Interpreter,
   args: ReadonlyArray<Word>,
@@ -372,7 +362,6 @@ function interpreterArgs(
       continue;
     }
     if (!optionsEnded && flag.startsWith("-") && flag !== "-") {
-      // `--eval=code` and `--file=path` carry their value in the same word.
       const [name = flag, value] = flag.startsWith("--") ? flag.split(/=(.*)/su) : [flag];
       if (interpreter.scriptFileOptions?.has(name)) {
         if (!interpreter.repeatable) return { scripts, scriptFromFile: true };
@@ -419,7 +408,6 @@ function sliceMapped(mapped: MappedText, start: number): MappedText {
   };
 }
 
-/** The language of the file `cat > file` or `tee file` writes its stdin to. */
 function writtenFileLanguage(
   name: string,
   command: Command,
@@ -449,7 +437,6 @@ function delimiterLanguage(hereDoc: HereDoc): string | undefined {
   return name && Object.hasOwn(DELIMITER_LANGUAGES, name) ? DELIMITER_LANGUAGES[name] : undefined;
 }
 
-/** A heredoc body as written; the interpreter reads its characters one to one. */
 function hereDocText(hereDoc: HereDoc, source: string): MappedText {
   const { pos, end } = hereDoc.body;
   const starts = Array.from({ length: end - pos }, (_, index) => pos + index);
@@ -461,9 +448,8 @@ function hereDocText(hereDoc: HereDoc, source: string): MappedText {
 }
 
 /**
- * A word's value with the source span of each character: quotes removed and
- * escapes resolved, the way the program receives it. Expansions such as
- * `$HOME` stay as written. Returns undefined for spellings it cannot map.
+ * Map decoded word characters to original spans; keep expansions literal and return undefined for
+ * unmappable spellings.
  */
 function wordText(word: Word, source: string): MappedText | undefined {
   const builder = new MappedTextBuilder();

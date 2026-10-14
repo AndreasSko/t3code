@@ -1,12 +1,4 @@
-/**
- * The subagent roster for one turn, and the compact label the mobile composer
- * pill renders for it.
- *
- * Scoped to a run rather than the whole thread: a thread accumulates every
- * subagent it ever spawned, while the pill and its sheet answer "what is this
- * turn doing right now". Statuses come from the v2 projection directly, so
- * this stays a pure fold over `runs` and `subagents`.
- */
+// Scope the roster to one run so a current-turn pill does not count all historical subagents.
 import * as DateTime from "effect/DateTime";
 import type { OrchestrationV2Subagent, OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
@@ -66,11 +58,7 @@ export function deriveThreadTurnSubagents(
   return { runId, turnActive: activeRun !== null, subagents, liveCount, settledCount };
 }
 
-/**
- * What the pill's agents segment says, or null while it should stay hidden.
- * The segment is for work in flight: once the turn settles it goes away
- * rather than leaving a stale count above the composer.
- */
+/** Hide the pill once the turn settles so stale counts do not linger above the composer. */
 export function resolveSubagentPillSegment(
   turn: ThreadTurnSubagents | null,
 ): SubagentPillSegment | null {

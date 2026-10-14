@@ -24,7 +24,6 @@ export interface ThreadPrPresentation {
   readonly url: string;
   /** Compact pull request number or linked count, e.g. "3774" or "+2". */
   readonly label: string;
-  /** Full, provider-aware label for assistive technologies. */
   readonly accessibilityLabel: string;
   readonly textClassName: string;
 }

@@ -69,10 +69,6 @@ export const setWslBackendEnabled = makeIpcMethod({
       yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`);
       return state;
     }
-    // Reconcile is idempotent and never fails; no need for a swap-style
-    // rollback when the WSL side has trouble coming up. With both
-    // backends running side by side, "WSL didn't start" is a transient
-    // state on one instance — the primary stays up either way.
     yield* wslBackend.reconcile;
     return yield* readWslState;
   }),
@@ -106,10 +102,7 @@ export const setWslOnly = makeIpcMethod({
   payload: Schema.Boolean,
   result: DesktopWslStateSchema,
   handler: Effect.fn("desktop.ipc.wsl.setOnly")(function* (enabled) {
-    // wsl-only decides which backend the pool spins up as "primary", and that
-    // decision is captured once at layer init. A disabled WSL backend always
-    // leaves Windows primary active, so mode changes can be staged without a
-    // relaunch and applied by the subsequent enable call.
+    // With WSL disabled, stage the preference without relaunch; enabling it applies the mode.
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
     const change = yield* appSettings.setWslOnly(enabled);

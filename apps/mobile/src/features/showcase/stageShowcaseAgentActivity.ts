@@ -9,12 +9,7 @@ import {
 import { showAndroidShowcaseAgentActivity } from "../agent-awareness/androidNotifications";
 import { showcaseAndroidActivityData } from "./showcaseAgentActivity";
 
-/**
- * Puts the staged agent activity on screen for the capture runner, which then
- * locks the simulator (iOS) or opens the notification shade (Android).
- * Resolves true once shown, otherwise the reason it could not be, so the
- * caller can retry and report.
- */
+/** Stages lock-screen activity; the runner then locks iOS or opens the Android notification shade. */
 export async function stageShowcaseAgentActivity(
   activity: AgentActivityProps,
   now: number,
@@ -25,8 +20,7 @@ export async function stageShowcaseAgentActivity(
     ios: { allowAlert: true, allowBadge: true, allowSound: true },
   });
   if (!permission.granted) return `notification permission ${permission.status}`;
-  // A previous appearance's pass left its alert delivered; it would stack
-  // under the new one.
+  // Revisiting a scene must not stack delivered alerts.
   await Notifications.dismissAllNotificationsAsync();
 
   if (Platform.OS === "android") {

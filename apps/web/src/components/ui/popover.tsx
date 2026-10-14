@@ -77,9 +77,8 @@ function PopoverPopup({
         className={cn(
           "h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
           variant === "panel"
-            ? // The card inside is the panel width, or the anchor less 12px per side; the viewport
-              // pads it by --spacing(2) per side. Panels slide when their offset changes, e.g. to make
-              // room for a bar below the header, even when opened from the keyboard (data-instant).
+            ? // With viewport padding, the card is panel width or anchor width minus 12px per side.
+              // Panel top-offset changes animate even for keyboard opens.
               "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+--spacing(4)),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-150 ease-out data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
             : "z-[130]",
         )}

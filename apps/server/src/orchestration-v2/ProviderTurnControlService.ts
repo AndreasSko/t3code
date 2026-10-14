@@ -122,10 +122,8 @@ export const layer: Layer.Layer<
             cause: "The recorded provider execution target is no longer valid.",
           });
         }
-        // A restart-session command commits the replacement binding before its
-        // process-bound effect runs. The old live runtime must still receive
-        // the interrupt, but only when the projection matches the exact
-        // replacement captured by that same durable effect.
+        // The replacement binding commits before interruption; reach the old runtime
+        // only while the projection matches this durable effect's exact replacement.
         const interruptProviderThread = targetsRecordedSession
           ? providerThread
           : { ...providerThread, providerSessionId: input.providerSessionId };
@@ -148,10 +146,8 @@ export const layer: Layer.Layer<
         }
         const session = yield* sessions.get(input.providerSessionId);
         if (Option.isNone(session)) {
-          // Interrupt/restart against a already-released session must not fail
-          // the durable effect (and retry 5x). The turn may still look running
-          // in projection until recovery/finalization; there is no live adapter
-          // to interrupt.
+          // A released session has no adapter to interrupt; succeed instead of retrying
+          // while recovery finalizes its stale running projection.
           if (input.operation === "interrupt" || input.operation === "restart") {
             yield* Effect.logWarning(
               "Provider interrupt/restart found no live session; treating as already stopped",
@@ -215,19 +211,15 @@ export const layer: Layer.Layer<
                 : { requestedAt: input.subagent.requestedAt }),
             });
           }
-          // A settled turn reaches its adapter too: only the adapter knows
-          // whether it still runs work for the thread, and each one either
-          // stops it or reports there is nothing left to stop. Background work
-          // the projection still shows is settled by the orchestrator after.
+          // Only the adapter knows whether a settled turn has background work; reach it
+          // before the orchestrator settles whatever remains in the projection.
           yield* session.value.interruptTurn({
             providerThread: loaded.providerThread,
             providerTurnId: loaded.providerTurn.id,
             requestRuntimeRestart: true,
           });
-          // Give native terminal ingestion time to finish before the Stop
-          // follow-up repairs a run whose provider no longer reports on it.
-          // The wait is real time: ingestion runs on other fibers and never
-          // advances a test clock, so a test clock would hold Stop forever.
+          // Give native terminal ingestion time before Stop repairs stale state; use real
+          // time because detached ingestion never advances a deterministic test clock.
           yield* Effect.gen(function* () {
             const deadline = (yield* Clock.currentTimeMillis) + 2_000;
             while (
@@ -260,9 +252,8 @@ export const layer: Layer.Layer<
         Effect.gen(function* () {
           const loaded = yield* load({ ...input, operation: "restart" });
           if (Option.isNone(loaded.session)) {
-            // No live adapter: nothing can emit a terminal provider-turn update
-            // from interrupt. Do not poll for projection terminalization or the
-            // restart effect stalls; let detach/start proceed.
+            // A dead adapter cannot emit a terminal update; let detach/start proceed
+            // without waiting for projection recovery.
             if (loaded.providerTurn.status === "running") {
               yield* Effect.logWarning(
                 "Provider restart interrupt skipped; no live session for a still-projected running turn",
@@ -298,10 +289,8 @@ export const layer: Layer.Layer<
             ) {
               return;
             }
-            // Provider terminal events are projected on a detached ingestion
-            // fiber. Yield through the Node event loop instead of sleeping on
-            // Effect's clock so deterministic runtimes cannot deadlock a
-            // command that is waiting for that projection.
+            // Yield through Node's event loop so detached ingestion can project terminal
+            // events even when Effect's deterministic clock cannot advance.
             yield* yieldToRuntime;
           }
           return yield* new ProviderTurnControlError({

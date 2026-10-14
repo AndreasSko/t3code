@@ -20,7 +20,6 @@ function compactLabel(value: unknown): string | undefined {
   return text.length > MAX_LABEL_LENGTH ? `${text.slice(0, MAX_LABEL_LENGTH - 1)}…` : text;
 }
 
-/** Describes a background-capable turn item that restart recovery cancels. */
 export function cancelledTurnItemWork(item: OrchestrationV2TurnItem): Work | undefined {
   switch (item.type) {
     case "subagent":
@@ -67,7 +66,6 @@ function restartWorkKind(task: OrchestrationV2PendingBackgroundTask): Work["kind
   }
 }
 
-/** Describes a provider-reported background task (the provider-thread roster). */
 export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTask): Work {
   const kind = restartWorkKind(task);
   const description = compactLabel(task.description);
@@ -83,10 +81,7 @@ export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTa
 
 const MAX_NOTE_ENTRIES = 10;
 
-/**
- * Provider-facing text for work the model still expects to hear back from.
- * Bounded (entries and label length) so it cannot crowd out the turn's context.
- */
+/** Bound provider-facing notes by count and label length so they cannot crowd out turn context. */
 export function restartCancelledBackgroundWorkNote(work: ReadonlyArray<Work>): string {
   const omitted = work.length - MAX_NOTE_ENTRIES;
   return [
@@ -101,11 +96,7 @@ type ProviderTurnState = Pick<
   "runAttemptId" | "providerThreadId" | "status"
 >;
 
-/**
- * A run whose turn had settled before the restart cancelled its background
- * work. Continuing it prompts the provider with the note. A run cut mid-turn
- * instead resumes that turn, which Codex does natively without a prompt.
- */
+/** Settled source turns use the note as a prompt; cut turns resume natively without one. */
 export function isRestartNoteSource(
   source: Pick<OrchestrationV2Run, "status" | "activeAttemptId" | "restartCancelledBackgroundWork">,
   providerTurns: ReadonlyArray<Pick<ProviderTurnState, "runAttemptId" | "status">>,
@@ -197,11 +188,7 @@ export function restartContinuationNote(
   return { work, settled: isRestartNoteSource(current, providerTurns) };
 }
 
-/**
- * A restart continuation prompted with the note rather than a native resume.
- * A turn cut mid-way that lost background work is prompted too, so the note
- * is delivered with it; only a continuation without a note resumes natively.
- */
+/** Continuations with notes are prompted; only those without notes resume natively. */
 export function isRestartNoteContinuation(
   run: Pick<OrchestrationV2Run, "restartContinuationOfRunId">,
   runs: ReadonlyArray<OrchestrationV2Run>,
@@ -219,13 +206,8 @@ export function isRestartNoteContinuation(
 }
 
 /**
- * Work cancelled by a restart that the run's provider thread has not been told
- * about yet. The note belongs to the provider thread that lost the work: turns
- * on another provider (after a switch) neither owe it nor deliver it. A later
- * completed turn on the same provider thread proves delivery, so the pending
- * set is derived rather than cleared. Compactions and
- * resumed turns carry no note, and a rolled-back run left native history, so
- * none of them counts as delivery. A note continuation's own prompt is the note.
+ * Notes belong to the provider thread that lost work; only its later completed prompted turns deliver them.
+ * Compactions, native resumes, and rolled-back turns do not; note continuations use their own prompt.
  */
 export function pendingRestartCancelledBackgroundWork(input: {
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
@@ -245,8 +227,6 @@ export function pendingRestartCancelledBackgroundWork(input: {
   readonly attempts: ReadonlyArray<Attempt>;
 }): ReadonlyArray<Work> {
   const isCompaction = (run: typeof input.run) => input.compactionMessageIds.has(run.userMessageId);
-  // The current run prepends the note unless it is a compaction or a
-  // continuation (whose own prompt is the note, or which resumes natively).
   if (
     input.run.providerThreadId === null ||
     input.run.restartContinuationOfRunId !== undefined ||
@@ -300,7 +280,7 @@ export function mergeRestartCancelledBackgroundWork(
   current: ReadonlyArray<Work>,
   added: ReadonlyArray<Work>,
 ): ReadonlyArray<Work> {
-  // Rows recorded before ids existed fall back to kind + label.
+  // Records without IDs fall back to kind + label.
   const identity = (entry: Work) => entry.id ?? `${entry.kind}\u0000${entry.label}`;
   const seen = new Set(current.map(identity));
   const merged = [...current];

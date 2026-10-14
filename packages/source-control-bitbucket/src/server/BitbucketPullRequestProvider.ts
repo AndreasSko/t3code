@@ -31,27 +31,12 @@ const CAPABILITIES: PullRequestCapabilities = {
   },
   reviewers: { request: true, listCandidates: true },
   edit: { changeRequest: true, comment: true },
-  // Bitbucket Cloud states nothing about what a reviewer has already read: no endpoint carries a
-  // viewed file, and the per-pull-request properties it does offer are one value shared by
-  // everyone rather than one per reader. So the marks are kept here, and the client says whose
-  // they are rather than implying bitbucket.org will show them.
+  // Bitbucket has no per-reader viewed-file endpoint; shared PR properties cannot represent reader state.
   viewedFiles: "environment",
 };
 
-/**
- * What the configured account may do here, from the one thing Bitbucket states per viewer: the
- * repository permission. Merging needs `write` or `admin`, so that is what narrows.
- *
- * Declining stays offered whatever the permission. Bitbucket lets the author of a pull request
- * decline their own with no more than read access, and the permission response says nothing about
- * who opened this one — so withholding the control from the one person entitled to it is the
- * worse of the two mistakes. Commenting and reviewing are not narrowed either: read access is
- * enough to say something, to approve and to ask for changes.
- *
- * Asking for a review is left open for the same reason: Bitbucket takes a reviewer set from the
- * author of a pull request as well as from whoever can write, and says nothing here about which
- * of the two this account is.
- */
+/** Merge needs write/admin. Keep decline and reviewer requests available because authors
+ * may perform them with read access; comments/reviews also need only read. */
 export function bitbucketViewerPermissions(input: {
   readonly canWrite: boolean;
 }): PullRequestViewerPermissions {
@@ -64,7 +49,6 @@ export function bitbucketViewerPermissions(input: {
   };
 }
 
-/** The failures that mean the credentials are the problem, rather than one request. */
 export function bitbucketProviderFailure(
   error: BitbucketPullRequestApi.BitbucketPullRequestApiError,
 ): PullRequestProviderFailure {
@@ -126,8 +110,7 @@ export const make = Effect.gen(function* () {
         provider: SourceControlProviderKind.make("bitbucket"),
         operation,
         ...bitbucketProviderFailure(error),
-        // Every Bitbucket failure states its own fact; this names the operation around it, so
-        // the two do not stack into "failed in x: failed in y: ...".
+        // Keep operation context separate from the failure's own detail to avoid nested failure messages.
         detail: error.detail,
         cause: error,
       });
@@ -161,8 +144,6 @@ export const make = Effect.gen(function* () {
     kind: SourceControlProviderKind.make("bitbucket"),
     capabilities: CAPABILITIES,
 
-    // Bitbucket credentials come from the server's environment rather than a checkout, so the
-    // account is the same whichever workspace asks.
     getViewer: () => api.getViewer().pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
@@ -179,8 +160,7 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({
             items: batch.items.map(toChangeRequest),
             truncated: batch.truncated,
-            // Bitbucket is asked for `-updated_on` whether or not it is being carried on from,
-            // so every page it answers is one a cursor can continue.
+            // -updated_on gives every page an order the continuation can use.
             continues: true,
           })),
         ),
@@ -360,7 +340,6 @@ export const make = Effect.gen(function* () {
         })
         .pipe(Effect.mapError(fail("replyToThread"))),
 
-    // Never called: `capabilities.reactions` is false, and the service refuses without it.
     setReaction: () =>
       Effect.fail(
         new PullRequestProviderError({

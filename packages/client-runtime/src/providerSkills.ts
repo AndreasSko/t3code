@@ -25,13 +25,7 @@ export function dedupeProviderSkillsByName(
   });
 }
 
-/**
- * Whether a composer pick can start this skill. A skill switched off in the
- * provider's settings will not run, and one the provider reserves for the
- * agent (Claude Code's `user-invocable: false`) rejects a user invocation.
- * Everything else, including skills the agent may not start on its own, is
- * fair game: the server dispatches the pick in the provider's native form.
- */
+/** Disabled skills and Claude user-invocable:false reject picks; disable-model-invocation does not. */
 export function isProviderSkillUserInvocable(
   skill: Pick<ServerProviderSkill, "enabled" | "userInvocable">,
 ): boolean {

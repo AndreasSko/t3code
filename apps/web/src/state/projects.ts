@@ -16,11 +16,7 @@ export const environmentProjects = createEnvironmentProjectAtoms({
 export const projectEnvironment = createProjectEnvironmentAtoms(connectionAtomRuntime, {
   projectAtom: environmentProjects.projectAtom,
 });
-/**
- * Web-only: project content search backs the ⇧⌘F dialog, which has no mobile
- * surface, so the atom family lives here instead of the shared client-runtime
- * project atoms consumed by the mobile app.
- */
+/** Content search has no mobile surface, so keep its atom family in web rather than shared client-runtime. */
 export const projectContentSearch = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:projects:search-contents",
   tag: WS_METHODS.projectsSearchContents,

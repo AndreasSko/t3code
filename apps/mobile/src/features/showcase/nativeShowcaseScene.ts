@@ -66,11 +66,7 @@ export function getNativeShowcaseScene(): ShowcaseScene | null {
   }
 }
 
-/**
- * Returns null when the runner requested no palette, which leaves the stored
- * theme preference untouched. An unknown id also reads as null rather than
- * silently falling back, so a capture never claims to show a theme it does not.
- */
+/** Null leaves the stored palette untouched, including when the runner names an unknown palette. */
 export function getNativeShowcaseTheme(): MobileThemeId | null {
   try {
     const theme = nativeShowcaseControls()?.getShowcaseTheme?.()?.trim();
@@ -102,8 +98,7 @@ export async function applyNativeShowcaseOrientation(
 ): Promise<boolean> {
   const controls = nativeShowcaseControls();
   if (!controls?.applyShowcaseOrientation || !controls.getInterfaceOrientation) {
-    // A development build that predates this helper keeps its default
-    // orientation; report success so callers do not retry forever.
+    // Missing native controls keep the default orientation; do not retry forever.
     return true;
   }
   try {

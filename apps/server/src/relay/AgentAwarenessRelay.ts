@@ -66,7 +66,6 @@ function eventThreadId(event: OrchestrationV2DomainEvent): ThreadId {
   return event.threadId;
 }
 
-// The filter takes loosely typed events; a turn-item payload carries both fields.
 function isTurnItemPayload(
   payload: unknown,
 ): payload is Pick<OrchestrationV2TurnItem, "type" | "status"> {
@@ -87,10 +86,8 @@ export function shouldPublishAgentAwarenessEvent(
   ) {
     return false;
   }
-  // projectThreadAwarenessV2 reads thread metadata, run status, pending requests,
-  // and pending background work (a finished subagent, a cleared roster, or an
-  // ended background item can release a held completion). Message bodies and
-  // tool progress cannot change the published activity.
+  // Background completions can release held terminal activity; message bodies
+  // and tool progress cannot change the published state.
   switch (event.type) {
     case "thread.created":
     case "thread.archived":
@@ -365,7 +362,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
     .map((thread) => thread.id);
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
@@ -416,11 +413,8 @@ export const make = Effect.gen(function* () {
   let cachedRelayClient: Effect.Success<ReturnType<typeof makeRelayClient>> | undefined;
   let publishedRelayConfig: NonNullable<Effect.Success<typeof readRelayConfig>> | undefined;
 
-  // Deadlines for publishes that need confirmation (tombstones and
-  // first-state completions). The confirming publish is re-enqueued through
-  // the same drainable worker as every other publish, so a confirmed
-  // tombstone can never race an in-flight live update; a recovered state
-  // clears the deadline. Assigned after the worker exists.
+  // Confirm tombstones and first completions through the same worker so they cannot race live updates.
+  // Recovered states clear their deadlines.
   const publishConfirmDeadlines = new Map<ThreadId, number>();
   let schedulePublishConfirm: (threadId: ThreadId) => Effect.Effect<void> = () => Effect.void;
   const publishRetries = new Map<
@@ -523,18 +517,14 @@ export const make = Effect.gen(function* () {
         });
       }).pipe(Effect.withSpan("relay.agent_activity.publish"), withRelayClientTracing);
 
-    // Per-thread shell read: this publish runs for every activity-relevant
-    // domain event, so materializing the full shell here would make the cost
-    // of one thread's activity proportional to how many threads exist.
+    // Read one thread shell so per-event publish cost does not grow with the total thread count.
     const threadShell = yield* threads.getThreadShell(threadId);
     if (
       threadShell?.lineage.relationshipToParent === "subagent" &&
       !(yield* Ref.get(publishedStateByThreadRef)).has(threadId)
     ) {
-      // Subagents never project activity, so the relay holds no row to clear.
-      // Their events would otherwise publish a tombstone each, and every
-      // publish re-delivers the user's aggregate. Checked before the archive
-      // filter so archiving one stays quiet too.
+      // Subagents have no relay row to clear; tombstones would re-deliver the user's aggregate.
+      // Check before archive filtering so archiving subagents stays quiet too.
       return;
     }
     const thread =
@@ -561,10 +551,7 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(thread) || !terminalWorkSinceStart(thread.value, startedAt)) return;
     }
     if (publishedStateByThread.get(threadId) === publishIdentity) {
-      // The projection is back at (or never left) the last published state, so
-      // any pending deferred confirmation is moot. Leaving the deadline in
-      // place would let a much later transient null find it already expired
-      // and publish a tombstone immediately, skipping the deferral window.
+      // Clear stale deadlines so a later transient null cannot skip its confirmation window.
       publishConfirmDeadlines.delete(threadId);
       yield* Effect.logDebug("agent activity publish skipped; projected state unchanged", {
         environmentId,
@@ -574,16 +561,8 @@ export const make = Effect.gen(function* () {
       return;
     }
 
-    // Two projections need confirmation before publishing, because both can
-    // appear transiently while the projector is mid-write and publishing them
-    // immediately is destructive or noisy:
-    // - null (tombstone) while the previous published state was live: deletes
-    //   the thread from every armed card mid-conversation.
-    // - completed as the thread's FIRST published state: sessions boot at
-    //   "ready" before their first turn, which projects as completed for an
-    //   instant and sends a spurious Done notification at thread birth.
-    // Defer, schedule a re-publish through the ordinary worker queue, and
-    // only publish if the projection still holds when it drains.
+    // Mid-write projections can transiently hide live threads or mark newborn sessions completed.
+    // Confirm through the worker before deleting cards or sending spurious terminal alerts.
     const requiresConfirmation =
       (snapshot.state === null &&
         publishedStateByThread.get(threadId) !== agentAwarenessPublishIdentity(null)) ||
@@ -704,8 +683,7 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  // Publishes the active threads once. Returns why it did not, so the retry
-  // knows whether it is waiting on a link or on the publish setting.
+  // The result distinguishes a missing link from disabled publishing for retry backoff.
   const publishActiveThreadsUnsafe = Effect.gen(function* () {
     // One secret read settles the common never-linked case; the full link
     // config is read only once publishing is on.
@@ -751,12 +729,8 @@ export const make = Effect.gen(function* () {
     return "published" as const;
   });
 
-  // Publishes the catch-up snapshot of active threads once the environment is
-  // linked and publishing is enabled. Many environments never link, so while
-  // unlinked the retry backs off from 5 s to 60 s. Only this process writes
-  // the link, and it calls `requestCatchUp`, which ends the wait early. A
-  // linked environment keeps the 5 s retry, because `t3 connect publish` can
-  // turn publishing on from another process.
+  // Unlinked retries back off to 60s; requestCatchUp wakes this process after linking.
+  // Keep linked retries at 5s because another process can enable publishing.
   const publishActiveThreadsOnceWhenConfigured = (logEnabledWhenReady: boolean) =>
     Effect.gen(function* () {
       let unlinkedRetryDelayMs = 5_000;

@@ -34,8 +34,6 @@ export class SidebarPointerSensor {
   private readonly document: Document;
   private readonly window: Window;
 
-  // The settle sweep constructs this sensor directly, outside dnd-kit, so it
-  // takes only the props the gesture reads.
   constructor(private readonly props: Omit<SensorProps<Options>, "activeNode" | "context">) {
     this.pointer = props.event as PointerEvent;
     this.document = getOwnerDocument(this.pointer.target);
@@ -137,9 +135,7 @@ export class SidebarPointerSensor {
     this.document.removeEventListener("dragstart", this.preventDefault);
     this.document.removeEventListener("contextmenu", this.preventDefault);
     this.document.removeEventListener("selectionchange", this.clearSelection);
-    // Cancellation can precede release by an arbitrary amount of time. Consume
-    // that release click, or let a fresh pointerdown end suppression if release
-    // happened outside the document. Ordinary clicks never install this guard.
+    // Cancellation can precede release; suppress its click until release or a fresh pointerdown.
     if (!aborted || cancelled) {
       this.document.addEventListener("click", this.suppressClick, { capture: true });
       this.document.addEventListener("pointerdown", this.clearClickSuppression, { capture: true });

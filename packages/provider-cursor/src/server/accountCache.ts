@@ -1,16 +1,6 @@
 /**
- * Cursor account usage, cached per credential source.
- *
- * Cursor's dashboard API takes about 20 seconds for a 30-day window, so fetched
- * records are kept for the whole retention period, whatever window was asked
- * for. After one full fetch, a refresh fetches only the newest edge.
- *
- * A record's dedupe key carries its timestamp and an occurrence index counted
- * within one fetch. A refetched range therefore replaces every cached record in
- * that range rather than adding to it, so each timestamp's records always come
- * from a single fetch and their occurrence indexes cannot collide.
- *
- * @module provider-cursor/server/accountCache
+ * Cursor's dashboard API takes about 20 seconds for 30 days; retain history and refresh its newest edge.
+ * Replace fetched ranges wholesale: timestamp occurrence indexes are unique only within one fetch.
  */
 import { cursorRateModel } from "./accountUsage.ts";
 import type { UsageRecord } from "@t3tools/provider-core/server/usage";
@@ -28,7 +18,6 @@ export interface CursorAccountCache {
   /** Inclusive range of event timestamps the records are complete for. */
   readonly sinceMs: number;
   readonly untilMs: number;
-  /** When the newest edge was fetched. */
   readonly fetchedAtMs: number;
   readonly records: readonly UsageRecord[];
 }
@@ -38,7 +27,6 @@ interface CursorFetchRange {
   readonly untilMs: number;
 }
 
-/** Whether the cache answers without a refresh. */
 export function isCursorCacheFresh(
   cache: CursorAccountCache | undefined,
   nowMs: number,
@@ -63,10 +51,8 @@ export function cursorFetchRange(
 }
 
 /**
- * Applies a fetched range to the cache, replacing the cached records it covers
- * and dropping those before the retention start. Pass `undefined` for a cache
- * that belongs to another account. `changed` is false when the fetch only
- * confirmed the cached records, so there is nothing new to persist.
+ * Pass undefined for another account's cache. Replaces the fetched range and prunes expired rows;
+ * changed is false when the fetch only confirmed cached records, so no new persistence is needed.
  */
 export function mergeCursorFetch(
   cache: CursorAccountCache | undefined,
@@ -128,7 +114,6 @@ interface SerializedAccount {
   readonly records: readonly SerializedRecord[];
 }
 
-/** Serialises the caches by credential source. */
 export function encodeCursorAccountCaches(caches: ReadonlyMap<string, CursorAccountCache>): string {
   const strings: string[] = [];
   const indexes = new Map<string, number>();

@@ -1,10 +1,6 @@
 import type { DesktopUpdateRemoteOutcome, DesktopUpdateState } from "@t3tools/contracts";
 
-/**
- * What a server-triggered update run should do next, given the updater's
- * current state. "wait" means an action (possibly started locally) is in
- * flight and the run should ride along until the next state change.
- */
+/** "wait" joins an action already in flight until the updater's next state change. */
 export type RemoteDesktopUpdateStep =
   | { readonly action: "check" }
   | { readonly action: "download" }
@@ -16,12 +12,7 @@ export type RemoteDesktopUpdateStep =
       readonly reason?: string;
     };
 
-/**
- * How many times this run already issued each action. The caps are what stop
- * a check -> up-to-date -> check loop and endless download retries; they are
- * counts rather than booleans because a state event raced by the local
- * 4-minute poller can re-show an already-handled status once.
- */
+/** Count retries to cap update loops while tolerating one state replay from the background poller. */
 export interface RemoteDesktopUpdateAttempts {
   readonly checks: number;
   readonly downloads: number;
@@ -86,9 +77,7 @@ export function nextRemoteDesktopUpdateStep(
     }
     return { action: "download" };
   }
-  // "up-to-date" and "error" are retained from earlier/background checks,
-  // so before this run has issued its own check they are stale, not
-  // terminal: the whole point of a remote request is to look again.
+  // Background up-to-date/error states are stale until this remote run checks for itself.
   if (state.status === "up-to-date") {
     if (attempts.checks === 0) {
       return { action: "check" };
@@ -105,7 +94,6 @@ export function nextRemoteDesktopUpdateStep(
       reason: state.message ?? "The desktop app update failed.",
     };
   }
-  // status === "idle"
   if (attempts.checks >= MAX_REMOTE_UPDATE_CHECKS) {
     return {
       action: "done",
@@ -116,12 +104,7 @@ export function nextRemoteDesktopUpdateStep(
   return { action: "check" };
 }
 
-/**
- * Normalizes an updater message for the `reason` wire field, which is a
- * TrimmedNonEmptyString. Updater messages are plain strings and may be blank;
- * a blank reason would fail encoding and silently drop the terminal report,
- * leaving the server to wait for its timeout.
- */
+/** Empty reasons fail the wire schema and drop terminal reports, leaving the server waiting for its timeout. */
 export function normalizeRemoteUpdateReason(reason: string | undefined): string | undefined {
   const trimmed = reason?.trim();
   return trimmed ? trimmed : undefined;

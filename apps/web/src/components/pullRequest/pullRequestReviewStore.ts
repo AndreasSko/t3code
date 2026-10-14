@@ -1,22 +1,11 @@
-/**
- * A review being written, held until it is sent.
- *
- * Nothing here reaches the host: a review is one request carrying every line comment and the
- * verdict together, so a half-written one is invisible to everyone else — including on the
- * hosts that have no pending review of their own. That also means a draft lives only as long
- * as the tab does, which is why this is deliberately not persisted.
- */
+/** Draft reviews never reach the host until submitted as one request;
+ * renderer-local state is deliberately not persisted. */
 import type { PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
 import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
 
-/**
- * A counter rather than anything derived from the comment: two remarks on one line can be the
- * same length, and an id built from the draft's own contents would collide with a comment that
- * was already removed — which shares a React key with it and, worse, makes discarding one card
- * delete both.
- */
+/** Sequence ids avoid collisions between identical comments, including removed drafts. */
 let pendingCommentSequence = 0;
 
 export function nextPendingReviewCommentId(): string {
@@ -85,7 +74,6 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
     }),
 }));
 
-/** The comments a pull request's draft holds, stable across renders while it is empty. */
 export function usePendingReviewComments(
   reference: PullRequestRef,
 ): ReadonlyArray<PendingReviewComment> {

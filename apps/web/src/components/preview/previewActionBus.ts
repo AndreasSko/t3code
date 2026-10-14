@@ -1,10 +1,6 @@
 "use client";
 
-/**
- * Typed window-event bus for preview-panel actions. Lets the global
- * keybinding handler in `routes/_chat.tsx` reach `ChatView`'s URL-aware
- * arbitration without prop drilling or shared refs.
- */
+/** Reach ChatView's URL-aware action handling from global keybindings without prop drilling. */
 export type PreviewAction =
   | "toggle-panel"
   | "refresh"

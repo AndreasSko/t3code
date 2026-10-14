@@ -76,10 +76,8 @@ export function getDiffLineStat(files: ReadonlyArray<FileDiffMetadata>): DiffLin
 interface RenderablePatchOptions {
   ignoreWhitespace?: boolean;
   /**
-   * Pierre's partial-patch parser keeps hunk render starts in source-file
-   * coordinates. Its virtualizer iterates partial patches as compact rows, so
-   * review diffs need compact render starts while retaining collapsedBefore
-   * for the "N unmodified lines" separator.
+   * Pierre hunk starts use source coordinates, but partial-patch virtualization needs compact row offsets.
+   * Retain collapsedBefore for unmodified-line separators.
    */
   compactPartialHunkOffsets?: boolean;
 }
@@ -207,19 +205,12 @@ export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
   return fileDiff.name ?? fileDiff.prevName ?? "";
 }
 
-/**
- * What the file was called before the change. Only a rename makes it differ from the current
- * path, and the hosts that resolve a diff position against both sides need both names.
- */
+/** Hosts resolving both diff sides need the pre-rename path as well as the current path. */
 export function resolveFileDiffPreviousPath(fileDiff: FileDiffMetadata): string {
   return fileDiff.prevName ?? fileDiff.name ?? "";
 }
 
-/**
- * Stable across re-renders of the same file, distinct for every block in a
- * patch. A type change (regular file to symlink) arrives as a deletion and an
- * addition of the same path, so the change type is part of the identity.
- */
+/** Include change type: file-to-symlink changes produce deletion/addition blocks with the same path. */
 export function buildFileDiffIdentityKey(fileDiff: FileDiffMetadata): string {
   return `${resolveFileDiffPreviousPath(fileDiff)}\u0000${resolveFileDiffPath(fileDiff)}\u0000${fileDiff.type}`;
 }
@@ -237,10 +228,7 @@ function hashFileDiffPart(hash: number, value: string | number | boolean | undef
   return fnv1a32(serialized, withLength);
 }
 
-/**
- * Content-only version for CodeView reconciliation. Pierre's cache key includes
- * the whole patch, so using it here would repaint every file when one changes.
- */
+/** Use content-only versions; Pierre's whole-patch cache key would repaint every file when one changes. */
 export function buildFileDiffContentVersion(fileDiff: FileDiffMetadata): number {
   let hash = FNV_OFFSET_BASIS_32;
   const append = (value: string | number | boolean | undefined) => {
@@ -306,12 +294,6 @@ export function getDiffCollapseIconClassName(fileDiff: FileDiffMetadata): string
   }
 }
 
-/**
- * Maps every diff/file surface the @pierre/diffs renderer paints onto the
- * app's code tokens, so themed palettes reach the code body, gutter, and
- * row tints instead of the renderer's bundled colors. Shared by the diff
- * panel and the file preview.
- */
 export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
 [data-diffs-header],
 [data-diff],

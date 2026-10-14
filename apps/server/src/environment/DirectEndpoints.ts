@@ -1,12 +1,5 @@
-/**
- * DirectEndpoints - the LAN and tailnet addresses this server listens on now.
- *
- * Clients connected one way (often T3 Connect) save these as extra routes so
- * they can move to a faster path when one is reachable, and replace a saved
- * LAN address when DHCP or a new Wi-Fi network changes it. Only addresses the
- * server is actually bound to are listed: a loopback-only server lists none,
- * because its loopback address means a different machine to every client.
- */
+// Advertise only bound non-loopback addresses so clients can refresh LAN
+// routes or switch from a tunnel without saving another machine's loopback.
 import type { ServerDirectEndpoint } from "@t3tools/contracts";
 import {
   buildTailscaleHttpsBaseUrl,
@@ -30,11 +23,8 @@ import { formatHostForUrl, isLoopbackHost, isWildcardHost } from "../startupAcce
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
-/**
- * Stays under the config read's own discovery timeout, so a slow `tailscale`
- * CLI drops only the tailnet name and never the LAN addresses. An empty list
- * would make clients forget the routes they learned.
- */
+// Finish before config discovery times out so slow Tailscale cannot erase
+// the LAN routes clients already learned.
 const TAILSCALE_ENDPOINT_TIMEOUT = Duration.seconds(3);
 
 export class DirectEndpoints extends Context.Service<
@@ -44,34 +34,20 @@ export class DirectEndpoints extends Context.Service<
   }
 >()("t3/environment/DirectEndpoints") {}
 
-/**
- * Only numeric private-network IPv4 addresses, including VPN ranges such as
- * 100.64.0.0/10, are reported. These routes are plain HTTP and carry the
- * client's credential, so a public address would send it across the internet
- * unencrypted, and a name (`server.local`) can resolve to a different machine
- * on each client's network.
- */
+// Advertise numeric private IPv4 only: HTTP exposes credentials on public
+// networks, and hostnames may resolve differently on a client's network.
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) &&
   !address.startsWith("127.") &&
   !address.startsWith("169.254.") &&
   isPrivateNetworkHost(address);
 
-/**
- * Container and VM networks (Docker, libvirt, VMware, VirtualBox, Hyper-V, and
- * macOS's `bridge100`+) have private addresses only this machine reaches. A
- * host bridge such as `br0` or Proxmox's `vmbr0` carries the LAN address, so
- * it stays listed.
- */
+// Exclude host-only container/VM networks, but retain LAN bridges such as br0 and vmbr0.
 const VIRTUAL_INTERFACE =
   /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|podman|cni|flannel|cali|lxcbr|lxdbr|bridge1\d\d)/;
 
-/**
- * Tailscale's own interface: `tailscale0` on Linux, "Tailscale" on Windows.
- * macOS names every tunnel `utunN`, so there it is the one that also carries
- * an address in Tailscale's IPv6 range. Cloudflare WARP and other VPNs assign
- * from the same IPv4 range, so the IPv4 address alone proves nothing.
- */
+// macOS identifies Tailscale by its IPv6 range on utunN; its IPv4 range is
+// also used by WARP and cannot establish interface identity.
 const isTailscaleInterface = (
   name: string,
   entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
@@ -79,11 +55,7 @@ const isTailscaleInterface = (
   /^tailscale/i.test(name) ||
   entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
 
-/**
- * Plain HTTP endpoints for the private addresses a server bound to `host`
- * accepts. IPv4 only: link-local and temporary IPv6 addresses change too
- * often to be worth saving.
- */
+/** Bound private IPv4 routes only; link-local and temporary IPv6 addresses are too unstable to save. */
 export function resolveBoundEndpoints(input: {
   readonly host: string | undefined;
   readonly port: number;
@@ -124,11 +96,8 @@ export const make = Effect.gen(function* () {
         interfaces: NodeOS.networkInterfaces(),
       }),
     ];
-    // Tailscale Serve terminates HTTPS on the tailnet name and forwards to
-    // loopback, so it works even for a loopback-only server. The name is only
-    // listed once it answers as this server: Serve setup can fail without
-    // stopping startup. Anything slower than the probe leaves it out rather
-    // than holding back the addresses already found.
+    // Tailscale Serve works through loopback; advertise its name only after it
+    // answers as this environment, without delaying already-found addresses.
     if (config.tailscaleServeEnabled) {
       const servedUrl = yield* readTailscaleStatus.pipe(
         Effect.map((status) => status.magicDnsName),

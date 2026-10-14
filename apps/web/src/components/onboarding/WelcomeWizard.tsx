@@ -100,14 +100,7 @@ import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../timestampFormat";
 
-/**
- * First-run welcome wizard. Rendered over the workspace at `/welcome` on a
- * fresh install (no completed-onboarding flag, empty workspace). Flow per the
- * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
- * managed Codex setup or an inline CLI terminal → project import → main screen.
- * Every step past the connection gate is skippable; the whole wizard is
- * re-runnable by clearing the flag.
- */
+/** First-run onboarding at /welcome; steps after connection are skippable. */
 
 type WizardStep = "connection" | "agents" | "import";
 const NO_ENVIRONMENTS: readonly EnvironmentId[] = [];
@@ -292,8 +285,6 @@ export function WelcomeWizard({
     </Dialog>
   );
 }
-
-// ── Step 1: connection choice ────────────────────────────────
 
 function ConnectionStep({
   autoSelectedComputers,
@@ -539,11 +530,6 @@ function ConnectAccountOption({
   );
 }
 
-// ── Step 2′: Direct pairing ──────────────────────────────────
-
-/**
- * Register a computer in this browser using a server-minted pairing link.
- */
 function PairingForm({
   isPairing,
   setIsPairing,
@@ -654,8 +640,6 @@ function PairingForm({
   );
 }
 
-// ── Step 3: agents ───────────────────────────────────────────
-
 const PRIMARY_AGENT_DRIVERS = ["codex", "claudeAgent"] as const;
 type OnboardingAgentDriver = (typeof PRIMARY_AGENT_DRIVERS)[number];
 
@@ -728,8 +712,7 @@ function ConnectedAgentsStep({
   } | null>(null);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
 
-  // Re-probe on entry so freshly installed CLIs show up without a manual
-  // refresh; harmless when nothing changed (single-flighted per environment).
+  // Re-probe on entry so newly installed CLIs appear without manual refresh.
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
@@ -1018,12 +1001,8 @@ function AgentCard({
   );
 }
 
-/**
- * Inline install terminal. Opens a PTY on the connected environment under a
- * synthetic onboarding thread id (terminals are keyed by free-form thread id;
- * the server validates only the cwd) and pre-types the install or login
- * command without submitting, so the user reviews and presses Enter.
- */
+/** Synthetic thread ids are valid PTY keys; pre-type commands without
+ * submitting so the user can review them before pressing Enter. */
 function AgentInstallTerminal({
   session,
   onClose,
@@ -1033,7 +1012,6 @@ function AgentInstallTerminal({
 }) {
   const { command, cwd, driver, environmentId, keybindings, providerInstanceId } = session;
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  // Same terminal typography preference the thread drawer honors.
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
     false,
@@ -1191,8 +1169,6 @@ function AgentInstallTerminal({
   );
 }
 
-// ── Step 4: import ───────────────────────────────────────────
-
 const IMPORT_PERMISSION_MESSAGE = "This connection cannot import projects or thread history.";
 
 function ImportStep({
@@ -1322,11 +1298,8 @@ function ImportStep({
     const importGeneration = importGenerationRef.current;
     const importedProjects = importedProjectsRef.current;
     const projectAttempts = projectAttemptsRef.current;
-    // Interrupted imports are neither failures nor successes — the command was
-    // superseded or the environment dropped — but they still didn't land, so
-    // they must not read as "imported everything". Retries skip paths that
-    // already landed this session (re-creating them would only trip the
-    // duplicate-root invariant and read as a failure).
+    // Interrupted imports must not report success; skip paths already imported
+    // this session so retries cannot trip the duplicate-root invariant.
     let importedProjectsCount =
       importedProjects.size > 0
         ? selection.filter((candidate) => importedProjects.has(candidate.key)).length
@@ -1564,12 +1537,7 @@ type ImportCandidate = AgentSessionProjectCandidate & {
   readonly key: string;
 };
 
-/**
- * Repositories first, newest activity on top. Clones of one repository share
- * a group with a tri-state checkbox. Folders that are not git repositories
- * sit collapsed at the bottom so they stay reachable without adding noise.
- * Source icons appear only on repository rows so the columns stay still.
- */
+/** Group repository clones; collapse plain folders to keep them reachable without noise. */
 function ImportCandidateList({
   candidates,
   selectedKeys,
@@ -1697,10 +1665,7 @@ function ImportRepositoryGroup({
   );
 }
 
-/**
- * Clones of one repository and plain folders differ only by folder name, so
- * the name stays visible and the shared parent path truncates first.
- */
+/** Keep distinguishing folder names visible by truncating shared parent paths first. */
 function ProjectPathText({
   path,
   className,
@@ -1728,7 +1693,6 @@ function ImportCandidateRow({
   readonly candidate: ImportCandidate;
   /** Text primary label. Nested rows omit it and are labelled by their path. */
   readonly label?: string;
-  /** Shown with the folder name kept visible while the parent path truncates. */
   readonly path?: string;
   readonly nested?: boolean;
   readonly checked: boolean;
@@ -1767,11 +1731,7 @@ function ImportCandidateRow({
   );
 }
 
-/**
- * Trailing columns shared by every import row: source icons, thread count,
- * last activity. Each column has a fixed width and each icon has its own slot
- * so nothing shifts between rows that differ in sources or digit count.
- */
+/** Fixed columns and icon slots keep rows aligned across source and digit counts. */
 function ImportRowMeta({
   sources,
   threadCount,
@@ -1813,8 +1773,6 @@ function ImportRowMeta({
     </span>
   );
 }
-
-// ── Shared bits ──────────────────────────────────────────────
 
 function StepShell({
   title,

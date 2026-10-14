@@ -1,12 +1,6 @@
 /**
- * Remote open-in-editor: when this client is not on the environment's
- * machine, "Open" must hand the OS a `vscode://vscode-remote/ssh-remote+…`
- * deep link (local editor connects over SSH) instead of exec'ing an editor
- * on the environment host.
- *
- * Host precedence: a desktop-SSH environment's real `~/.ssh/config` alias
- * beats server-advertised names; among advertised names the tailnet MagicDNS
- * name beats mDNS `<hostname>.local` (server sends them in that order).
+ * Remote Open uses an SSH editor deep link rather than launching on the host. Prefer desktop SSH aliases,
+ * then advertised hosts in tailnet/mDNS order.
  */
 import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 import {
@@ -62,19 +56,14 @@ export function resolveRemoteOpenState(input: {
   readonly sshAlias: string | null;
   /** Server-advertised hosts; undefined on servers that predate the feature. */
   readonly remoteOpenTargets: ReadonlyArray<RemoteOpenTarget> | undefined;
-  /** True when running inside the desktop app's renderer. */
   readonly isDesktopRenderer: boolean;
 }): RemoteOpenState {
   const { target } = input;
-  // No catalog entry: keep today's exec behavior rather than guessing.
   if (target === null) {
     return LOCAL_EXEC;
   }
   if (target._tag === "PrimaryConnectionTarget") {
-    // The desktop app manages its own primary backend, so it is always on
-    // this machine even when its URL is not loopback (wsl-only mode binds
-    // the WSL2 NAT address). In a browser, a loopback primary means the
-    // browser runs on the serving machine; a tailnet/LAN URL means remote.
+    // Desktop primary backends are local even on WSL2 NAT addresses; browser clients decide by loopback origin.
     if (input.isDesktopRenderer) {
       return LOCAL_EXEC;
     }
@@ -122,10 +111,7 @@ export function useRemoteOpenState(environmentId: EnvironmentId | null): RemoteO
   return useRemoteOpenResolution(environmentId).state;
 }
 
-/**
- * Editors offered in remote-link mode. The desktop app probes the machine the
- * renderer runs on; a browser cannot, so it offers VS Code only.
- */
+/** Browsers cannot probe local editors, so remote mode offers VS Code only. */
 const REMOTE_FALLBACK_EDITORS: ReadonlyArray<EditorId> = ["vscode"];
 
 let cachedProbedEditors: ReadonlyArray<EditorId> | null = null;
@@ -166,14 +152,8 @@ export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
 }
 
 /**
- * Fire a remote editor deep link. In desktop, route through the Electron
- * shell so the OS handler opens without navigating the renderer; in a
- * browser, assign the location — unlike window.open this does not leave a
- * blank tab behind.
- *
- * Resolves false when the desktop shell refused the URL (e.g. an older
- * build whose protocol allowlist predates editor schemes) so callers do not
- * record a successful open that never happened.
+ * Desktop uses the OS handler without renderer navigation; browsers assign location to avoid a blank tab.
+ * Return false if the shell refuses the URL so callers cannot record an open that never happened.
  */
 export async function openRemoteEditorUrl(url: string): Promise<boolean> {
   const bridge = window.desktopBridge;
@@ -188,11 +168,7 @@ export async function openRemoteEditorUrl(url: string): Promise<boolean> {
   return true;
 }
 
-/**
- * One-time "you need SSH keys on that machine" hint, shown in the picker menu
- * until the first remote open fires (we cannot observe SSH success from here,
- * so first click is the dismiss signal).
- */
+/** Cannot observe SSH success; dismiss the setup hint after the first remote-open click. */
 const REMOTE_OPEN_HINT_KEY = "t3code:remote-open-hint-seen";
 
 export function useRemoteOpenHint(): readonly [seen: boolean, markSeen: () => void] {

@@ -1,7 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestReviewGuideExcerpt, PullRequestReviewGuideStop } from "@t3tools/contracts";
 
-/** One step forward or back, held to the tour's first and last stops. */
 export function stepTourPosition(current: number, delta: 1 | -1, stopCount: number): number {
   return Math.max(Math.min(current + delta, stopCount - 1), 0);
 }
@@ -16,7 +15,6 @@ export function stopFilePaths(stop: PullRequestReviewGuideStop): ReadonlyArray<s
   ];
 }
 
-/** The rail's second line for a stop. */
 export function stopSubline(stop: PullRequestReviewGuideStop): string {
   const count = stopFilePaths(stop).length;
   if (count === 0) return "Context, no code";
@@ -28,7 +26,6 @@ function noteMarker(index: number): string {
   return index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
 }
 
-/** One rendered line of a file's diff, with where it sits on each side. */
 export interface DiffRow {
   readonly kind: "context" | "addition" | "deletion";
   /** Line number on the old side, null for an added line. */
@@ -43,7 +40,6 @@ export interface DiffRow {
   readonly hunk: number;
 }
 
-/** Every line of a parsed file diff as the unified view lists it. */
 export function fileDiffRows(file: FileDiffMetadata): ReadonlyArray<DiffRow> {
   const rows: DiffRow[] = [];
   file.hunks.forEach((hunk, hunkIndex) => {
@@ -95,11 +91,7 @@ export function fileDiffRows(file: FileDiffMetadata): ReadonlyArray<DiffRow> {
   return rows;
 }
 
-/**
- * The rows an excerpt covers. Its range is in one side's line numbers, so the other side's half
- * of a replacement at either edge comes along: an excerpt starting on an added line also shows
- * the lines it replaced, which is what makes it read as a change rather than as new code.
- */
+/** Includes both halves of replacements at excerpt boundaries so the excerpt reads as a change. */
 export function excerptRows(
   rows: ReadonlyArray<DiffRow>,
   excerpt: Pick<PullRequestReviewGuideExcerpt, "side" | "start" | "end">,
@@ -132,10 +124,7 @@ export function excerptRows(
 
 const ROW_PREFIX = { context: " ", addition: "+", deletion: "-" } as const;
 
-/**
- * A unified patch of just these rows, so the shared diff renderer can draw a slice of a file
- * with its real line numbers instead of a second diff view being written for excerpts.
- */
+/** Produces a patch with real line numbers for the shared diff renderer. */
 export function rowsToPatch(
   path: string,
   previousPath: string,
@@ -165,13 +154,8 @@ export function rowsToPatch(
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * The old side an excerpt expands against: the new file with only the excerpt's lines put back
- * as they were. The renderer fills the code around a hunk from both files and needs them to
- * agree outside it, which the real old file does not wherever another hunk changed lines. Only
- * the lines the reader can expand into are read, and those are the new file's, so the code
- * around the excerpt shows as it reads after the change. Null when the excerpt spans hunks.
- */
+/** Rebuilds an old side agreeing with the new file outside this excerpt so expansion stays coherent.
+ * Null for excerpts spanning hunks. */
 export function excerptExpansionOldContents(
   newContents: string,
   rows: ReadonlyArray<DiffRow>,
@@ -195,16 +179,12 @@ export function excerptExpansionOldContents(
   return [...oldPrefix, ...oldRows, ...newLines.slice(before + newCount)].join("");
 }
 
-/** A stop's notes lettered in guide order, with the excerpt lines each one marks. */
 export interface LetteredNote<Note> {
   readonly marker: string;
   readonly note: Note;
 }
 
-/**
- * Letters a stop's notes and groups them by the excerpt line they sit on. A note outside every
- * excerpt keeps its letter in the list; it just has no line to mark.
- */
+/** Notes outside every excerpt retain their letter but have no marked line. */
 export function letterStopNotes(stop: PullRequestReviewGuideStop) {
   const lettered = stop.notes.map((note, index) => ({ marker: noteMarker(index), note }));
   const byExcerpt = stop.excerpts.map((excerpt) => {

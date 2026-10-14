@@ -2,7 +2,6 @@ import type { CreateCredentialResult, GetCredentialResult } from "electron-webau
 
 import { PASSKEY_CREATE_CHANNEL, PASSKEY_GET_CHANNEL } from "./GuestProtocol.ts";
 
-/** What the main process answers a guest passkey ceremony with. */
 export type PasskeyCeremonyResult =
   | Extract<CreateCredentialResult, { success: true }>
   | Extract<GetCredentialResult, { success: true }>
@@ -205,11 +204,8 @@ const abortReason = (signal: AbortSignal) =>
   signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
 
 /**
- * Routes this page's WebAuthn ceremonies to the system passkey sheet through
- * the main process, which supplies the frame's real origin. Runs in the page's
- * own world (the preview preload has contextIsolation off), before any page
- * script. Conditional (autofill and automatic upgrade) requests stay native:
- * the system sheet is modal and must not open on its own.
+ * Install before page scripts in the page world; main supplies the requesting frame's committed origin.
+ * Leave conditional requests native because the modal system sheet must not open automatically.
  */
 export function installPasskeyBridge(invoke: InvokePasskeyCeremony) {
   // Insecure contexts have no WebAuthn to bridge.

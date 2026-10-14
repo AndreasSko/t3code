@@ -23,17 +23,8 @@ export const layer = Effect.gen(function* () {
           resource: ServerConfig.otlpResource(config),
         });
 
-  // `Logger.layer` writes the whole logger set rather than adding to it, so
-  // every logger the server wants has to be named in this one call.
-  //
-  // `Logger.tracerLogger` reaches a collector by attaching each message to the
-  // active span as a span event, which covers only messages logged inside a
-  // recorded span and files them under traces. The OTLP logger carries the same
-  // messages as log records stamped with their trace and span ids, so it is a
-  // superset: keeping both would export every in-span message twice.
-  //
-  // Recording events on spans is also the shape OpenTelemetry is deprecating,
-  // in favor of the log-based events this logger emits:
+  // Logger.layer replaces the logger set; name every destination here.
+  // OTLP logs supersede tracerLogger's span events, which would export in-span messages twice.
   // https://opentelemetry.io/blog/2026/deprecating-span-events/
   const layerLogger = Logger.layer(
     otlpLogger === undefined

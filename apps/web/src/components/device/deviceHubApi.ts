@@ -2,11 +2,7 @@ import { withDeviceHubQuery } from "@t3tools/client-runtime/state/deviceHubAcces
 import type { DeviceHubAccess } from "@t3tools/client-runtime/state/deviceHubAccess";
 import type { DevicePlatform } from "@t3tools/contracts";
 
-/**
- * Read-only hub endpoints the Tools drawer consumes directly: the accessibility
- * tree, the foreground app, and the event log. Everything that changes device
- * state goes through the `device.action` RPC instead, so this file never POSTs.
- */
+/** Mutations use device.action RPC; direct hub requests stay read-only. */
 
 export interface DeviceAxElement {
   readonly id: string;
@@ -70,11 +66,8 @@ const numberOr = (value: unknown, fallback: number) =>
 
 const AX_ELEMENT_LIMIT = 500;
 
-/**
- * serve-sim's helper returns the native nested tree; the root node is the
- * application covering the whole screen. Flatten it the way serve-sim's own
- * overlay does: skip nodes with the root's frame, cap the count.
- */
+/** The iOS root covers the whole screen; skip matching frames and cap the
+ * flattened tree to match serve-sim overlay behavior. */
 const flattenIosAxTree = (roots: ReadonlyArray<unknown>): ReadonlyArray<DeviceAxElement> => {
   const first = roots[0];
   const rootFrame = isRecord(first) && isRecord(first.frame) ? first.frame : null;
@@ -219,11 +212,8 @@ const toEventLogEntry = (raw: unknown): DeviceEventLogEntry | null => {
   };
 };
 
-/**
- * iOS only: serve-sim's event log, seeded with recent history and then pushed
- * live. Android's session recorder only tracks replayable gestures, which the
- * user already sees themselves, so it is not surfaced.
- */
+/** iOS event history followed by live updates; Android records only gestures
+ * already visible to the user, so its recorder is not surfaced. */
 export function subscribeDeviceEventLog(
   target: Target,
   onEvents: (entries: ReadonlyArray<DeviceEventLogEntry>, reset: boolean) => void,

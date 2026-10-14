@@ -41,10 +41,6 @@ import {
 } from "./bitbucketPullRequestJson.ts";
 import type { ProviderListCursor } from "@t3tools/source-control-core/server/PullRequestProvider";
 
-/**
- * Names the read that produced unusable output, so a failure reports the call it came from
- * rather than borrowing another operation's message.
- */
 export class BitbucketPullRequestReadError extends Schema.TaggedError<BitbucketPullRequestReadError>()(
   "BitbucketPullRequestReadError",
   {
@@ -61,7 +57,6 @@ export class BitbucketPullRequestReadError extends Schema.TaggedError<BitbucketP
   }
 }
 
-/** Not a decode failure: Bitbucket answered, the account it answered for just has no handle. */
 export class BitbucketViewerUnavailableError extends Schema.TaggedError<BitbucketViewerUnavailableError>()(
   "BitbucketViewerUnavailableError",
   {},
@@ -91,7 +86,6 @@ export class BitbucketRepositoryUnsupportedError extends Schema.TaggedError<Bitb
   }
 }
 
-/** Not a decode failure: the reader named a commit that is not a sha this repository could hold. */
 export class BitbucketDiffCommitError extends Schema.TaggedError<BitbucketDiffCommitError>()(
   "BitbucketDiffCommitError",
   {},
@@ -112,38 +106,21 @@ export type BitbucketPullRequestApiError =
   | BitbucketRepositoryUnsupportedError
   | BitbucketDiffCommitError;
 
-/**
- * `/user/permissions/repositories` answering CHANGE-2770's removal notice rather than a
- * permission — Bitbucket sends this for every account now, not only ones it would have refused.
- */
+/** CHANGE-2770 removed this endpoint for every account; its notice is not a permission refusal. */
 function isRepositoryPermissionRemovedError(
   error: BitbucketPullRequestApiError,
 ): error is BitbucketApi.BitbucketResponseError {
   return error._tag === "BitbucketResponseError" && error.status === 410;
 }
 
-/**
- * Bitbucket's own ceiling. Asking for more does not fail — it answers with an empty page and no
- * error at all, so this is a number to respect rather than to push against.
- */
+/** Bitbucket silently returns an empty page when asked for more than its 50-row ceiling. */
 const MAX_PAGE_SIZE = 50;
-/** Pages to walk before a listing is reported as truncated. */
 const MAX_LIST_PAGES = 10;
-/** The page size for pull request conversations, commits, and checks. */
 const CONVERSATION_PAGE_SIZE = 50;
-/**
- * Pages of the conversation to follow before it is reported as truncated. Bitbucket serves
- * fifty comments a page, so this is five hundred — beyond any pull request a person is reading,
- * and an end to a walk whose only other stop is Bitbucket running out.
- */
+/** Bound conversation walks to 500 comments so they end even before the host runs out. */
 const CONVERSATION_PAGES = 10;
-/** The same ceiling the gh and glab diff reads use. */
 const DIFF_MAX_BYTES = 8 * 1024 * 1024;
-/**
- * Deliberately far shorter than the window the caller holds versions for: a refresh drops what the
- * caller holds precisely so the next read reaches Bitbucket, and this must not be what answers it
- * instead.
- */
+/** Keep shorter than the caller's cache so an explicit refresh reaches Bitbucket. */
 const REVISION_PATCH_TTL = Duration.seconds(5);
 const REVISION_PATCH_CAPACITY = 16;
 export interface BitbucketPullRequestBatch {
@@ -154,7 +131,6 @@ export interface BitbucketPullRequestBatch {
 export class BitbucketPullRequestApi extends Context.Service<
   BitbucketPullRequestApi,
   {
-    /** A function rather than a value, so the request is built per call and not at layer time. */
     readonly getViewer: () => Effect.Effect<string, BitbucketPullRequestApiError>;
 
     readonly listPullRequests: (input: {
@@ -172,7 +148,6 @@ export class BitbucketPullRequestApi extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<BitbucketPullRequest, BitbucketPullRequestApiError>;
 
-    /** True where the credentials can write to the repository, which is what merging needs. */
     readonly getRepositoryPermission: (input: {
       readonly repository: string;
     }) => Effect.Effect<boolean, BitbucketPullRequestApiError>;
@@ -192,16 +167,8 @@ export class BitbucketPullRequestApi extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<BitbucketDiffStat, BitbucketPullRequestApiError>;
 
-    /**
-     * What the pull request's head has of each of these paths, as opaque ids, read off the pull
-     * request's own patch, the only place Bitbucket states a file's version. A path the patch does
-     * not carry is answered as the empty revision, and left out altogether when the patch was cut
-     * short at the byte ceiling and so cannot be spoken for.
-     *
-     * Answers with every file the patch carries rather than only the paths asked about, since
-     * reading one file's version here means parsing all of them. `complete` is false for a patch
-     * cut short, which cannot speak for what came after the cut.
-     */
+    /** Versions come from the whole patch; missing paths mean deleted only for a complete patch.
+     * Return all parsed revisions to spare the next tick another full parse. */
     readonly getFileRevisions: (input: {
       readonly repository: string;
       readonly number: number;
@@ -238,11 +205,6 @@ export class BitbucketPullRequestApi extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<PullRequestCheck>, BitbucketPullRequestApiError>;
 
-    /**
-     * Who this pull request may be sent to, and who it has already been sent to. Two reads at
-     * once, because Bitbucket keeps the people on the workspace and the reviewers on the pull
-     * request, and neither answers for the other.
-     */
     readonly listReviewerCandidates: (input: {
       readonly repository: string;
       readonly number: number;
@@ -330,11 +292,7 @@ function repositoryPathOf(segments: { readonly workspace: string; readonly slug:
   )}`;
 }
 
-/**
- * A commit sha arrives from the reader and goes straight into a request path, so it is checked
- * rather than trusted: hexadecimal only, from the shortest abbreviation a host prints up to a
- * whole sha.
- */
+/** Validate SHAs before inserting reader-supplied commits into request paths. */
 function isCommitSha(value: string): boolean {
   return /^[0-9a-f]{7,64}$/i.test(value);
 }
@@ -357,17 +315,8 @@ function stateParams(state: PullRequestListState): ReadonlyArray<string> {
   }
 }
 
-/**
- * Bitbucket has no search term, only a filter expression, so free text becomes one: a
- * case-insensitive contains against the two fields a pull request carries words in. The
- * parentheses matter, because the expression is ANDed with the state filter beside it and an
- * unbracketed `OR` would swallow it.
- *
- * A string literal in that grammar is delimited by double quotes, so the reader's text is
- * escaped before it goes inside one — a quote would otherwise end the literal and leave the
- * rest of the text standing as filter syntax. The whole expression is then URL-encoded, so
- * nothing in it reaches the query string as a parameter of its own.
- */
+/** Parenthesize OR before combining with state filters; quote and escape user text
+ * so it remains a filter literal instead of becoming syntax. */
 function searchFilter(query: string): string {
   const literal = filterLiteral(query);
   return `(title ~ "${literal}" OR description ~ "${literal}")`;
@@ -381,7 +330,6 @@ function filterLiteral(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
-/** Bitbucket's merge strategies, named differently from the three the contract carries. */
 function mergeStrategy(method: PullRequestMergeMethod | undefined): string {
   switch (method) {
     case "squash":
@@ -411,10 +359,7 @@ function bitbucketReviewPosition(
 export const make = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
 
-  /**
-   * The repository's own path, and the workspace above it — which the people who may review are
-   * kept on rather than on the repository, so both are handed over at once.
-   */
+  /** Reviewer candidates belong to the workspace; pull requests belong to its repository. */
   const withRepository = <A>(
     repository: string,
     use: (path: string, workspace: string) => Effect.Effect<A, BitbucketPullRequestApiError>,
@@ -425,11 +370,7 @@ export const make = Effect.gen(function* () {
       : Effect.fail(segments.failure);
   };
 
-  /**
-   * Bitbucket pages with a cursor rather than an offset, so the walk follows the `next` URL it
-   * sends. It stops once the caller's page is filled, when Bitbucket reports no next page, or at
-   * the page cap — and anything but running out of pages means there is more to be had.
-   */
+  /** Follow Bitbucket's next URL until limit, exhaustion, or page cap; only exhaustion is complete. */
   const listPage = (input: {
     readonly url: string;
     readonly limit: number;
@@ -481,11 +422,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /**
-   * The conversation, following the `next` Bitbucket sends until it sends none. Threads are
-   * assembled once at the end rather than per page, because a reply and the remark it answers
-   * can land either side of a page boundary.
-   */
+  /** Assemble threads after paging because replies and parents can fall on different pages. */
   const commentsPage = (input: {
     readonly url: string;
     readonly page: number;
@@ -514,7 +451,6 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /** Walks a Bitbucket cursor to its end and combines every decoded item. */
   const itemPages = <A>(input: {
     readonly operation: string;
     readonly url: string;
@@ -536,7 +472,6 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /** Diffstat has one aggregate per page, so its totals are folded while following `next`. */
   const diffStatPages = (input: {
     readonly url: string;
     readonly totals: BitbucketDiffStat;
@@ -565,9 +500,7 @@ export const make = Effect.gen(function* () {
     input.commit !== undefined && !isCommitSha(input.commit)
       ? Effect.fail(new BitbucketDiffCommitError())
       : withRepository(input.repository, (path) =>
-          // Already a unified patch, so it needs no decoding at all, only a bound, which a
-          // diff of any size would otherwise ignore. A commit's own patch sits beside the pull
-          // request's at `/diff/{sha}` and reads the same way.
+          // Both pull-request and commit endpoints return unified patches; bound them without decoding.
           bitbucket
             .request({
               method: "GET",
@@ -582,12 +515,8 @@ export const make = Effect.gen(function* () {
             ),
         );
 
-  /**
-   * What the version reads that come one tick at a time want out of the pull request's whole
-   * patch, shared between them. The parsed answer rather than the patch, which at this capacity
-   * would hold sixteen bodies of up to the byte ceiling each resident, and saves walking a patch
-   * of a hundred thousand lines again on every tick.
-   */
+  /** Cache parsed revisions, not sixteen potentially multi-megabyte patch bodies,
+   * to avoid retaining bytes and rescanning the patch on every tick. */
   const revisionPatches = yield* Cache.makeWith(
     (key: string) => {
       const [repository, number] = JSON.parse(key) as [string, number];
@@ -625,11 +554,7 @@ export const make = Effect.gen(function* () {
     listPullRequests: (input) =>
       withRepository(input.repository, (path) => {
         const search = input.query?.trim() ?? "";
-        // Both narrowings share the one `q` Bitbucket takes, so they are ANDed rather than one
-        // replacing the other. The boundary instant is read inclusively — the rows already sent
-        // at it come back and the caller drops them, which is what keeps their neighbours at the
-        // same instant from being skipped. A date is a bare literal in this grammar, and this one
-        // was checked against a timestamp's shape before it got here.
+        // Combine search and boundary in q. Inclusive timestamps keep tied rows; the caller deduplicates.
         const predicates = [
           ...(search.length === 0 ? [] : [searchFilter(search)]),
           ...(input.cursor === undefined ? [] : [`updated_on <= ${input.cursor.updatedBefore}`]),
@@ -656,16 +581,8 @@ export const make = Effect.gen(function* () {
         }),
       ),
 
-    // Nothing on the repository, the pull request or the workspace states what the credentials
-    // may do, so this endpoint is the one request Bitbucket makes unavoidable. It is asked
-    // alongside the reads the detail was already making, so it costs no round trip of its own.
-    //
-    // Bitbucket permanently removed this endpoint (CHANGE-2770): every account now gets HTTP 410
-    // in place of an answer, whatever it may do. That is the deprecated-endpoint signal, not a
-    // permission being refused, so it is read the same way an unreachable read already is
-    // elsewhere — as a permission that could not be learned, which grants rather than blocks, and
-    // leaves the actual merge or write to say why if the account may not do it. Any other failure
-    // (a bad token, a network fault, an unreadable body) still fails as it did before.
+    // Bitbucket removed this permission endpoint (CHANGE-2770); HTTP 410 means unknown access.
+    // Keep actions available and let the write report a refusal; other failures still propagate.
     getRepositoryPermission: (input) =>
       withRepository(input.repository, () =>
         readPage({
@@ -788,10 +705,7 @@ export const make = Effect.gen(function* () {
           decode: decodePullRequestJson,
         }).pipe(
           Effect.flatMap((current) => {
-            // Bitbucket has no endpoint that adds or removes one reviewer: the pull request's
-            // `reviewers` is written whole, so the set that is already there is read first and
-            // the change applied to it. Everything else about the pull request is left out of
-            // the body, which leaves it as it was.
+            // Bitbucket replaces the whole reviewer set; read it before applying additions/removals.
             const uuids = new Set(current.reviewerIds);
             for (const reviewer of input.reviewers) {
               if (input.requested) uuids.add(reviewer.id);
@@ -810,8 +724,6 @@ export const make = Effect.gen(function* () {
     runAction: (input) =>
       withRepository(input.repository, (path) => {
         const pullRequest = `${path}/pullrequests/${input.number}`;
-        // Only merge and close reach here: the provider declares the others unsupported, so the
-        // surface never offers them.
         if (input.action === "merge") {
           return bitbucket
             .request({
@@ -828,10 +740,7 @@ export const make = Effect.gen(function* () {
 
     updateChangeRequest: (input) =>
       withRepository(input.repository, (path) =>
-        // Only the words this call rewrites travel in the body: as `setReviewerRequest` above
-        // relies on, Bitbucket's PUT is a partial update, so any field left out is left as it
-        // was — sending `reviewers` back here would overwrite a change another user made to it
-        // between this call being issued and the request landing.
+        // PUT is partial: omit unrelated fields so concurrent reviewer changes cannot be overwritten.
         bitbucket
           .request({
             method: "PUT",
@@ -850,7 +759,6 @@ export const make = Effect.gen(function* () {
           .request({
             method: "POST",
             url: `${path}/pullrequests/${input.number}/comments`,
-            // A JSON document rather than a form field, so the body stays text whatever it says.
             body: JSON.stringify({ content: { raw: input.body } }),
           })
           .pipe(Effect.asVoid),
@@ -875,9 +783,7 @@ export const make = Effect.gen(function* () {
       withRepository(input.repository, (path) =>
         Effect.gen(function* () {
           const pullRequest = `${path}/pullrequests/${input.number}`;
-          // Bitbucket has no pending review, so a review is replayed as the requests it is
-          // made of: the line comments, then the summary, then the verdict. The verdict goes
-          // last so a review that fails part-way is never left standing as an approval.
+          // Bitbucket has no pending review; send comments before the verdict so a partial failure cannot approve.
           yield* Effect.forEach(
             input.comments,
             (comment) =>

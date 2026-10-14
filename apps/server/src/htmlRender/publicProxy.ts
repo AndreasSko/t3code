@@ -54,11 +54,7 @@ const ipv6Groups = (address: string) => {
   );
 };
 
-/**
- * The IPv4 address a NAT64 or 6to4 address stands for, which a translator
- * will route to, so it is checked as well. Public NAT64 targets stay
- * reachable, as on IPv6-only networks.
- */
+// Check translated NAT64/6to4 IPv4 targets too while allowing public NAT64 on IPv6-only networks.
 const embeddedIPv4 = (address: string) => {
   const at = NAT64.check(address, "ipv6") ? 6 : SIX_TO_FOUR.check(address, "ipv6") ? 1 : -1;
   if (at === -1) return undefined;
@@ -68,7 +64,6 @@ const embeddedIPv4 = (address: string) => {
   return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
 };
 
-/** The addresses this machine's interfaces hold right now. */
 const ownAddresses = () => {
   const own = new NodeNet.BlockList();
   for (const entry of Object.values(NodeOS.networkInterfaces()).flat()) {
@@ -77,11 +72,7 @@ const ownAddresses = () => {
   return own;
 };
 
-/**
- * Whether `address` belongs to a local network or to this machine itself,
- * including a public address one of its interfaces holds. Both lists match
- * IPv4-mapped IPv6 against their IPv4 entries.
- */
+// Block local networks and this machine's public interfaces; both lists handle IPv4-mapped IPv6.
 const isLocal = (address: string, family: number): boolean => {
   const type = family === 6 ? "ipv6" : "ipv4";
   if (LOCAL_ADDRESSES.check(address, type) || ownAddresses().check(address, type)) return true;
@@ -89,11 +80,7 @@ const isLocal = (address: string, family: number): boolean => {
   return embedded !== undefined && isLocal(embedded, 4);
 };
 
-/**
- * The addresses to connect to for `host`, or undefined when any address it
- * resolves to is local. The caller connects only to addresses checked here,
- * so a name that later resolves elsewhere (DNS rebinding) changes nothing.
- */
+// Connect only to these checked addresses so DNS rebinding cannot change the destination.
 const publicAddresses = async (host: string) => {
   const addresses = NodeNet.isIP(host)
     ? [{ address: host, family: NodeNet.isIP(host) }]
@@ -109,10 +96,7 @@ const reply = (code: number) => Buffer.from([5, code, 0, 1, 0, 0, 0, 0, 0, 0]);
 // What a client may send before its tunnel opens; a TLS hello fits easily.
 const MAX_EARLY_BYTES = 64 * 1024;
 
-/**
- * Answers and closes. The client is never read from again, so anything it
- * sent after its request is dropped rather than left buffered.
- */
+// Destroy after replying so late client bytes cannot remain buffered.
 const refuse = (client: NodeNet.Socket, code: number) => {
   client.end(reply(code), () => client.destroy());
 };
@@ -137,13 +121,8 @@ const readRequest = (data: Buffer) => {
   return { command: data[1], host, port: data.readUInt16BE(end - 2), rest: data.subarray(end) };
 };
 
-/**
- * Starts a SOCKS5 proxy on loopback for the life of the scope and returns its
- * port. The preview browser sends every connection through it, and it only
- * connects to public addresses. Chrome's Local Network Access misses some
- * requests, such as speculation-rules prefetches; nothing misses this. It
- * carries bytes only, so HTTP, TLS, and WebSockets pass through unchanged.
- */
+/** Scope-owned SOCKS5 proxy permits only public addresses. It catches requests
+ * Chrome Local Network Access misses, including speculation-rule prefetches. */
 export const publicProxy = Effect.acquireRelease(
   Effect.callback<
     { readonly server: NodeNet.Server; readonly sockets: Set<NodeNet.Socket> },
@@ -193,10 +172,8 @@ export const publicProxy = Effect.acquireRelease(
           client.off("data", holdEarly);
           if (addresses === undefined) return refuse(client, 2);
           client.pause();
-          // Tries every checked address, IPv6 and IPv4 alike, so a host is
-          // still reached on a network whose IPv6 route is broken. A name goes
-          // through `lookup`, which hands back only the checked addresses; an
-          // address literal connects as itself.
+          // Try checked IPv4 and IPv6 addresses so a broken IPv6 route does not
+          // prevent access; custom lookup keeps DNS results bound to the checks.
           const upstream = track(
             NodeNet.connect({
               host: request.host,

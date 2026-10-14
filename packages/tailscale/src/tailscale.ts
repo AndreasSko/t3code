@@ -23,11 +23,7 @@ const TailscaleCommandContext = {
   argumentCount: Schema.Number,
 };
 
-/**
- * Failure kinds we can name without quoting the CLI. Anything unrecognized
- * becomes "unknown" rather than falling back to raw text — stderr can contain
- * auth keys (`tskey-…`) and node names, and these labels are logged.
- */
+/** Unknown stderr stays unknown; raw CLI output may expose auth keys and node names in logs. */
 export const TailscaleStderrDiagnostic = Schema.Literals([
   "no-existing-handler",
   "not-logged-in",
@@ -46,7 +42,6 @@ const STDERR_DIAGNOSTIC_PATTERNS: ReadonlyArray<
   [/permission denied|access denied|must be root|operation not permitted/i, "permission-denied"],
 ];
 
-/** Classifies stderr into a safe label, dropping the text itself. */
 const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefined => {
   if (stderr.trim().length === 0) {
     return undefined;
@@ -85,11 +80,7 @@ export class TailscaleCommandExitError extends Schema.TaggedError<TailscaleComma
     exitCode: Schema.Number,
     stdoutLength: Schema.optional(Schema.Number),
     stderrLength: Schema.Number,
-    // A classified diagnostic, never raw CLI output. `tailscale` prints auth
-    // keys and node identifiers into stderr, and this field is surfaced in
-    // dev-runner logs — so it carries only a known-safe label from the closed
-    // set below. Callers that need to recognize a specific failure (e.g.
-    // `serve off` on a port with no mapping) match on the label.
+    // Only classified labels reach logs; stderr can contain auth keys and node identifiers.
     stderrDiagnostic: Schema.optional(TailscaleStderrDiagnostic),
   },
 ) {

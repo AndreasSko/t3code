@@ -77,12 +77,7 @@ function findBoundaryMatchIndex(
   return bestIndex;
 }
 
-/**
- * Scores how well `value` matches `query` using tiered match strategies.
- *
- * **Expects pre-normalized inputs**: both `value` and `query` must already be
- * trimmed and lowercased (e.g. via {@link normalizeSearchQuery}).
- */
+/** Expects trimmed, lowercased inputs; use {@link normalizeSearchQuery}. */
 export function scoreQueryMatch(input: {
   value: string;
   query: string;

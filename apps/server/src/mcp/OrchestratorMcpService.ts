@@ -162,10 +162,7 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpDeleteScheduledTaskInput,
   ) => Effect.Effect<OrchestratorMcpDeleteScheduledTaskResult, OrchestratorMcpFailure>;
-  /**
-   * Asks the user for a secret through a card in the calling thread and waits
-   * for the answer. The value never reaches the agent: the result is a status.
-   */
+  /** Ask through the caller's card; return status without exposing the secret value. */
   readonly requestSecret: (
     scope: McpInvocationScope,
     input: OrchestratorMcpRequestSecretInput,
@@ -228,11 +225,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Workspace strategy for a scheduled task created/updated over MCP: bound runs
- * post into the existing thread (the strategy is unused, keep root); unbound
- * runs launch a fresh worktree per run.
- */
+// Bound tasks post into their existing thread; unbound runs need a fresh
+// worktree to avoid executing loose prompts in the shared root.
 function scheduledTaskWorkspaceStrategy(
   boundToThread: boolean,
 ): ScheduledTask["workspaceStrategy"] {
@@ -241,11 +235,7 @@ function scheduledTaskWorkspaceStrategy(
     : { type: "worktree", baseRef: "main", startFromOrigin: true };
 }
 
-/**
- * A scheduled task as an agent sees it. `mayRun` says whether the caller may
- * run it: a webhook's URL carries the secret that starts the task's runs, so
- * only such a caller sees it.
- */
+// Webhook URLs start runs, so expose them only to callers allowed to run the task.
 function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): OrchestratorMcpScheduledTask {
   return {
     scheduledTaskId: task.id,
@@ -288,14 +278,8 @@ function providerConstraints(
   return constraints;
 }
 
-/**
- * Checks requested option selections for duplicates and, when the model
- * advertises option descriptors, against those descriptors. Models without
- * descriptors skip the descriptor checks (mirroring how model slugs are only
- * validated when the provider advertises models), but duplicate ids always
- * fail: downstream consumers disagree on whether the first or last value of
- * a duplicated id wins.
- */
+// Always reject duplicate option ids because consumers disagree on which
+// value wins; validate descriptors only when the model advertises them.
 function invalidOptionSelections(
   selections: ReadonlyArray<ProviderOptionSelection>,
   descriptors: ReadonlyArray<ProviderOptionDescriptor> | undefined,
@@ -539,13 +523,8 @@ function interactionModeRank(mode: ProviderInteractionMode): number {
   return mode === "plan" ? 0 : 1;
 }
 
-/**
- * The mode a new thread runs in: the requested mode, else the parent's, never
- * broader than the parent's. Pass `target` when the thread runs on a known
- * provider. A provider runs a mode it does not offer as Supervised, so an
- * explicit request for one is refused, and an inherited one steps down to the
- * broadest mode the provider offers.
- */
+/** Never exceed parent mode; reject unsupported explicit modes and lower
+ * inherited modes to the provider's broadest supported mode. */
 export function resolveRuntimeMode(
   parentMode: RuntimeMode,
   requested: OrchestratorMcpRuntimeMode | undefined,
@@ -912,7 +891,6 @@ const make = Effect.gen(function* () {
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
 
-  /** A caller-named project, which must exist before anything is recorded against it. */
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
       Effect.mapError((error) =>
@@ -997,11 +975,7 @@ const make = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(threadManagementFailure));
 
-  /**
-   * The caller's own thread and the most it may hand to threads it targets. A
-   * thread caller is capped by its own modes; an OAuth client by the ceiling
-   * chosen when it was approved.
-   */
+  // Cap thread callers by their own modes and OAuth callers by the approved ceiling.
   const loadCaller = (scope: McpInvocationScope) =>
     Effect.gen(function* () {
       yield* requireCapability(scope);
@@ -1024,7 +998,6 @@ const make = Effect.gen(function* () {
       } as const;
     });
 
-  /** The caller's own thread, for operations that act as the caller. */
   const loadThreadCaller = (scope: McpInvocationScope, operation: string) =>
     Effect.gen(function* () {
       yield* requireCapability(scope);
@@ -1049,7 +1022,6 @@ const make = Effect.gen(function* () {
             ),
           );
 
-  /** Any live thread in the environment. */
   const loadTargetThread = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const shell = yield* threadManagement
@@ -1071,10 +1043,7 @@ const make = Effect.gen(function* () {
       return { ...caller, target } as const;
     });
 
-  /**
-   * A thread caller writes to another thread only while its own run is live,
-   * so a credential that outlived its session cannot reach across threads.
-   */
+  // Require a live caller run for cross-thread writes so stale credentials cannot reach other threads.
   const assertLiveCallerForOtherThread = (
     scope: McpInvocationScope,
     parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
@@ -1129,20 +1098,12 @@ const make = Effect.gen(function* () {
 
   const loadProviders = providerRegistry.getProviders;
 
-  /**
-   * Instance ids the adapter registry resolves — the same lookup a
-   * `delegated_task.request` performs when it runs. Capability reporting and
-   * target resolution must not advertise a set narrower (or wider) than what
-   * dispatch can actually serve.
-   */
+  // Advertise exactly the adapter registry's dispatchable instance ids.
   const loadOrchestrationCapableInstanceIds = () =>
     providerAdapters.list().pipe(Effect.map((instanceIds) => new Set(instanceIds)));
 
-  /**
-   * Provider snapshots only re-probe while a client is in the foreground, so an
-   * unattended agent can see a provider as unavailable after it was fixed.
-   * Re-probe the requested instance once before refusing it.
-   */
+  // Unattended provider snapshots may be stale; re-probe once before refusing
+  // an instance repaired while no client was foregrounded.
   const assertTargetEnabledForProject = (
     parent: Pick<OrchestrationV2ThreadProjection, "thread">,
     commandId: CommandId,
@@ -1179,15 +1140,8 @@ const make = Effect.gen(function* () {
     readonly parent: Pick<OrchestrationV2ThreadProjection, "thread">;
     readonly target: OrchestratorMcpTarget | undefined;
     readonly providers: ReadonlyArray<ServerProvider>;
-    /**
-     * Skips the per-candidate project-enablement check in driver-only
-     * resolution. Set only when the command that will dispatch this target
-     * already has a receipt: that dispatch can only replay the recorded
-     * result, never start anything new, so filtering candidates by the
-     * project's current settings would just refuse a retry that does no new
-     * work. Never set this for a resolution whose dispatch uses a different
-     * command id than the one checked for a receipt.
-     */
+    /** Skip enablement filtering only when this dispatch's exact command id has
+     * a receipt: replay starts no new work and must survive later settings changes. */
     readonly skipProjectEnablementFilter?: boolean;
   }): Effect.Effect<ResolvedTarget, OrchestratorMcpFailure> =>
     Effect.gen(function* () {
@@ -1208,11 +1162,8 @@ const make = Effect.gen(function* () {
             `No V2 provider adapter is registered for driver ${requestedDriver}.`,
           );
         }
-        // Inherit the parent's instance only when it can actually serve the
-        // child; an unavailable parent yields to a healthy instance of the
-        // requested driver rather than failing the delegation. An instance
-        // the project turned off cannot serve either, so selection skips it
-        // for the next candidate instead of failing the enablement check.
+        // Inherit only a healthy, enabled parent instance; otherwise select a
+        // healthy enabled instance of the requested driver.
         const healthyCandidates = candidates.filter(
           (candidate) => providerConstraints(candidate, true).length === 0,
         );
@@ -1493,8 +1444,7 @@ const make = Effect.gen(function* () {
       return response;
     });
 
-  // Re-read the task only when an event on the parent or child thread can
-  // change its status, instead of polling the projections every 50 ms.
+  // Read task state only on relevant events to avoid projection polling.
   const waitForTask = (scope: McpThreadInvocationScope, taskId: NodeId, timeoutMs: number) =>
     Effect.gen(function* () {
       const streamError = (error: unknown) =>
@@ -1527,11 +1477,7 @@ const make = Effect.gen(function* () {
       );
     }).pipe(Effect.timeoutOption(Duration.millis(timeoutMs)), Effect.map(Option.flatten));
 
-  /**
-   * The modes a task's runs execute at: its own, or for a task bound to a
-   * thread, also that thread's modes as they are now, since its runs are
-   * messages to that thread.
-   */
+  // Bound tasks send messages to an existing thread, so include that thread's current modes.
   const scheduledTaskRunModes = (task: ScheduledTask) =>
     Effect.gen(function* () {
       const modes = [{ runtimeMode: task.runtimeMode, interactionMode: task.interactionMode }];
@@ -1552,12 +1498,8 @@ const make = Effect.gen(function* () {
     runtimeModeRank(modes.runtimeMode) <= runtimeModeRank(limits.runtimeMode) &&
     interactionModeRank(modes.interactionMode) <= interactionModeRank(limits.interactionMode);
 
-  /**
-   * A task as the caller may see it. Its webhook URL starts runs, so only a
-   * caller that may start one sees it: never a client approved for read-only
-   * access, and a thread caller only with a live turn, at modes covering every
-   * mode the task runs at.
-   */
+  // Webhook URLs start runs; expose only within caller mode limits and a live
+  // thread turn, never to read-only OAuth clients.
   const summarizeScheduledTask = (
     scope: McpInvocationScope,
     caller: {
@@ -1585,11 +1527,7 @@ const make = Effect.gen(function* () {
       );
     });
 
-  /**
-   * A scheduled task the caller may change: one whose runs execute at modes no
-   * broader than the caller's own, so editing its prompt cannot run work above
-   * the caller's limits.
-   */
+  // Limit editable tasks by their execution modes so prompts cannot start work above caller limits.
   const loadScheduledTask = (
     scheduledTaskId: ScheduledTask["id"],
     limits: {
@@ -1813,18 +1751,14 @@ const make = Effect.gen(function* () {
               ),
             );
         yield* record("pending");
-        // Only this call can hand the agent its ref, so the card must not
-        // outlive it: a timeout, a failed wait or an aborted call closes it as
-        // cancelled. If even that fails, the server still refuses an answer
-        // once the run ends, and an unused value expires.
+        // Cancel unanswered cards when this call ends; only its result can expose
+        // the ref. Run-end refusal and expiry cover failed cleanup.
         const closeCard = record("cancelled").pipe(
           Effect.catch((error) =>
             Effect.logWarning("Could not close a secret request card", { error: error.message }),
           ),
         );
 
-        // The user answers the card (secrets.answerRequest), or it ends with
-        // the run; poll it like a delegated task.
         const answered = yield* Effect.gen(function* () {
           while (true) {
             const projection = yield* threadManagement
@@ -1973,10 +1907,8 @@ const make = Effect.gen(function* () {
           );
         }
         const providers = yield* loadProviders;
-        // Computed before resolving the target so a retry of an already
-        // accepted delegation can be recognized: dispatching under the same
-        // command id only replays the recorded result, so candidate
-        // selection must not refuse it over the project's current settings.
+        // Resolve the command id before selecting targets so accepted retries
+        // replay receipts despite later project enablement changes.
         const key = yield* requestKey(input.clientRequestId);
         const commandId = stableCommandId({
           scope,
@@ -2014,9 +1946,7 @@ const make = Effect.gen(function* () {
             );
           workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
         }
-        // ThreadManagementService.dispatch is the chokepoint for this command
-        // type's own enablement check, using the same command id and its
-        // receipt-replay exemption, so no separate assert runs here.
+        // Dispatch enforces enablement with the same command id and receipt exemption.
         const result = yield* threadManagement
           .dispatch({
             type: "delegated_task.request",
@@ -2032,9 +1962,7 @@ const make = Effect.gen(function* () {
             runtimeMode,
             interactionMode,
             ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
-            // Async delegations wake the parent on every child terminal; wait
-            // delegations deliver through the blocking tool call, so a wake is
-            // only needed if the parent settled first (timeout, disconnect).
+            // Blocking waits own delivery; wake a waiting task's parent only if it settled first.
             completionWake: input.mode === "wait" ? "settled_only" : "always",
           })
           .pipe(
@@ -2086,10 +2014,8 @@ const make = Effect.gen(function* () {
         if (Option.isSome(waited)) {
           return waited.value;
         }
-        // The blocking wait timed out, so it no longer owns delivery: upgrade
-        // the task so a later terminal wakes the parent even mid-turn. Best
-        // effort; on failure the settled_only policy still wakes a settled
-        // parent.
+        // After timeout the blocking call no longer delivers; best-effort upgrade
+        // wakes even a live parent. On failure, settled-parent wakes still apply.
         yield* threadManagement
           .dispatch({
             type: "delegated_task.wake-policy",
@@ -2103,10 +2029,8 @@ const make = Effect.gen(function* () {
             completionWake: "always",
           })
           .pipe(
-            // The tool result is the timed-out task either way, so failures
-            // stay warnings. Keep the two shapes apart: a rejected receipt
-            // means this exact command id already failed (a replay of a
-            // no-op upgrade), while anything else is a fresh dispatch fault.
+            // Keep upgrade failures as warnings; rejected receipts replay prior failure,
+            // while other errors are fresh dispatch faults.
             Effect.catch((error) =>
               Effect.logWarning("orchestrator-mcp.delegate-task.wake-policy-failed", {
                 taskId,
@@ -2138,9 +2062,7 @@ const make = Effect.gen(function* () {
         const current = yield* readTask(scope, input.taskId);
         const key = yield* requestKey(input.clientRequestId);
         const parentProjection = yield* loadProjection(scope.thread.threadId);
-        // Cancelling stops the child and every task under it, each a write to a
-        // thread its user may have raised above the parent's modes since it was
-        // delegated. All of them are checked before anything is stopped.
+        // Precheck the child and every nested task against current mode limits before stopping any.
         const assertStoppable = (threadId: ThreadId): Effect.Effect<void, OrchestratorMcpFailure> =>
           Effect.gen(function* () {
             const shell = yield* threadManagement
@@ -2190,9 +2112,8 @@ const make = Effect.gen(function* () {
                     ),
                   ),
                 );
-        // Cancelling stops the child thread the way Stop does, including work that came
-        // after a published result: follow-up runs, pull request watch wakes, and the
-        // tasks it delegated. The published result stays terminal.
+        // Stop follow-up work and nested tasks even after result publication;
+        // the published result remains terminal.
         const stopChild = Effect.gen(function* () {
           const commandId = stableCommandId({ scope, requestKey: key, operation: "cancel-task" });
           const reason = input.reason;
@@ -2255,8 +2176,7 @@ const make = Effect.gen(function* () {
             status: current.status,
           } satisfies OrchestratorMcpTaskCancelResult;
         }
-        // A task waiting on its own delegates has work to stop below it. One with neither
-        // a running turn nor delegates (such as one awaiting a restart) keeps its delivery.
+        // Preserve delivery for children awaiting restart with no runs or delegates to stop.
         const child = yield* loadProjection(current.childThreadId);
         if (
           current.workState !== "waiting_for_children" &&

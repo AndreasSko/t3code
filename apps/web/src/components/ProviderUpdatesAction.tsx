@@ -75,8 +75,6 @@ export function useProviderUpdates() {
   return { machines, updateAll };
 }
 
-/** Provider settings button for {@link useProviderUpdates}. Renders nothing
-    when no machine has a one-click update. */
 export function ProviderUpdatesAction() {
   const { machines, updateAll } = useProviderUpdates();
   const pending = useRef(false);

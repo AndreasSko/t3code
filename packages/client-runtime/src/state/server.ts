@@ -175,24 +175,9 @@ export function validateServerUpdateReadyEvent(
   );
 }
 
-/**
- * Keeps reconnect attempts ~1s apart for the whole update restart.
- *
- * A restart takes the server down for ~15 seconds, but the supervisor's normal
- * backoff assumes an unexpected failure and doubles its delay after each failed
- * attempt, so a 15-second restart can be observed as a ~30-second "Resuming".
- * Nudging on every backoff entry (not just the first)
- * holds the retry cadence flat until the server answers again. The sleep before
- * each nudge is the pacer: a connection that fails instantly re-enters backoff
- * immediately and would otherwise spin a tight retry loop.
- *
- * A newly restarted server can also reject the first environment credential.
- * Authentication blocks need the same paced retry during this known restart;
- * permission and configuration failures remain blocked.
- *
- * Callers fork this as a child of the update command so it is interrupted as
- * soon as the update settles, whether it succeeds, fails, or times out.
- */
+/** Normal backoff can stretch a ~15s restart to ~30s; pace retries at ~1s to avoid instant-failure spins.
+ * Restarted hosts may reject the first credential, so retry auth blocks only, not permission/configuration failures.
+ * Fork under the update command so settlement interrupts this loop. */
 export function nudgeReconnectDuringUpdateRestart(input: {
   readonly stateChanges: Stream.Stream<
     {
@@ -382,8 +367,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       ),
     );
     const state = yield* SubscriptionRef.make<Option.Option<ServerConfigProjection>>(
-      // Stripped on load as well as on save: a cache written by an earlier
-      // build can still carry published themes.
+      // Strip published themes on load too because existing caches may contain them.
       Option.map(cachedConfig, (cached) => ({
         config: withoutEnvironmentThemes(cached),
         latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
@@ -618,11 +602,7 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly initialConfigValueAtom: (
       environmentId: EnvironmentId,
     ) => Atom.Atom<ServerConfig | null>;
-    /**
-     * Whether this surface renders themes the environment publishes. Mobile
-     * keeps its own appearance settings, so it neither asks for the stream nor
-     * receives the payload.
-     */
+    /** Mobile owns appearance locally and does not request or receive published themes. */
     readonly environmentThemes?: boolean;
     /** Whether this surface renders quota from configured usage-limit sources. */
     readonly usageLimitSources?: boolean;
@@ -786,9 +766,7 @@ export function createServerEnvironmentAtoms<R, E>(
                     (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn") &&
                     isLegacyUpdateHandoffLoss(exit.cause)
                   ) {
-                    // Older servers can tear down the transport before their
-                    // unary acknowledgement arrives. Treat only that transport
-                    // loss as a handoff, then prove it by waiting for target ready.
+                    // Transport loss can precede unary acknowledgement; confirm the handoff by waiting for target ready.
                     return { targetVersion, method: selfUpdateMethod };
                   }
                   return yield* Effect.failCause(exit.cause);
@@ -827,9 +805,7 @@ export function createServerEnvironmentAtoms<R, E>(
           }),
         );
 
-        // The update restart is intentional and the server stays unreachable
-        // for the whole restart, so hold the retry cadence flat instead of
-        // letting the supervisor climb its backoff ladder.
+        // Intentional restarts need flat retry cadence instead of the normal exponential ladder.
         yield* nudgeReconnectDuringUpdateRestart({
           stateChanges: environmentRegistry.stateChanges(target.environmentId),
           retryNow: environmentRegistry.retryNow(target.environmentId),
@@ -1099,10 +1075,8 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
     }),
-    // A cold transcript scan is measured in seconds, so keep the result around
-    // long enough that switching windows or re-rendering does not rescan.
-    // Slow sources answer from cache first: that summary stays on screen, with
-    // the query waiting, until one `awaitRefresh` request replaces it.
+    // Cold transcript scans take seconds; retain them across window changes. Cached summaries remain provisional
+    // until awaitRefresh replaces them.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:usage-summary",
       tag: WS_METHODS.serverGetUsageSummary,
@@ -1205,9 +1179,7 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: configConcurrency,
     }),
     updateSettings,
-    // Provider-instance mutations share the settings command and its
-    // environment-serial scheduler. The named boundary keeps clients on the
-    // atomic map-entry payload instead of rebuilding a stale whole map.
+    // Share the settings lane and atomic provider map-entry boundary to avoid stale whole-map writes.
     mutateProviderInstance: updateSettings,
     prepareAcpRegistryAgent: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:acp-registry:prepare",
@@ -1318,9 +1290,7 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
-    // Deliberately not on the config lane: run-now blocks until the run is
-    // dispatched, and a slow run must not stall settings/keybinding/provider
-    // mutations (or other scheduled-task edits) queued behind it.
+    // Dispatch may block on a slow run; keep it off the config lane so settings mutations continue.
     runScheduledTaskNow: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:run-now",
       tag: WS_METHODS.scheduledTasksRunNow,

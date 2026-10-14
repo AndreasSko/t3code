@@ -1,9 +1,4 @@
-/**
- * Naming shared by the release workflow, the runtime installers, and
- * install scripts for the per-platform CLI archives attached to GitHub
- * Releases. Every consumer derives the same file names from a version and a
- * platform key, so a rename here is a release-breaking change.
- */
+/** Archive names are shared by workflows and installers; changing them breaks release downloads. */
 
 const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
@@ -11,11 +6,8 @@ export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
 
 /**
- * The archives a release attaches. Kept in step with the build_linux_cli
- * matrix, build_windows_arm64_cli, and the `cli_archive` rows in
- * .github/workflows/release.yml: a key here without a build there produces
- * download URLs that 404, and a build there without a key here is
- * unreachable from every installer.
+ * Keep these keys aligned with the CLI archive build matrix in .github/workflows/release.yml;
+ * missing builds produce 404s, and missing keys leave built archives unreachable.
  */
 // No darwin-x64: Node single-executables are unsupported on x64 macOS (the
 // SEA docs list macOS as arm64 only) and the binary segfaults on start.
@@ -56,7 +48,6 @@ export function cliArchiveFileName(version: string, platformKey: CliArchivePlatf
 
 const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases/download`;
 
-/** Directory that `releases/download/<tag>/<asset>` lives under. */
 export function cliReleaseDownloadBaseUrl(
   version: string,
   baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
@@ -102,10 +93,8 @@ export function cliReleaseIndexPageUrl(page: number): string {
 }
 
 /**
- * Picks the newest version on a channel from the release index. Tags are
- * `v<version>`; the channel is decided by the same rule the runtime uses, so
- * a preview tag never satisfies a nightly lookup and vice versa. Drafts are
- * skipped because their assets are not downloadable.
+ * Expects newest-first release-index entries. Skip drafts because their assets
+ * cannot be downloaded, and match the channel using the runtime's prerelease rule.
  */
 export function newestCliReleaseVersion(
   releases: ReadonlyArray<{

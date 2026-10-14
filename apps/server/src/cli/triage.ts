@@ -126,11 +126,7 @@ const pickAgent = (agents: ReadonlyArray<TriageAgent>) =>
     }
   });
 
-/**
- * Run the agent CLI as a normal interactive session: the user's terminal is
- * the UI, and the harness's own permission prompts gate every action. Resolves
- * with the child's exit code.
- */
+// Inherit the terminal so the agent's native permission prompts gate actions.
 const runInteractiveSession = (input: {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
@@ -173,9 +169,7 @@ export const triageCommand = Command.make("triage", {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
 
-      // Triage is a user-facing feature: always the userdata state, never dev.
-      // --base-dir wins; T3CODE_HOME is its documented env equivalent (same
-      // precedence as `t3 pair`).
+      // Triage always targets userdata; use the same explicit/environment home precedence as pair.
       const explicitBaseDir = Option.getOrUndefined(flags.baseDir);
       const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
       const baseDir = yield* resolveBaseDir(explicitBaseDir ?? Option.getOrUndefined(envHome));
@@ -205,9 +199,8 @@ export const triageCommand = Command.make("triage", {
             dbPath: paths.dbPath,
             settingsPath: paths.settingsPath,
             logsDir: paths.logsDir,
-            // The server writes no log file of its own. Service installs and the
-            // desktop app capture its output. The glob covers every desktop backend
-            // (such as WSL) and rotated copies; names come from DesktopObservability.ts.
+            // The server writes no log; service and desktop capture it. Include rotated
+            // copies and every desktop backend in the glob.
             serviceLogPath: path.join(paths.logsDir, BootService.BOOT_SERVICE_LOG_FILE),
             desktopBackendLogGlob: path.join(paths.logsDir, "server-child*.log*"),
             serverTracePath: paths.serverTracePath,
@@ -245,10 +238,8 @@ export const triageCommand = Command.make("triage", {
         selected = yield* pickAgent(installed);
       }
 
-      // The full seed prompt always goes to disk. The agent is launched with a
-      // one-line pointer at it: Windows `.cmd` shims run through cmd.exe,
-      // which cannot carry the multiline playbook as an argv string, and with
-      // no agent installed the same file is the paste-anywhere fallback.
+      // Windows cmd.exe cannot carry a multiline playbook in argv; launch with
+      // a pointer to the full on-disk prompt, also usable without an agent CLI.
       const promptFilePath = path.join(scratchDir, "prompt.md");
       yield* fs.writeFileString(promptFilePath, buildTriageSeedPrompt(contextFilePath));
 

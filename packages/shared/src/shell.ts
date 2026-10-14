@@ -57,9 +57,7 @@ function escapeWindowsShellArg(arg: string): string {
   let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
   // Double up trailing backslashes so the closing quote is not escaped away.
   escaped = escaped.replace(/(\\*)$/, "$1$1");
-  // Quote the whole argument so embedded whitespace is preserved.
   escaped = `"${escaped}"`;
-  // Escape cmd.exe metacharacters so cmd passes them through verbatim.
   return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
 }
 
@@ -458,17 +456,9 @@ function resolveCommandCandidates(
   return Array.from(new Set(candidates));
 }
 
-// Session bootstrap resolves the same commands over and over, each PATH scan
-// costing hundreds of 'shell.isExecutableFile' filesystem probes (tens of
-// thousands per connect). Memoize the scan outcome per
-// (platform, PATH, PATHEXT, command) for a short window: repeat scans hit the
-// cache while any change to the search environment invalidates immediately.
-// Explicit-path resolution is never cached - callers probe paths they have
-// just written (e.g. managed binary installs). A "not-found" outcome is also
-// cached for the TTL, so a just-installed binary can stay invisible for up to
-// 30s unless resolved by explicit path.
-// TTL expiry uses the monotonic clock (Clock.monotonicTimeNanos) so backward
-// wall-clock adjustments cannot keep expired entries alive.
+// PATH scans cost hundreds of probes each, tens of thousands per connect; cache them for 30s.
+// Explicit paths stay uncached for newly installed binaries.
+// Misses can hide installs until expiry; use monotonic time so clock changes cannot prolong it.
 const COMMAND_RESOLUTION_CACHE_TTL_NANOS = 30_000_000_000n;
 const COMMAND_RESOLUTION_CACHE_MAX_ENTRIES = 512;
 const COMMAND_RESOLUTION_CACHE_KEY_SEPARATOR = String.fromCharCode(0);
@@ -677,16 +667,8 @@ function isFileSync(filePath: string): boolean {
   }
 }
 
-/**
- * Swaps Git for Windows' launcher (`<Git>\cmd\git.exe`, the only git its
- * installer puts on PATH, or the portable build's `<Git>\bin\git.exe`) for the
- * git.exe it starts. The launcher costs a second process on every git command,
- * and each launch leaks a kernel token reference that slows process creation
- * machine-wide until reboot. The real binary sets HOME itself, but adds its own
- * folders to PATH for hooks, ssh and credential helpers only when MSYSTEM is
- * unset, so the launcher stays when MSYSTEM is set. Anything else is returned
- * as is.
- */
+/** Bypasses Git for Windows' launcher, avoiding a process spawn and kernel token leak per command.
+ * Keep it when MSYSTEM is set: the real binary then skips PATH setup for hooks and helpers. */
 export function preferGitForWindowsBinary(
   executable: string,
   env: NodeJS.ProcessEnv,
@@ -725,10 +707,7 @@ export const resolveSpawnCommand = Effect.fnUntraced(function* (
         ? { ...hostEnvironment, ...options.env }
         : options.env;
   const resolveExecutable = yield* SpawnExecutableResolution;
-  // The scan is synchronous and runs before every child process, so it shares
-  // the PATH scan cache above. Explicit paths stay uncached for the same reason,
-  // and so do misses: a failed spawn is how providers report "not installed",
-  // and that has to clear the moment the binary appears.
+  // Cache synchronous PATH scans before spawns; leave misses uncached so new installs appear at once.
   const explicitPath = command.includes("/") || command.includes("\\");
   const cache = yield* CommandResolutionCache;
   const cacheKey = [

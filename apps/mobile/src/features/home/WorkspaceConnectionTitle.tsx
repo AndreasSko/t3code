@@ -83,14 +83,8 @@ function StatusFadeIn(props: {
 }
 
 /**
- * Renders the brand/title slot of a thread-list surface, swapping the brand
- * for the workspace connection status while an environment is unavailable.
- *
- * Both states occupy the same slot, so connection changes never shift the
- * layout below. While connected the brand renders untouched — no wrapper —
- * keeping the native header item on the exact element tree that predates the
- * status swap. Replaces the old WorkspaceConnectionStatus pill, which inserted
- * a row above the thread list.
+ * Keep connection status in the brand's slot to avoid shifting the list;
+ * return the connected brand without a wrapper to preserve the native header tree.
  */
 export function WorkspaceConnectionTitle(props: {
   /** Content shown while connected (brand lockup or a screen title). */

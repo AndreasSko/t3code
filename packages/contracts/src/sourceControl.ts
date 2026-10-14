@@ -3,11 +3,8 @@ import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
 /**
- * `SourceControlProviderKind` — open branded slug naming a source control host, such as `github`.
- *
- * Open on purpose, like `ProviderDriverKind`: a server can report a host this client does not
- * ship a definition for, and clients fall back to a generic presentation instead of failing to
- * decode. `unknown` is what the server reports for a remote it cannot attribute to any host.
+ * Open slugs let clients decode unknown hosts and use a generic presentation.
+ * `unknown` denotes a remote the server cannot attribute.
  */
 export const SourceControlProviderKind = TrimmedNonEmptyString.check(
   Schema.isMaxLength(64),
@@ -32,10 +29,8 @@ export const ChangeRequest = Schema.Struct({
   url: Schema.String,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
-  /** The head commit, when the provider's read includes it. */
   headSha: Schema.optional(TrimmedNonEmptyString),
   state: ChangeRequestState,
-  /** Present when the provider can tell that an open change request is still a draft. */
   isDraft: Schema.optional(Schema.Boolean),
   closedAt: Schema.optional(Schema.NullOr(Schema.String)),
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),

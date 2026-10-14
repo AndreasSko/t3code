@@ -97,8 +97,7 @@ export function ElectronBrowserHost() {
     });
   }, []);
 
-  // A `target="_blank"` link inside a hosted page opens as another tab of the
-  // same thread, so the page that held the link stays where it is.
+  // Open target="_blank" links in the same thread while preserving the source page.
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
   const sessionByRuntimeTabId = useRef(new Map<string, (typeof sessions)[number]>());
   useEffect(() => {
@@ -164,13 +163,7 @@ function AuthorizedBrowserWebview(props: ComponentProps<typeof HostedBrowserWebv
   return canOperatePreview ? <HostedBrowserWebview {...props} profileId={profileId} /> : null;
 }
 
-/**
- * Agent `preview_open` normally carries the profile clients reported (see
- * BrowserProfileReporter). An agent tab opened before any client reported has
- * none, so it falls back to the configured default here. It is latched once
- * settings load: Electron fixes the partition when the guest attaches, so a
- * later settings change must not move a live tab.
- */
+/** Latch the default after settings load: Electron fixes the guest partition when the tab attaches. */
 function useTabProfileId(profileId: string | undefined): string | undefined {
   const hydrated = useClientSettingsHydrated();
   const defaultProfileId = useBrowserDefaults().profileId;

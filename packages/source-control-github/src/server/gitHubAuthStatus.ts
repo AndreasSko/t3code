@@ -80,11 +80,7 @@ export function findAuthenticatedGitHubAccount(
   );
 }
 
-/**
- * The login GitHub requests for a host will use, honoring Settings: an environment token
- * first (gh's own precedence), then the pinned account, then gh's active login.
- * Returns undefined when the host is turned off or has no usable login.
- */
+/** Choose environment token, pinned login, then active gh login; undefined for disabled/unusable hosts. */
 export function effectiveGitHubAccount(
   host: string,
   accounts: ReadonlyArray<GitHubAuthStatusAccount>,

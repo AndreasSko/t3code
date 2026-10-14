@@ -23,7 +23,6 @@ const REACTION_EMOJI: Record<PullRequestReactionContent, string> = {
   eyes: "👀",
 };
 
-/** The spoken names GitHub uses in its own hover text, which is what a screen reader reads out. */
 const REACTION_NAME: Record<PullRequestReactionContent, string> = {
   "thumbs-up": "thumbs up",
   "thumbs-down": "thumbs down",
@@ -58,18 +57,8 @@ function countRemainder(count: number, named: boolean): string {
   return `${count} ${count === 1 ? "person" : "people"}`;
 }
 
-/**
- * Who reacted, in GitHub's sentence. The viewer reads as "You" and comes first, because that is
- * the name they are looking for; a compliant host already leaves the viewer's own login out of
- * `actors` when they have reacted, leaving room for "You" without ever exceeding `count`. This
- * function has no viewer login to match against `actors`, so it cannot tell a non-compliant host
- * apart by name — but such a host gives itself away by leaving no room: `actors` alone already
- * accounts for everyone `count` claims. Then the viewer is already in `actors` under their own
- * login, and naming them "You" too would either invent a person or hide a real one, so `actors`
- * is named as given instead. The cap still guards further: the sentence never names more people
- * than `count` claims, and the remainder is counted rather than named — a host reports fewer
- * logins than it counts, so `count` is the only trustworthy total.
- */
+/** Name the viewer as You only when actors leave room within count; otherwise
+ * they may already include the viewer. Host count bounds names and the remainder. */
 export function pullRequestReactionTooltip(reaction: PullRequestReaction): string {
   const viewerHasRoom = reaction.actors.length < reaction.count;
   const names =
@@ -80,11 +69,7 @@ export function pullRequestReactionTooltip(reaction: PullRequestReaction): strin
   return `${joinNames(parts)} reacted with ${pullRequestReactionName(reaction.content)} emoji`;
 }
 
-/**
- * The list as it should be drawn while a reaction is still in flight. Reading a change request
- * back from the host takes seconds, and a pill that does not move until then reads as a press
- * that did nothing.
- */
+/** Optimistic reaction changes answer the press before the slow host reread. */
 export function applyPendingPullRequestReactions(
   reactions: ReadonlyArray<PullRequestReaction>,
   pending: ReadonlyMap<PullRequestReactionContent, boolean>,

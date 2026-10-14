@@ -38,7 +38,6 @@ const decodeCost = Schema.decodeUnknownOption(
     }),
   ),
 );
-/** The query with GitHub's own count of what it cost, for a read rather than a mutation. */
 function withRateLimit(query: string): string {
   const end = query.lastIndexOf("}");
   return query.trimStart().startsWith("mutation") || end === -1

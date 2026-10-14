@@ -14,13 +14,6 @@ import {
 } from "./catalog.ts";
 import { BearerConnectionTarget, type ConnectionTarget } from "./model.ts";
 
-/**
- * A saved environment can hold several routes: T3 Connect, direct URLs (LAN,
- * tailnet, other VPNs, public), and SSH. The client connects over the first route in
- * preference order that answers as the expected environment, and moves back
- * to a better one when it becomes reachable again.
- */
-
 export type ConnectionRouteKind =
   | "relay"
   | "loopback"
@@ -68,7 +61,6 @@ export function entryWithRoutes(
   };
 }
 
-/** The entry a single route connects with. */
 export function routeEntry(
   entry: ConnectionCatalogEntry,
   route: ConnectionRoute,
@@ -124,11 +116,7 @@ const ROUTE_KIND_RANK: Record<ConnectionRouteKind, number> = {
   relay: 5,
 };
 
-/**
- * Where a newly added route goes: after every saved route of the same or a
- * faster kind, so LAN lands ahead of tailnet and both ahead of T3 Connect.
- * Users can reorder afterwards; this only picks a sensible starting point.
- */
+/** Inserts after saved routes of the same or faster kind; user ordering remains authoritative. */
 export function insertRoute(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
@@ -153,12 +141,7 @@ export function upsertRoute(
     : insertRoute(routes, route);
 }
 
-/**
- * A saved route that reaches the same address as `route`: the same bearer
- * URL, or the same SSH target (alias, host, user, and port, as desktop keys
- * its tunnels). Registering it again replaces that route, even when it was
- * saved under another id.
- */
+/** Matches bearer URL or SSH alias/host/user/port so re-registering replaces even a different id. */
 export function findRouteToSameAddress(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
@@ -212,7 +195,6 @@ export function connectionRouteAddress(route: ConnectionRoute): string | null {
   return routeHttpBaseUrl(route);
 }
 
-/** Whether the environment can be reached through T3 Connect. */
 export function hasRelayRoute(
   entry: Pick<ConnectionCatalogEntry, "target" | "alternateRoutes">,
 ): boolean {
@@ -221,18 +203,8 @@ export function hasRelayRoute(
   );
 }
 
-/**
- * The routes after the server reports where it listens. Each newly reported
- * address becomes a learned route that authenticates the same way as the route
- * in use: the paired token for a bearer route, the T3 Connect credential for
- * relay. A learned route the server still reports keeps its place, so the
- * user's order holds; one it no longer reports is dropped, so a changed LAN
- * address replaces the old one. Routes the user saved are never removed or
- * moved, and an address already saved is not learned twice. Any direct route
- * the server reports is marked as Tailscale while the server finds it on its
- * Tailscale interface, so a route paired by its numeric Tailscale address keeps
- * that label.
- */
+/** Reconciles learned addresses with the active credential, preserving saved routes and user order.
+ * Tailscale marks follow the server's interface report. */
 export function mergeLearnedRoutes(input: {
   readonly entry: ConnectionCatalogEntry;
   readonly activeRoute: ConnectionRoute;
@@ -261,7 +233,6 @@ export function mergeLearnedRoutes(input: {
       ? credentialConnectionId(active.connectionId)
       : undefined;
 
-  // Usable reported addresses, by origin.
   const reported = new Map<string, URL>();
   const tailscaleOrigins = new Set<string>();
   for (const endpoint of input.reported) {
@@ -338,7 +309,6 @@ export function mergeLearnedRoutes(input: {
   return signature(saved) === signature(next) ? null : next;
 }
 
-/** A direct address the server reports, as `ServerDirectEndpoint`. */
 export interface ReportedEndpoint {
   readonly httpBaseUrl: string;
   readonly kind?: string;
@@ -366,10 +336,7 @@ function withNetwork(route: ConnectionRoute, tailscale: boolean): ConnectionRout
   };
 }
 
-/**
- * A learned bearer route borrows the credential of the route it was learned
- * from, so its id points back at that credential's owner.
- */
+// Learned ids identify the credential owner they borrow from.
 function learnedConnectionId(
   environmentId: string,
   origin: string,
@@ -395,12 +362,7 @@ export function isLearned(route: ConnectionRoute): boolean {
   return profile?._tag === "BearerConnectionProfile" && profile.learned === true;
 }
 
-/**
- * Routes left after the user removes one. A learned route borrows the
- * credential of the route it was learned over, so it cannot outlive that
- * route: removing T3 Connect also removes routes learned through it, and
- * removing a paired address removes routes that borrow its token.
- */
+/** Removes dependent learned routes too, because they cannot outlive their credential owner. */
 export function routesAfterRemoving(
   routes: ReadonlyArray<ConnectionRoute>,
   removedId: string,
@@ -418,10 +380,7 @@ export function routesAfterRemoving(
   });
 }
 
-/**
- * Whether removing T3 Connect leaves the environment no route, so signing out
- * removes it entirely. Routes learned through T3 Connect go with it.
- */
+/** Relay-dependent learned routes also disappear on sign-out. */
 export function removedWithRelay(entry: ConnectionCatalogEntry): boolean {
   return routesAfterRemoving(connectionRoutes(entry), RELAY_ROUTE_ID).length === 0;
 }

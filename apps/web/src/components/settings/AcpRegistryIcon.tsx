@@ -87,10 +87,8 @@ export function AcpRegistryAgentIcon({
     readonly status: "loading" | "loaded" | "failed";
   } | null>(null);
   const currentImage = image?.iconUrl === iconUrl ? image : null;
-  // Render only after the load pipeline resolves: the validated blob when the
-  // fetch succeeds, or the raw allowlisted CDN URL when it fails (the official
-  // CDN serves no CORS headers, so the validating fetch is often blocked in
-  // cross-origin browser contexts while native <img> loading still works).
+  // The official CDN lacks CORS headers: validated fetches can fail while
+  // native images work, so wait for the pipeline before using the allowlisted fallback.
   const source = currentImage?.source ?? null;
   const status = currentImage?.status ?? "loading";
 
@@ -124,9 +122,8 @@ export function AcpRegistryAgentIcon({
         className,
       )}
     >
-      {/* Registry glyphs are monochrome. Recolor their alpha rather than
-          inverting RGB values; external images cannot inherit currentColor.
-          A local SVG filter also works when CDN CORS prevents CSS masks. */}
+      {/* SVG alpha filters recolor external monochrome images without currentColor
+   or CSS masks, which CDN CORS can block. */}
       <svg aria-hidden className="pointer-events-none absolute size-0" focusable="false">
         <defs>
           <filter id={colorFilterId} colorInterpolationFilters="sRGB">

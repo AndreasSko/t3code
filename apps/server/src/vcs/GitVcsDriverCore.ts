@@ -47,9 +47,7 @@ import * as ServerConfig from "../config.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const gitProcesses = Semaphore.makeUnsafe(8);
-// `git worktree add` checks out the full tree, so on large repositories it can
-// take well beyond the default 30s (e.g. a 375k-file repo takes ~40s on an idle
-// machine). Give it generous headroom while still bounding a genuinely hung git.
+// A 375k-file worktree checkout took ~40s on an idle machine, beyond the default 30s; leave headroom for large repos.
 const WORKTREE_ADD_TIMEOUT_MS = 300_000;
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
@@ -60,14 +58,10 @@ const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_METADATA_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
-// Every status refresh adds the untracked files to a temporary index, and git add's cost grows
-// much faster than the file count (50k files took about 30 seconds). Past this many, the
-// totals are reported incomplete instead.
+// Adding 50k untracked files to a review index took ~30s; cap the count and report incomplete totals.
 const REVIEW_UNTRACKED_MAX_FILES = 5_000;
 const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
-// Patches the clients render are parsed against git's default a/ and b/ path
-// prefixes. A repository or global diff.noprefix or diff.mnemonicPrefix would
-// otherwise leak into the patch and leave every parsed file unnamed.
+// Clients require a/ and b/ prefixes; user diff prefix settings otherwise leave parsed files unnamed.
 export const PATCH_RENDER_PREFIX_ARGS = ["--src-prefix=a/", "--dst-prefix=b/"] as const;
 // Shared by review previews and status totals, so the Changes row matches the Changes view.
 const REVIEW_DIFF_ARGS = [
@@ -437,22 +431,17 @@ function gitCommandContext(
   } as const;
 }
 
-// Git states the actual cause on stderr, but stderr never leaves this module:
-// it echoes argv and remote URLs, which can carry credentials. Matching it
-// against fixed patterns yields a tag the caller can act on and a message that
-// quotes none of the matched text. Patterns run in order, specific first.
+// stderr can expose credentials in argv and remote URLs; classify specific patterns first and emit fixed messages only.
 const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFailureReason]> = [
   [/would clobber existing tag/i, "tag_would_be_clobbered"],
   [/is already (?:used by worktree at|checked out at)/i, "branch_checked_out_in_worktree"],
   [/a branch named .+ already exists/i, "branch_already_exists"],
-  // ssh names the methods it tried, so the parenthesized list varies:
-  // `(publickey)`, `(publickey,password)`, `(keyboard-interactive)`.
+  // ssh's parenthesized authentication-method list varies.
   [
     /(?:authentication failed|could not read Username|could not read Password|permission denied \([a-z-]+(?:,[a-z-]+)*\)|permission denied, please try again)/i,
     "authentication_failed",
   ],
-  // Distinct from a credential failure: the remote answered and the key it
-  // presented is untrusted, so pointing the user at credentials would misdirect.
+  // An untrusted host key needs a different remedy from invalid credentials.
   [/host key verification failed/i, "host_key_unverified"],
   [
     /(?:could not read from remote repository|does not appear to be a git repository|repository .+ not found)/i,
@@ -463,18 +452,9 @@ const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFai
   [/fatal: '[^']+' already exists|destination path .+ already exists/i, "path_already_exists"],
 ];
 
-// Hooks write to the same stream git does, and nothing distinguishes their
-// text from git's: a pre-push hook echoing "authentication failed" would
-// otherwise be read as a credential failure. Git prefixes its own diagnostics
-// and states a push rejection on a `! [rejected]` line, so only those are
-// classified. `remote:` is deliberately excluded — git prefixes every byte the
-// server sends that way, remote hook output included, so trusting it would
-// reintroduce the same false positive from the other end of the connection.
+// Hooks share stderr with Git; classify only Git diagnostics, excluding remote: lines that can contain hook output.
 const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
-// ssh reports the refusal itself, unprefixed, and git only adds a generic
-// "Could not read from remote repository" after it. Dropping ssh's line would
-// leave that generic one to be read as an unreachable remote when the real
-// cause is credentials, so these specific refusals are classified too.
+// ssh refusals are unprefixed; dropping them would misclassify invalid credentials as an unreachable remote.
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
@@ -537,9 +517,7 @@ function isUnbornHeadStderr(stderr: string): boolean {
   );
 }
 
-// Matches `git worktree remove` on a path git no longer tracks: "is not a
-// working tree" when the registration is gone, "cannot remove working tree"
-// when older gits fail validation on a registered-but-deleted directory.
+// Missing worktree registrations and registered-but-deleted directories produce different Git diagnostics.
 function isMissingWorktreeStderr(stderr: string): boolean {
   const normalized = stderr.toLowerCase();
   return (
@@ -907,16 +885,8 @@ const collectOutput = Effect.fnUntraced(function* (
 });
 
 /**
- * Git on Windows cannot create or delete a path longer than MAX_PATH (260)
- * unless `core.longpaths` is set. The OS-level LongPathsEnabled setting does not
- * cover it, and git leaves it off by default, so deep worktrees fail to check
- * out and fail midway through removal.
- *
- * Passed through `GIT_CONFIG_*` rather than `-c` so argv stays the same on every
- * platform and nothing is written to the user's config. The entry is appended
- * after any inherited ones. Windows env names are case-insensitive, so the
- * inherited count is found regardless of casing and updated under its own name.
- * A count git would reject is left alone so git still reports it.
+ * Windows Git needs core.longpaths beyond MAX_PATH (260), regardless of OS settings; inject it without changing user config.
+ * Append after inherited GIT_CONFIG entries; preserve the count key's casing and invalid counts for Git to reject.
  */
 export const windowsLongPathConfigEnv = (
   platform: NodeJS.Platform,
@@ -1286,10 +1256,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   ): Effect.Effect<void, GitCommandError> => {
     const fetchCwd =
       path.basename(gitCommonDir) === ".git" ? path.dirname(gitCommonDir) : gitCommonDir;
-    // `--no-auto-gc` (a synonym of `--no-auto-maintenance` that older Git also knows) keeps
-    // this poll from starting `git gc --auto`. When that gc fails, for example on a repository
-    // with missing objects, Git retries it on every fetch and leaves a full-size `tmp_pack_*`
-    // behind each time, so a background poll could fill the disk.
+    // --no-auto-gc also works on older Git; failing maintenance leaves full-size tmp_pack files on every fetch.
+    // Disable it so background polls cannot fill the disk.
     return executeGit(
       "GitVcsDriver.fetchRemoteForStatus",
       fetchCwd,
@@ -1520,10 +1488,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const statusRemoteRefreshCache = yield* Cache.makeWith(refreshStatusRemoteCacheEntry, {
     capacity: STATUS_UPSTREAM_REFRESH_CACHE_CAPACITY,
-    // A failed background fetch is intentionally cached and exponentially
-    // backed off. Status reads swallow this failure and use the last fetched
-    // refs, so repeated thread mounts cannot turn a slow or unavailable remote
-    // into a repository-wide Git subprocess storm.
+    // Cache and back off failed fetches so repeated mounts cannot create a repository-wide Git subprocess storm.
     timeToLive: (exit, cacheKey) =>
       Exit.isSuccess(exit)
         ? STATUS_UPSTREAM_REFRESH_INTERVAL
@@ -2442,15 +2407,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.orElseSucceed(() => null),
     );
     if (currentUpstream) {
-      // A branch tracking a differently named ref was cut from it, the way
-      // `git checkout -b feature origin/dev` and our own worktree flow leave
-      // it. That upstream is the branch's base, not its publish target, and
-      // pushing HEAD onto it would write feature commits to a shared branch
-      // (bare `git push` refuses this under push.default=simple). The one
-      // same-repo tracking setup that legitimately differs is a git-mangled
-      // alias such as local `upstream/effect-atom` for my-org/upstream's
-      // `effect-atom`: the branch name ends in the upstream head while the
-      // upstream ref ends in the branch name.
+      // A differently named upstream is usually the base; publishing onto it would overwrite a shared branch.
+      // Allow mangled aliases only when the local/upstream names reciprocally end in each other's heads.
       const isAliasOfUpstreamHead =
         branch === currentUpstream.branchName ||
         (branch.endsWith(`/${currentUpstream.branchName}`) &&
@@ -2461,9 +2419,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         );
         const remoteName = publishRemoteName ?? currentUpstream.remoteName;
         const publishBranch = yield* resolvePublishBranchName(cwd, branch);
-        // `-u` retargets the upstream to the published branch, so keep the
-        // base recorded first; base resolution reads gh-merge-base before the
-        // upstream ref.
+        // Record the base before -u retargets the upstream; base resolution prefers gh-merge-base.
         const configuredMergeBase = yield* runGitStdout(
           "GitVcsDriver.pushCurrentBranch.readMergeBase",
           cwd,
@@ -2545,9 +2501,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ["rev-parse", "HEAD"],
       true,
     ).pipe(Effect.map((stdout) => stdout.trim()));
-    // After a successful pull, HEAD before and after decides the result, so its output is not
-    // needed. A large fast-forward's diffstat can exceed the output cap, which must not fail a
-    // pull Git applied.
+    // HEAD decides the pull result; truncating a large diffstat must not fail a pull Git already applied.
     yield* executeGit("GitVcsDriver.pullCurrentBranch.pull", cwd, ["pull", "--ff-only"], {
       timeoutMs: 30_000,
       fallbackErrorDetail: "git pull failed",
@@ -2699,8 +2653,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return stdout.trim();
   });
 
-  // Lists untracked files and adds them to a temporary index, so a diff against any commit
-  // shows them as new. Returns null when the list is too big to read or to index. Needs a Scope.
   const prepareUntrackedReviewIndex = Effect.fn("prepareUntrackedReviewIndex")(function* (
     cwd: string,
     pathArgs: ReadonlyArray<string>,
@@ -2740,8 +2692,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { env };
   });
 
-  // The diff panel's Changes view compares the working tree with merge-base(base, HEAD).
-  // With no usable base it compares with HEAD, so Changes equals Uncommitted.
+  // Without a usable base, Changes and Uncommitted both compare against HEAD.
   const resolveReviewMergeBase = Effect.fn("resolveReviewMergeBase")(function* (
     cwd: string,
     branch: string | null,
@@ -2761,7 +2712,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     });
     const mergeBase = result.stdout.trim();
     if (result.exitCode !== 0 || mergeBase.length === 0) {
-      // Before the first commit there is nothing to compare with, so Changes equals Uncommitted.
       const head = yield* executeGit(
         "GitVcsDriver.resolveReviewMergeBase.head",
         cwd,
@@ -2780,7 +2730,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { baseRef, mergeBase };
   });
 
-  // Totals for the thread panel's Changes row. Same base and untracked files as the Changes view.
+  // Changes totals must use the same base and untracked files as the Changes view.
   const readBranchChangeTotals = Effect.fn("readBranchChangeTotals")(function* (
     cwd: string,
     branch: string | null,
@@ -2854,7 +2804,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const cwd = repository.worktreeRoot;
-    // A per-file request only reads its own source.
     const dirtyRef = input.file?.sourceKind === "branch-range" ? null : "HEAD";
     const review =
       input.file?.sourceKind === "working-tree"
@@ -2927,7 +2876,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               { concurrency: 2 },
             );
       if (untracked !== null) return [dirty, base] as const;
-      // Too many untracked files to list: show tracked changes and mark totals incomplete.
       const incomplete = (ref: string | null, result: typeof dirty) =>
         ref === null ? result : { ...result, files: undefined, stdoutTruncated: true };
       return [incomplete(dirtyRef, dirty), incomplete(review.mergeBase, base)] as const;
@@ -3091,8 +3039,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return new TextDecoder("utf-8").decode(bytes);
   });
 
-  // Both views compare a commit with the working tree: HEAD for Uncommitted,
-  // merge-base(base, HEAD) for Changes. The new side always comes from disk.
+  // The new side always comes from disk; old sides use HEAD for Uncommitted and merge-base for Changes.
   const getReviewDiffFileContents = Effect.fn("getReviewDiffFileContents")(function* (
     input: ReviewDiffFileContentsInput,
   ) {
@@ -3354,10 +3301,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const currentEpoch = listRefsEpochByCommonDir.get(gitCommonDir);
       const snapshot =
         refresh || currentEpoch === undefined
-          ? // The refresh cache owns the complete snapshot read, rather than only the
-            // epoch bump. Slow repositories therefore remain singleflight for the
-            // entire Git scan even when more refresh requests arrive after the
-            // coalescing TTL would otherwise have elapsed.
+          ? // Cache the whole scan so slow repositories stay singleflight after the coalescing TTL expires.
             yield* Cache.get(
               listRefsRefreshSnapshotCache,
               new GitRefsRefreshCacheKey({ gitCommonDir, generation }),
@@ -3425,8 +3369,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const combinedBranches = input.includeMatchingRemoteRefs
         ? [...localBranches, ...snapshot.remoteBranches]
         : dedupeRemoteBranchesWithLocalMatches([...localBranches, ...snapshot.remoteBranches]);
-      // Keep current/default refs on the first page even when the default
-      // only exists as origin/<default> (remote refs sort after all locals).
+      // Keep current/default refs on page one, including remote-only defaults that sort after local refs.
       const allBranches = combinedBranches.toSorted((left, right) => {
         const leftPriority = left.current ? 0 : left.isDefault ? 1 : 2;
         const rightPriority = right.current ? 0 : right.isDefault ? 1 : 2;
@@ -3512,13 +3455,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       yield* progress.onWorktreeClaimed(worktreePath);
     }
 
-    // `git worktree add` leaves submodules empty, so a repo that keeps agent
-    // skills, tooling or source in one gets a worktree that is quietly missing
-    // them. Best-effort: the objects are usually already in the parent's
-    // `.git/modules`, but a first-ever clone needs the network, and failing to
-    // populate a submodule must not roll back the caller's thread. Repos with
-    // hundreds of nested submodules opt out or stop at the top level; the
-    // caller resolves that from settings, or the checkout's t3.json decides.
+    // worktree add leaves submodules empty; populate them best-effort so network failures cannot roll back the thread.
     const hasSubmodules = yield* fileSystem
       .exists(path.join(worktreePath, ".gitmodules"))
       .pipe(Effect.orElseSucceed(() => false));
@@ -3638,8 +3575,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const fetchPullRequestHeadCommit: GitVcsDriver.GitVcsDriver["Service"]["fetchPullRequestHeadCommit"] =
     Effect.fn("fetchPullRequestHeadCommit")(function* (input) {
       const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
-      // No refspec destination: the pull head lands in FETCH_HEAD (per worktree) instead of a
-      // branch, which is the only way to read it while that branch is checked out somewhere.
+      // Fetch into per-worktree FETCH_HEAD so a branch checked out elsewhere does not block the read.
       yield* executeGit(
         "GitVcsDriver.fetchPullRequestHeadCommit",
         input.cwd,
@@ -3674,17 +3610,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ["merge-base", "--is-ancestor", headCommit, input.targetCommit],
         { allowNonZeroExit: true },
       ).pipe(Effect.map((result) => result.exitCode === 0));
-      // A rewritten head (rebase, squash, amend) does not descend from the checkout, so it can
-      // only be taken by resetting. That is lossless exactly when the tree is clean and HEAD
-      // never left the commit the upstream held before the fetch.
+      // Rewritten heads require a reset; allow it only for clean checkouts still at the upstream's pre-fetch commit.
       if (!isAncestor && headCommit !== input.resetWhenHeadCommit) {
         return { headCommit, moved: false, onTarget: false };
       }
 
       if (!isAncestor) {
-        // The commit being reset away is about to be reachable from nothing. It is only ever a
-        // commit the remote already held, but "the remote held it" stops being a way back once
-        // the head it belonged to has been rewritten, so a ref keeps it findable.
+        // Rewriting the upstream can orphan this commit; keep a recovery ref before resetting it away.
         yield* executeGit(
           "GitVcsDriver.refreshCheckedOutBranch.keepPrevious",
           input.cwd,
@@ -3696,10 +3628,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       yield* executeGit(
         "GitVcsDriver.refreshCheckedOutBranch.move",
         input.cwd,
-        // `--merge` rather than `--hard`: the cleanliness check above is a snapshot, and another
-        // thread may edit a tracked file between it and this move. Git itself refuses a `--merge`
-        // reset that would overwrite such an edit — the same guarantee `--ff-only` gives the
-        // other branch — so a race loses nothing; the refresh fails and is reported instead.
+        // --merge refuses to overwrite edits made after the cleanliness check, as --ff-only does for descendant heads.
         isAncestor
           ? ["merge", "--ff-only", input.targetCommit]
           : ["reset", "--merge", input.targetCommit],
@@ -3864,9 +3793,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.cwd,
       args,
       {
-        // Removing dependency-heavy worktrees is filesystem-bound and can take
-        // minutes, especially on Windows. Keep it bounded without interrupting
-        // git midway through cleanup.
+        // Dependency-heavy worktree removal can take minutes, especially on Windows.
         timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
         allowNonZeroExit: true,
       },
@@ -3874,10 +3801,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (result.exitCode === 0) {
       return;
     }
-    // Threads can share a worktree path, and worktrees get removed or pruned
-    // outside the app, so a worktree that is already gone is a no-op rather
-    // than an error. Prune so no stale registration lingers to block a later
-    // `worktree add` at the same path.
+    // Shared or externally removed worktrees may already be gone; prune stale registrations so the path can be reused.
     const alreadyGone =
       isMissingWorktreeStderr(result.stderr) &&
       !(yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false)));
@@ -3885,9 +3809,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       yield* pruneWorktrees({ cwd: input.cwd });
       return;
     }
-    // Raw stderr stays out of both the wire error and the log (it can carry
-    // secrets); log bounded diagnostics so a genuine failure is visible
-    // server-side.
+    // stderr can contain secrets; expose only bounded diagnostics in errors and logs.
     yield* Effect.logWarning(
       `GitVcsDriver.removeWorktree: git worktree remove exited with code ${result.exitCode} for ${input.path} (stderr length ${result.stderr.length}).`,
     );

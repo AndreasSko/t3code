@@ -32,17 +32,9 @@ export interface ConnectAuthorizeRequest {
 }
 
 /**
- * The URL the CLI prints for the user to open in a browser. `state` and
- * `code_challenge` ride the fragment so they never reach the hosted app's
- * server or CDN logs; neither is a secret.
- *
- * The CLI routes through the hosted /connect page rather than hitting
- * Clerk's /oauth/authorize directly: a signed-out browser sent straight to
- * /oauth/authorize goes through Clerk's sign-in redirect, which does not
- * reliably preserve the authorize query parameters (state, response_type,
- * code_challenge). The hosted page waits for a Clerk session first, then
- * forwards the request with the parameters intact. Headless hosts use the
- * OAuth device authorization grant instead and never involve this page.
+ * Put state and PKCE in the fragment to avoid hosted logs.
+ * Clerk's direct sign-in redirect can drop OAuth query parameters; /connect waits for a session first.
+ * Headless hosts use the device grant.
  */
 export function buildConnectAuthorizeRequestUrl(input: {
   readonly hostedAppUrl: string;

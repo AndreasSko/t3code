@@ -46,8 +46,6 @@ import {
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
 
-// ── Client Settings (local-only) ───────────────────────────────
-
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
@@ -62,8 +60,6 @@ export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "upda
 
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
-// Not exported: mobile was the last consumer of the value itself; the
-// wire field keeps its decoding default below.
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
@@ -122,9 +118,8 @@ export const PanelAnimationDurationMs = Schema.Int.check(
 export type PanelAnimationDurationMs = typeof PanelAnimationDurationMs.Type;
 const DEFAULT_PANEL_ANIMATION_DURATION_MS: PanelAnimationDurationMs = 0;
 /**
- * Font size preferences, in CSS pixels. The ranges are deliberately narrow:
- * the interface size scales every rem-based dimension in the app, so the
- * bounds keep layouts intact rather than offering unusable extremes.
+ * Font sizes are CSS pixels. Narrow bounds protect layouts because interface
+ * size scales every rem-based dimension.
  */
 export const MIN_INTERFACE_FONT_SIZE = 12;
 export const MAX_INTERFACE_FONT_SIZE = 20;
@@ -246,44 +241,27 @@ const LegacyConfirmQuit = Schema.Boolean.pipe(
 
 const QuitConfirmationModeSetting = Schema.Union([QuitConfirmationMode, LegacyConfirmQuit]);
 
-/**
- * A user-chosen font family (a single name or a comma-separated list). Empty
- * means "use the app default"; clients compose their own fallback stacks.
- */
+/** Empty uses the app default; clients compose their own fallback stacks. */
 export const FontFamilyPreference = Schema.String.check(Schema.isMaxLength(200));
 export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 
 /**
- * The environment's theme, set with `t3 theme set <id>`. Each client applies
- * it once per value — live when connected, on its next connect otherwise — so
- * setting it switches every client, while a theme a user picks in Settings
- * afterwards sticks until the next set. Empty means "no environment theme",
- * which is also how it is cleared.
+ * t3 theme set applies once per value on each client; later client picks persist
+ * until the next set. Empty clears the environment theme.
  */
 export const DefaultThemePreference = Schema.String.check(Schema.isMaxLength(64));
-// Deliberately absent from ServerSettingsPatch: `t3 theme set` checks that an
-// id is syntactically valid and actually resolvable, and a generic RPC patch
-// would let a client write a theme no client can resolve, bypassing both.
+// Only t3 theme set validates and resolves IDs; a generic settings patch
+// would bypass those checks.
 export type DefaultThemePreference = typeof DefaultThemePreference.Type;
 
-/**
- * Defaults for the in-app preview browser, applied whenever a tab is opened
- * without an explicit viewport/zoom/appearance — by the user opening a browser
- * tab, or by an agent calling `preview_open` with no size. Recording quality is
- * client-local for the same reason: the Chromium guest being captured belongs
- * to the desktop app.
- */
+/** Defaults apply when preview_open omits viewport, zoom or appearance. */
 export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
 export const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
 export const BROWSER_RECORDING_FRAME_RATES = [30, 60] as const;
 export const BrowserRecordingFrameRate = Schema.Literals(BROWSER_RECORDING_FRAME_RATES);
 export type BrowserRecordingFrameRate = typeof BrowserRecordingFrameRate.Type;
 export const DEFAULT_BROWSER_RECORDING_FRAME_RATE: BrowserRecordingFrameRate = 30;
-/**
- * Where a clicked link goes: the OS default browser, or a tab in the in-app
- * browser beside the thread. "system" is the default because that is what
- * every link did before the setting existed.
- */
+/** `system` opens in the OS browser; `app` opens beside the thread. */
 export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
 export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
 export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
@@ -295,13 +273,11 @@ export const LoadBalancingWeights = Schema.Record(
 
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
-/** Maximum width of the chat timeline and composer on wide screens. */
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
-/** Preferences shared by clients connected to the same environment. */
 export const ModelFavorite = Schema.Struct({
-  // The historical field name is retained; default instance ids also decode old provider-kind favorites.
+  // Default instance IDs also decode provider-kind favorites from older settings.
   provider: ProviderInstanceId,
   model: TrimmedNonEmptyString,
 });
@@ -355,26 +331,16 @@ export const ClientSettingsSchema = Schema.Struct({
   browserRecordingShowMousePresses: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  /**
-   * Where links clicked in a thread (chat markdown, terminal output) open.
-   * Only the desktop app has an in-app browser, so other clients ignore "app".
-   */
   browserLinkTarget: BrowserLinkTarget.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_LINK_TARGET)),
   ),
-  /**
-   * Whether an agent using a preview pops the floating mini player into
-   * view. Only applies when the agent didn't ask either way — an explicit
-   * `open`/`show` on `preview_open` still wins, since that is the agent
-   * deliberately showing or hiding its work.
-   */
+  /** Explicit open/show on preview_open overrides this floating-player default. */
   browserAutoShowFloatingPreview: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW)),
   ),
   /**
-   * User-created browser profiles. The built-in Default and Incognito profiles
-   * are synthesized by `resolveBrowserProfiles`, not stored here, so they
-   * cannot be renamed away or deleted.
+   * Default and Incognito are synthesized by resolveBrowserProfiles so
+   * saved profile edits cannot rename or delete them.
    */
   browserProfiles: Schema.Array(BrowserProfile).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -422,10 +388,8 @@ export const ClientSettingsSchema = Schema.Struct({
   // Grayscale `-webkit-font-smoothing: antialiased` (thinner strokes);
   // disabling restores the platform's heavier default. No effect off macOS.
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // When the first-run welcome wizard finished (or was skipped), as an ISO
-  // timestamp. `null` alone does not mean "show the wizard" — every install
-  // that predates this field decodes to `null` — so the gate also requires an
-  // empty workspace before it treats the client as a fresh install.
+  // Null also decodes from older installs, so onboarding additionally requires
+  // an empty workspace before treating the client as new.
   onboardingCompletedAt: Schema.NullOr(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -441,17 +405,13 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     PullRequestMergeMethod,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // Legacy plan mode. The composer's Build/Plan toggle was removed from the
-  // default UI; this beta flag restores it (plus the /plan and /default slash
-  // commands) for users who still rely on the old workflow.
+  // Restores the Build/Plan toggle and /plan and /default commands.
   planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Legacy context window meter. The composer hides it by default; users who
-  // still want the old usage indicator can restore it from Settings.
+  // Opt-in display of the context window meter.
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Desktop resting composer: scrolling an existing thread's conversation
   // settles the composer into its single-line layout. Losing focus never does.
   composerCollapseOnScroll: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Rich text is the default; users can opt out for literal Markdown editing.
   composerRichTextEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("enter")),
@@ -461,14 +421,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Legacy sidebar (the original per-project tree). Deliberately a fresh key
-  // (was `sidebarV2Enabled` + `sidebarV2ConfiguredByUser`): decoding drops the
-  // old keys, so everyone, including prior beta opt-outs, resets to the new
-  // default sidebar.
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Beta: working and monitoring threads fold into a Working shelf and return
-  // to the top of the inbox once they need the user. The inbox then orders by
-  // time, so manual placement there is ignored (and kept) while it is on.
+  // Active threads occupy a Working shelf. Inbox ordering ignores but preserves
+  // manual placement until the feature is disabled.
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -509,8 +464,6 @@ export const ClientSettingsSchema = Schema.Struct({
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
-
-// ── Server Settings (server-authoritative) ────────────────────
 
 const UsageModelTokenPrice = Schema.Number.check(
   Schema.isFinite(),
@@ -730,9 +683,8 @@ export const ClaudeSettings = makeProviderSettingsSchema(
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
 /**
- * Antigravity ACP auth methods. Personal and Enterprise open a Google sign-in
- * in the browser. The API key and Agent Platform methods take credentials from
- * the instance config and never open a browser.
+ * Personal/Enterprise open Google sign-in; API key/Agent Platform read
+ * instance credentials without opening a browser.
  */
 export const ANTIGRAVITY_AUTH_METHODS = [
   { value: "oauth-personal", label: "Google account" },
@@ -811,12 +763,7 @@ export const AntigravitySettings = makeProviderSettingsSchema(
 );
 export type AntigravitySettings = typeof AntigravitySettings.Type;
 
-/**
- * A read-only quota source outside this environment's provider CLIs. The
- * only kind today is a CLIProxyAPI hub, whose management API reports the
- * windows of every pooled account. The key travels in settings for now, like
- * provider environment secrets; it is redacted before reaching a client.
- */
+/** CLIProxyAPI quota is read-only; redact the management key before sending settings to clients. */
 export const UsageLimitSourceConfig = Schema.Struct({
   kind: Schema.Literal("cliproxy"),
   label: Schema.optional(TrimmedNonEmptyString),
@@ -832,11 +779,8 @@ export const GitHubHost = TrimmedNonEmptyString.pipe(
 );
 
 /**
- * One source control host's saved settings. Each host package declares the fields it reads in
- * its client definition's settings schema and decodes this blob with it; the environment stores
- * it whole, so a host this build does not ship keeps its settings. A field annotated as a secret
- * holds a string, or a string per server host, whose value lives in the server's secret store:
- * settings and clients only see a redaction marker for a saved one.
+ * Host packages decode their own settings; preserve unknown hosts intact.
+ * Secret values live in the server store and clients see redaction markers.
  */
 export const SourceControlHostSettings = Schema.Record(Schema.String, Schema.Unknown);
 export type SourceControlHostSettings = typeof SourceControlHostSettings.Type;
@@ -917,19 +861,13 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
-/**
- * How assistant text reaches clients while a turn runs.
- * - `turn`: hold the whole message until the turn finishes or pauses.
- * - `paragraph`: deliver each finished paragraph or closed code block.
- */
+/** turn holds text until finish/pause; paragraph delivers closed paragraphs or code blocks. */
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
 /**
- * Server settings a project may override. Every other server setting is
- * environment-wide: providers, keybindings, observability, device hosts,
- * background activity, theme. UI, search and the write planner derive
- * eligibility from this list, so adding a key here is the whole opt-in.
+ * Only listed settings accept project overrides; UI, search and write planning
+ * derive eligibility from the same list.
  */
 const StorageRetentionDays = Schema.NullOr(
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
@@ -996,18 +934,8 @@ export const ProjectProviderInstanceOverride = Schema.Struct({
 export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOverride.Type;
 
 /**
- * One project's overrides. An absent key inherits the environment value;
- * `null` is a real value where the environment type is nullable (no default
- * model, no dedicated writer model, never auto-settle).
- *
- * `providerInstances` sits outside `PROJECT_SCOPED_SERVER_SETTING_KEYS`:
- * every other key replaces its `ServerSettings` field whole, while this one
- * keeps the settings.json shape but overrides field by field, per
- * `ProviderInstanceId`. Only `enabled` is overridable today. An instance id
- * or field absent here inherits the machine value, and a present `enabled`
- * wins in either direction, so a project can turn on an instance the machine
- * disabled, or turn off one the machine enabled. See
- * `resolveProjectProviderInstanceEnabled` for the combined resolution.
+ * Absent inherits; null can be a real override. providerInstances overrides
+ * enabled per instance instead of replacing the whole environment field.
  */
 export const ProjectSettingsOverrides = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
@@ -1042,10 +970,8 @@ export const ProjectSettingsOverrides = Schema.Struct({
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 /**
- * Whether `null` is a stored override value for this key rather than "unset".
- * Clients writing a project override treat null for every other key as a
- * request to remove the override, so a picker's "Inherit" item and the row's
- * reset do the same thing.
+ * For nullable keys, null is a stored value; for other keys it removes
+ * the override so Inherit and reset behave identically.
  */
 export function isNullableProjectSettingsOverride(key: ProjectScopedServerSettingKey): boolean {
   return NULLABLE_PROJECT_SETTINGS_OVERRIDES.has(key);
@@ -1126,21 +1052,13 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Retain the update-era key. On by default so restarts resume the work they
-  // interrupted; recovery stops after three automatic continuations in a row.
+  // Restart recovery stops after three consecutive automatic continuations.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   /**
-   * Whether agents may drive the in-app preview browser. Turning this off
-   * withholds the MCP credential, so the `t3-code` server (and with it every
-   * `preview_*` tool) is never attached to a provider session, and the prompt
-   * text describing those tools is dropped along with them. The user's own
-   * browser panel is unaffected — this gates agent access only.
-   *
-   * Server-authoritative rather than client-local: tool injection and prompt
-   * construction both happen on the server, and the answer must not differ
-   * between a desktop window and a phone attached to the same server.
+   * Server-authoritative so tool injection and prompt construction agree across clients.
+   * Disabling withholds agent browser tools and instructions, not the user's panel.
    */
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   projectAgentBrowserAccessOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
@@ -1163,36 +1081,21 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE)),
   ),
   /**
-   * Per-project overrides of the keys in `PROJECT_SCOPED_SERVER_SETTING_KEYS`,
-   * plus `providerInstances`. The source of truth for project
-   * settings; `projectAgentBrowserAccessOverrides`, `projectAutoPullOverrides`
-   * and `projectScriptOverrides` are derived views kept for one release so
-   * older clients keep reading them.
+   * Source of truth for project settings; legacy per-project maps remain
+   * derived views for older clients.
    */
   projectSettingsOverrides: Schema.Record(ProjectId, ProjectSettingsOverrides).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  /**
-   * Whether the legacy per-project fields have been folded into
-   * `projectSettingsOverrides`. The fold runs once so a later reset in the
-   * settings UI is not undone by the next server start.
-   */
+  /** Fold legacy fields once so later resets cannot be undone at server startup. */
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * Whether agents may drive simulators and emulators. Gates the `device_*`
-   * MCP tools and the preconfigured `agent-device` CLI the same way
-   * `enableAgentBrowserAccess` gates the browser: server-authoritative, applied
-   * when the provider session is prepared. The user's own Device panel is
-   * unaffected.
-   */
+  /** Gates provider device tools and CLI at session preparation, not the user's panel. */
   enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
-   * Whether this server may install and run T3's device helper processes.
-   * Kept separate from agent access so enabling the user's Device panel does
-   * not also grant providers control of simulators and emulators.
+   * Separate helper installation from agent access so the Device panel
+   * does not implicitly grant providers control.
    */
   enableDeviceSupport: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /** Whether the server-local Device panel setup flow has been completed. */
   deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceHosts: SshDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
@@ -1205,8 +1108,7 @@ export const ServerSettings = Schema.Struct({
   ),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
-  // Legacy flat fields retained for old settings files and old clients. New
-  // consumers should resolve `backgroundActivity` instead.
+  // Retained for older settings and clients; consumers resolve backgroundActivity.
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
@@ -1221,42 +1123,26 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BACKGROUND_ACTIVITY_PROFILE)),
   ),
   defaultTheme: DefaultThemePreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  /**
-   * When the environment's theme was last set, so clients can tell a re-set
-   * of the same value from one they already applied: `t3 theme set` must act
-   * even when it names the theme it named before. Empty on environments
-   * provisioned by builds that predate it, where clients fall back to
-   * applying once per value.
-   */
+  /** Distinguishes repeated sets of the same theme; empty falls back to applying once per value. */
   defaultThemeSetAt: Schema.String.check(Schema.isMaxLength(64)).pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
   ),
   /**
-   * The icon clients draw for this environment. Null means "use what the
-   * server detected" (`environment.platform.machine`), falling back to a
-   * generic server. Lives on the server, not the client, so every device
-   * sees the same machine. A kind picked on a newer server decodes as null
-   * here rather than failing the whole settings snapshot for an older client.
+   * Shared across clients. Null uses the detected machine, then generic server;
+   * unknown kinds decode as null for compatibility.
    */
   environmentIcon: ForwardCompatibleNullable(EnvironmentMachineKind).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   /**
-   * Null means inherit: the repository's t3.json, then "local". The old
-   * default "local" was never persisted (defaults are stripped on write), so
-   * it now decodes as inherit, which resolves the same way because the old
-   * chain also let t3.json outrank the environment. Null stays off the wire
-   * so older clients, which require a literal here, keep decoding.
+   * Null inherits from t3.json, then local. Omit null on the wire so
+   * older clients requiring a literal still decode.
    */
   defaultThreadEnvMode: OmittedWhenNull(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
-  /**
-   * Null defers to the repository's t3.json, then to recursive. A value
-   * picked on a newer server decodes as null here rather than failing the
-   * whole settings snapshot for an older client.
-   */
+  /** Null inherits from t3.json, then recursive; unknown values decode as null. */
   worktreeSubmodules: ForwardCompatibleNullable(WorktreeSubmodules).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1287,38 +1173,23 @@ export const ServerSettings = Schema.Struct({
   sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
-  /**
-   * Beta: review guides on this server. Off hides the Guide tab in every client and refuses to
-   * write guides, for people and agents alike.
-   */
+  /** Disabling hides the Guide tab and rejects guide writes from clients and agents. */
   reviewGuidesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
-   * The model that reads a pull request to write its review guide. It investigates a checkout
-   * over many turns, so it can want a stronger model than one-shot writing. `null` uses the
-   * source control writer model.
+   * Null uses the source control writer model; guide generation investigates
+   * a checkout over multiple turns.
    */
   reviewGuideModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
-  /**
-   * The maintainer's taste for review guides: what to dwell on, skip, or order first. Shapes the
-   * guide's emphasis only; the output format and coverage rules stay fixed.
-   */
+  /** Shapes emphasis only; format and coverage requirements remain fixed. */
   reviewGuideInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  /**
-   * The merge method pull requests start with; `null` reuses the method
-   * last chosen on this device. Server-side so a project can override it
-   * like any other project setting.
-   */
+  /** Null reuses this device's last selection; server-side so projects can override it. */
   pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
 
-  // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
-  // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
-  // is `Schema.Unknown` at this layer so envelopes with unknown drivers
-  // (forks, downgrades, in-flight PR branches) round-trip without loss.
-  // See providerInstance.ts for the forward/backward compatibility invariant.
+  // Opaque driver config round-trips for unknown drivers; see providerInstance.ts.
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1327,8 +1198,7 @@ export const ServerSettings = Schema.Struct({
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  // Keyed by a user-chosen id so a source keeps its rows across edits. Entries
-  // this build cannot decode round-trip untouched, as provider instances do.
+  // Stable user IDs retain source rows across edits; preserve unknown entries unchanged.
   usageLimitSources: Schema.Record(UsageLimitSourceId, UsageLimitSourceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1340,10 +1210,7 @@ export const ServerSettings = Schema.Struct({
   usagePriceOverrides: Schema.Record(TrimmedNonEmptyString, UsageModelPriceOverride).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  /**
-   * Exact model ID to the model its usage counts as, such as a preview slug to
-   * its released name. The mapped model is priced and reported as its target.
-   */
+  /** Map exact model IDs to the model used for reporting and pricing. */
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1352,12 +1219,7 @@ export type ServerSettings = typeof ServerSettings.Type;
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
-/**
- * Read the legacy `enabled` flag embedded in a provider instance config
- * blob. The envelope-level `ProviderInstanceConfig.enabled` is the single
- * flag going forward; this reader exists for old settings files that still
- * carry the flag in-config.
- */
+/** Read in-config enabled for older settings; new writes use the envelope flag. */
 export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | undefined => {
   if (config === null || typeof config !== "object" || Array.isArray(config)) {
     return undefined;
@@ -1366,41 +1228,28 @@ export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | un
   return typeof enabled === "boolean" ? enabled : undefined;
 };
 
-/**
- * Built-in drivers that stay off until the user turns them on. Matches the
- * `enabled` decoding default of each driver's settings schema.
- */
+/** Matches each built-in driver's settings-schema enabled default. */
 const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
   ["cursor", "grok", "muse", "pi", "opencode", "antigravity"].map((driver) =>
     ProviderDriverKind.make(driver),
   ),
 );
 
-/** Built-in drivers whose default instance runs before the user configures it. */
 const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new Set(
   ["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
 );
 
-/**
- * Whether the built-in default instance at `instanceId` is enabled while
- * settings have no `providerInstances` entry for it. Only Codex and Claude
- * start on; any other id without an entry has no running instance.
- */
+/** Without a configured entry, only the Codex and Claude default instances are enabled. */
 export const isUnconfiguredDefaultInstanceEnabled = (instanceId: ProviderInstanceId): boolean =>
   DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId);
 
-/**
- * Default enabled state for a driver when neither the envelope nor the config
- * blob carries a flag. Unknown (fork) drivers default to enabled.
- */
+/** Unknown drivers default to enabled when neither envelope nor config supplies a flag. */
 const defaultEnabledForDriver = (driver: ProviderDriverKind): boolean =>
   !DEFAULT_DISABLED_PROVIDER_DRIVERS.has(driver);
 
 /**
- * Resolve whether a configured provider instance is enabled. An explicit
- * false on either the envelope or the in-config flag wins (most
- * restrictive), so a user's disable is never silently undone by the other
- * flag. Otherwise: envelope, then config, then the driver's default.
+ * An explicit false in either envelope or config wins so the other flag
+ * cannot silently undo a disable.
  */
 export const resolveProviderInstanceEnabled = (
   instance: Pick<ProviderInstanceConfig, "driver" | "enabled" | "config">,
@@ -1412,12 +1261,7 @@ export const resolveProviderInstanceEnabled = (
   return instance.enabled ?? configEnabled ?? defaultEnabledForDriver(instance.driver);
 };
 
-/**
- * Effective enablement for a provider instance within a project: the
- * project's `providerInstances[id].enabled` override when set, otherwise the
- * machine-wide `resolveProviderInstanceEnabled` value. `projectId` of `null`
- * (no project in scope) always resolves to the machine-wide value.
- */
+/** A project override wins; absent override or null project uses machine enablement. */
 export const resolveProjectProviderInstanceEnabled = (
   settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
   projectId: ProjectId | null,
@@ -1475,15 +1319,11 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
   }
 }
 
-// ── Unified type ─────────────────────────────────────────────────────
-
 export type UnifiedSettings = Omit<ServerSettings, keyof ModelPreferences> & ClientSettings;
 export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
   ...DEFAULT_SERVER_SETTINGS,
   ...DEFAULT_CLIENT_SETTINGS,
 };
-
-// ── Server Settings Patch (replace with a Schema.deepPartial if available) ──────────────────────────────────────────
 
 const ModelSelectionPatch = Schema.Struct({
   instanceId: Schema.optionalKey(ProviderInstanceId),
@@ -1539,7 +1379,6 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   worktreesDirectory: Schema.optionalKey(TrimmedString),
-  // Server settings
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
@@ -1558,16 +1397,8 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   /**
-   * Per-project entry replacement: each entry replaces that project's whole
-   * override set and `null` removes it. Clearing one override means resending
-   * the entry without that key. Per-key null cannot express "clear" for the
-   * keys whose value type is itself nullable, and clients always hold the
-   * current entry from the last settings snapshot.
-   *
-   * `providerInstances` is the one exception: an entry that omits the key
-   * keeps the stored value instead of clearing it, so a client built before
-   * that field existed cannot wipe it by editing another key. Clearing every
-   * provider override for a project means sending `providerInstances: {}`.
+   * Entries replace whole override sets; null removes an entry. Omitted providerInstances
+   * preserves stored overrides for old clients; send {} to clear them.
    */
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(ProjectSettingsOverrides)),
@@ -1622,19 +1453,13 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   /**
-   * Merges per host: a patched field replaces the saved one, so a client sends a per-server-host
-   * map whole, with the redaction marker for each saved secret it keeps. An empty or omitted
-   * secret is removed from the secret store.
+   * Merge per host, replacing fields whole. Preserve saved secrets with redaction
+   * markers; empty or omitted secrets are removed from the secret store.
    */
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
-  // Whole-map replacement for the new instance config. Patching individual
-  // entries is intentionally out of scope: the map is small, and partial
-  // patches risk leaving driver-specific config in a half-merged state.
-  // The web UI sends a fully-formed map every time it edits this field.
+  // Replace the whole map to avoid half-merging driver-specific config.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
-  // Per-entry, unlike `providerInstances`: a client only ever adds or removes
-  // one source, and sending the whole map races another edit that has not
-  // echoed back yet. `null` removes; the server merges into its current map.
+  // Merge per entry to avoid racing unechoed edits from other clients; null removes.
   usageLimitSources: Schema.optionalKey(
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),
   ),
@@ -1671,9 +1496,8 @@ export function requiredScopesForServerSettingsPatch(
 }
 
 /**
- * Project scripts run on the host when a worktree is created or a thread
- * settles, so a project mutation that carries them needs the same grant as
- * saving project scripts through settings, on top of `orchestration:operate`.
+ * Scripts execute on the host, so carrying them requires settings grants
+ * in addition to orchestration:operate.
  */
 export function requiredScopesForProjectMutation(
   mutation: ProjectMutation,

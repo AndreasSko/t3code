@@ -45,12 +45,8 @@ export interface DeviceStreamHandle {
   readonly inputConnected: boolean;
 }
 
-/**
- * The live device screen. Pointer events map onto normalized coordinates in
- * the displayed frame and go to the device; keyboard input is forwarded while
- * the surface is focused. `visible=false` tears the stream down so a hidden
- * panel decodes nothing.
- */
+/** `visible=false` tears down the stream so hidden panels decode nothing;
+ * keyboard input is forwarded only while the surface is focused. */
 export function DeviceStreamView(props: {
   readonly environmentId: EnvironmentId;
   readonly platform: DevicePlatform;
@@ -59,10 +55,9 @@ export function DeviceStreamView(props: {
   readonly deviceDescription?: string;
   readonly visible: boolean;
   readonly hostId: string;
-  /** The full panel opts into the phone spike; compact viewers retain their flat presentation. */
+  /** Full device panels opt into the phone presentation; compact viewers stay flat. */
   readonly allowPhoneView?: boolean;
   readonly renderControls?: (view: DeviceViewControls) => ReactNode;
-  /** Draw accessibility element frames over the screen. */
   readonly axOverlay?: boolean;
   readonly onHandle?: (handle: DeviceStreamHandle | null) => void;
   readonly onScreen?: (screen: DeviceScreenSize | null) => void;
@@ -179,7 +174,6 @@ export function DeviceStreamView(props: {
     props.visible,
   ]);
 
-  // Displayed aspect ratio (width / height) of the device as the user sees it.
   const aspect = useMemo(() => {
     if (!screen) return props.platform === "ios" ? 9 / 19.5 : 9 / 20;
     const landscape =
@@ -213,10 +207,8 @@ export function DeviceStreamView(props: {
   }, [retainingFrame, showPhone]);
   const controlsInset = props.renderControls && !showPhone ? CONTROLS_RAIL_WIDTH : 0;
 
-  // The frame is the largest box at `aspect` that fits the container, so a
-  // narrow panel shows a shorter phone rather than a squeezed one. CSS
-  // `aspect-ratio` alone cannot do this: with the height pinned to 100% the
-  // width clamp wins and distorts the drawn frame.
+  // With height pinned to 100%, CSS aspect-ratio lets the width clamp distort
+  // the frame; calculate the largest box that fits instead.
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [host, setHost] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -253,9 +245,7 @@ export function DeviceStreamView(props: {
     }
   }, [props.platform, screen]);
 
-  // A sideways rotation draws the raw portrait frame into a landscape box:
-  // the media element takes the transposed size and is rotated about the
-  // box's center.
+  // Sideways rotation requires transposing the raw portrait frame dimensions.
   const sideways = rotation === 90 || rotation === -90;
   const mediaStyle: React.CSSProperties = sideways
     ? {

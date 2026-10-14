@@ -4,9 +4,8 @@ import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 /**
- * Whether `t3@<version>` is published on npm. A 404 is false; network and
- * registry errors stay unknown. Both re-check every few minutes, so a release
- * that lands later shows up without a reload.
+ * 404 means unpublished; network/registry errors remain unknown. Recheck so late publication appears
+ * without reload.
  */
 export const npmReleasePublishedAtom = Atom.family((version: string) =>
   Atom.make(

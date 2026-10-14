@@ -317,7 +317,6 @@ export type TerminalContextMenuAction =
   | "select-all"
   | "scroll-to-bottom";
 
-/** Post-selection popup: available selection actions, always enabled. */
 export function terminalSelectionMenuItems(options?: {
   canAddToChat?: boolean;
 }): ContextMenuItem<"add-to-chat" | "copy">[] {
@@ -329,12 +328,7 @@ export function terminalSelectionMenuItems(options?: {
   ];
 }
 
-/**
- * Right-click menu for selection, clipboard, and local scrollback actions.
- * Paste is always offered: the browser
- * (and Electron's default editing menu) can only paste into an editable
- * element, so a canvas terminal never gets a usable entry from them.
- */
+/** Browsers cannot paste into canvas terminals; always offer our own Paste menu entry. */
 export function terminalContextMenuItems(options: {
   hasSelection: boolean;
   canAddToChat?: boolean;
@@ -352,13 +346,7 @@ export function terminalContextMenuItems(options: {
   ];
 }
 
-/**
- * An empty selection change may only cancel a selection-action flow that is
- * still current: a pending popup timer, or an open popup whose request id has
- * not been superseded. A popup already superseded by a right-click keeps its
- * menu promise unsettled for a moment; treating it as active would cancel the
- * newer context-menu flow instead.
- */
+/** Cancel only the current selection flow: superseded popup promises may remain unsettled while newer menus are active. */
 export function shouldClearTerminalSelectionAction(options: {
   actionPending: boolean;
   openMenuRequestId: number | null;
@@ -456,9 +444,7 @@ export function TerminalViewport({
   });
   const hasHandledExitRef = useRef(false);
   const selectionActionRequestIdRef = useRef(0);
-  // Holds the request id of the selection popup currently on screen, so a
-  // popup that was superseded (but whose menu promise has not settled yet)
-  // cannot be mistaken for the active flow.
+  // Superseded menu promises may still be unsettled; track the popup that actually owns the current flow.
   const openSelectionMenuRequestIdRef = useRef<number | null>(null);
   const keybindingsRef = useRef(keybindings);
   const runtimeEnvKey = useMemo(() => runtimeEnvSignature(runtimeEnv), [runtimeEnv]);
@@ -608,9 +594,7 @@ export function TerminalViewport({
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
-        // The surface listens from construction, so a right-click can land
-        // while `create` is still awaiting WASM — before the handler below it
-        // exists. The ref is only assigned once that setup has run.
+        // WASM creation can still be pending when right-click arrives; wait for handler setup before exposing the ref.
         onContextMenu: (event) => {
           if (terminalRef.current) void showTerminalContextMenu(event);
         },
@@ -627,9 +611,7 @@ export function TerminalViewport({
       setupTerminal = terminal;
       terminalRef.current = terminal;
       terminal.input.readOnly = !hasTerminalWriteAccess();
-      // Client settings hydrate asynchronously; a font preference that landed
-      // while the surface was loading found terminalRef null, so its setFont
-      // was dropped. Re-apply whatever is current once the terminal exists.
+      // Preferences can hydrate while WASM loads and terminalRef is null; reapply current font once it exists.
       const currentFont = terminalFontRef.current;
       if (currentFont.family !== setupFont.family || currentFont.size !== setupFont.size) {
         void terminal.setFont(terminalFontOptions(currentFont.family, currentFont.size));
@@ -645,10 +627,7 @@ export function TerminalViewport({
       }
       outputCursorRef.current = initialOutput.cursor;
       if (latestSession.error !== null) writeSystemMessage(terminal, latestSession.error);
-      // Attaching to a session that already exited must still run exit handling
-      // once, so mount synchronization starts from the empty "closed" state.
-      // (A session that is "closed" at mount is indistinguishable from one that
-      // never started, so only "exited" triggers the message — as with xterm.)
+      // Start status sync at closed so already-exited sessions run exit handling once.
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status, latestSession.version);
       // Startup may finish after the user has returned to the composer.
@@ -748,9 +727,7 @@ export function TerminalViewport({
         const activeTerminal = terminalRef.current;
         if (!activeTerminal) return;
         try {
-          // The surface owns the read so it can claim the paste race before it
-          // starts: a paste shortcut fired while the menu read is in flight
-          // supersedes this paste instead of landing alongside it.
+          // Let the surface claim the clipboard race so a paste shortcut supersedes the in-flight menu paste.
           await activeTerminal.pasteFromClipboard(
             () => readTextFromClipboard("terminal input"),
             () => requestId === selectionActionRequestIdRef.current,
@@ -764,11 +741,8 @@ export function TerminalViewport({
 
       const showTerminalContextMenu = async (event: MouseEvent) => {
         if (!localApi || !terminalRef.current) return;
-        // Own the gesture before anything async: leaving the default alive lets
-        // the browser (or Electron's editing menu) answer with a Paste entry
-        // that is permanently disabled over the terminal canvas.
+        // Prevent the native gesture synchronously: its Paste entry is always disabled over a canvas terminal.
         event.preventDefault();
-        // A right-click supersedes a selection popup that is pending or open.
         clearSelectionAction();
         const selectionAction = readSelectionAction();
         const requestId = selectionActionRequestIdRef.current;
@@ -1140,7 +1114,6 @@ interface ThreadTerminalDrawerProps {
   onHeightChange: (height: number) => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
-  /** Prefer server-provided tab titles when present (e.g. active subprocess name). */
   terminalLabelsById?: ReadonlyMap<string, string>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;

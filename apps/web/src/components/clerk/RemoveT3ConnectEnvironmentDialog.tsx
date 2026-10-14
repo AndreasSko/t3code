@@ -12,11 +12,7 @@ import {
 import { Button, InlineButton } from "../ui/button";
 import { useT3ConnectAccountPage } from "./T3ConnectAccountPages";
 
-/**
- * Confirms removing a T3 Connect environment from this device. Removal here
- * leaves the account registration (and its host space) in place, so the dialog
- * says so and links to the account page where it can be deregistered.
- */
+/** Device removal preserves account registration; deregister through the account page. */
 export function RemoveT3ConnectEnvironmentDialog({
   environmentLabel,
   onCancel,

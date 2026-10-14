@@ -1,11 +1,7 @@
 import type { ScheduledTaskWebhookEndpoint } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 
-/**
- * Where a sender can call a webhook task, as a client shows it. With T3
- * Connect the server returns a public URL; without it the path is resolved on
- * the address this client reaches the environment at.
- */
+/** Relay webhooks have public URLs; other paths resolve against this client's environment address. */
 export interface WebhookAddress {
   /** The URL to give a sender, or the bare path when no address is known. */
   readonly address: string;

@@ -247,12 +247,7 @@ export class OrchestratorCommandIdConflictError extends Schema.TaggedError<Orche
   }
 }
 
-/**
- * A command receipt only proves that this exact command already ran for the
- * thread it was recorded against. Replaying it for a command aimed at another
- * thread would report success for work that never happened there, so the
- * dispatcher rejects the reuse instead (mirrors v1's command-id conflict).
- */
+/** A receipt belongs to one thread; cross-thread reuse would falsely report success. */
 export function canReplayCommandReceipt(
   receiptThreadId: ThreadId,
   commandThreadId: ThreadId,
@@ -284,11 +279,7 @@ export interface OrchestratorV2Shape {
   readonly recoverDelegatedTasks: Effect.Effect<void>;
   /** Settles a delegated child whose restart continuation of `sourceRunId` declined or failed. */
   readonly recoverDelegatedTask: (threadId: ThreadId, sourceRunId: RunId) => Effect.Effect<void>;
-  /**
-   * Whether a delegated child's apparent result is not final yet: a restart
-   * continuation is pending, or the child is working again.
-   * A taskId limits the check to that follow-up's runs.
-   */
+  /** A restart continuation or later work delays the result; taskId restricts the check to one follow-up. */
   readonly delegatedTaskResultPending: (
     childThreadId: ThreadId,
     taskId?: NodeId,
@@ -391,13 +382,8 @@ function nextRunOrdinal(projection: Pick<OrchestrationV2ThreadProjection, "runs"
   return projection.runs.length + 1;
 }
 
-/**
- * A wake (background notification, delegated task result, restart
- * continuation) carries on the work of the run that started last, so it keeps
- * that work's start. Stamp it when the wake run starts, not when it queues:
- * a queued prompt ahead of it has no start yet, and delegated results jump
- * the queue. Other runs start new work.
- */
+// Wakes continue the latest work's start time. Resolve it when the wake starts,
+// since queued prompts have no start yet and delegated results can jump the queue.
 function wakeWorkStartedAt(
   runs: ReadonlyArray<OrchestrationV2Run>,
   trigger: {
@@ -526,7 +512,6 @@ function pendingThreadTitleGenerationEffect(
 
 const WORKSPACE_PREPARATION_INPUT = "Preparing workspace";
 
-/** A reopened preparation item drops the output and exit code of the attempt it replaces. */
 function withoutPreparationResult(
   item: Extract<OrchestrationV2TurnItem, { readonly type: "command_execution" }>,
 ) {
@@ -543,18 +528,13 @@ function isBlockingRun(run: OrchestrationV2Run): boolean {
   );
 }
 
-/**
- * A parent thread is "live" for wake purposes while a run is still producing
- * agent output. A run parked at "waiting" is post-terminal drain, so its agent
- * turn is over and a wake is still needed.
- */
+// A waiting run is draining after its agent turn ended, so it still needs a wake.
 function hasLiveRun(projection: Pick<OrchestrationV2ThreadProjection, "runs">): boolean {
   return projection.runs.some(
     (run) => run.status === "preparing" || run.status === "starting" || run.status === "running",
   );
 }
 
-/** The link with its watch replaced, or removed when `watch` is undefined. */
 function withPullRequestWatch(
   link: ThreadPullRequestLink,
   watch: ThreadPullRequestWatch | undefined,
@@ -563,7 +543,7 @@ function withPullRequestWatch(
   return watch === undefined ? rest : { ...rest, watch };
 }
 
-/** A legacy single-PR link as a link entry. Re-linking a pull request keeps its watch. */
+// Re-linking a pull request preserves its watch.
 function legacyPullRequestLink(
   thread: OrchestrationV2AppThread,
   linked: ThreadLinkedPullRequest,
@@ -1319,12 +1299,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (queuedRun === undefined) {
         return;
       }
-      // A provider that just failed will likely fail the next message too.
-      // Hold the queue so the user decides when to resume it. Validation
-      // failures (setup, unsupported handoff) belong to that message alone,
-      // and a message queued for another provider is how users recover.
-      // A message queued behind a worktree that was cancelled or never created
-      // would run in the project checkout instead, so it waits for the user.
+      // Hold after provider/worktree failure so queued messages cannot repeat the failure
+      // or run in the project checkout. Validation failures and another provider may proceed.
       const failedRun = latestExecutedRun(projection.runs);
       const failureClass =
         failedRun?.id === options?.failedRunId
@@ -1334,11 +1310,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         failedRun?.id === options?.endedRunId &&
         failedRun?.workspacePreparation?.type === "worktree" &&
         projection.thread.worktreePath === null;
-      // A project can turn a provider off while a message waits in the queue,
-      // including between a run ending and this check, or while the queue is
-      // held and someone clicks resume. Neither path may start that run. Only
-      // an explicit turn-off holds the queue: an instance with no settings
-      // entry was already admitted when the message was queued.
+      // Recheck explicit instance disablement at queue delivery; a missing settings entry
+      // does not revoke the admission already granted when the message was queued.
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
       const projectOverride =
         settings.projectSettingsOverrides[projection.thread.projectId]?.providerInstances?.[
@@ -1997,10 +1970,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : "disposed";
       const now = yield* DateTime.now;
       const emitEvent = emit(events, command);
-      // task_status and t3_thread_read use distinct command IDs, so two
-      // valid observations can race after their read preflight. Re-emit the
-      // existing task row so the second dispatch is a successful idempotent
-      // no-op rather than "already acknowledged/disposed" or empty-events.
+      // Concurrent task_status and thread reads use distinct command IDs; re-emit the
+      // existing task row so repeated observations succeed without changing its state.
       if (
         task.completionDelivery?.state === state ||
         (command.type === "delegated_task.completion-delivery.acknowledge" &&
@@ -2668,7 +2639,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const blockingRequestExists = pendingRequests.some(
         (request) => request.kind !== "user_input" || request.responseCapability.type !== "message",
       );
-      // The reason is shown to the user, so it names what to clear first.
       const blocker = blockingRequestExists
         ? "is waiting on an approval or question. Answer it before settling."
         : runningRunExists
@@ -2864,8 +2834,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.unarchive":
           return { ...thread, archivedAt: null, updatedAt: now };
         case "thread.settle": {
-          // Settling is "I'm done with this": it clears a pin the same way it
-          // parks the thread (mirrors the v1 decider's settle/pin exclusion).
+          // Settled threads cannot stay pinned.
           const wasPinned = thread.pinnedAt != null;
           const alreadySettled =
             thread.settledOverride === "settled" && thread.settledAt !== null && !wasPinned;
@@ -2924,9 +2893,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
         }
         case "thread.pin": {
-          // Pinning is a promotion: it clears the parked states rather than
-          // silently outranking them — an explicit settle is un-settled and a
-          // snooze's return ticket is spent (the thread is on top NOW).
+          // Pinning promotes settled or snoozed threads back to active.
           const alreadyPinned = thread.pinnedAt != null;
           const promotes = thread.settledOverride === "settled" || thread.snoozedUntil != null;
           return {
@@ -2959,9 +2926,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
         }
         case "thread.pin.reorder": {
-          // Idempotent by re-emission (see thread.settle): a duplicate drop on
-          // the same slot keeps the existing updatedAt so it projects as a
-          // no-op.
+          // Re-emitting a duplicate drop preserves updatedAt so projection treats it as a no-op.
           const keyUnchanged = thread.pinOrderKey === command.orderKey;
           return {
             ...thread,
@@ -3156,7 +3121,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           const linked = threadPullRequestsOf(thread);
           const visible = (link: ThreadPullRequestLink) =>
             link.source !== "stack-dismissed" && threadPullRequestKeysEqual(link, key);
-          // A watch started on an unlinked (or dismissed) pull request links it in the same step.
           const links =
             command.type === "thread.pull-request.watch" &&
             command.watching &&
@@ -3410,13 +3374,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
-    // Settle joins archive here: both mean "done with this
-    // thread", so a live provider session must not keep running background
-    // work (PR monitors, dev servers, subagent fleets) after any of them
-    // lands. The settle guard above already rejects active or blocked runs,
-    // so for settle this only ever stops an idle session; commands are
-    // decided serially against the projection, so a turn start that
-    // re-engages the thread cannot race this detach.
+    // Settling and archiving must stop background provider work. The settle guard
+    // admits only idle sessions, and serialized commands prevent a raced turn start.
     const detachSessionIds = new Set(
       command.type === "thread.archive" || command.type === "thread.settle"
         ? (providerContext?.providerSessions ?? []).map((session) => session.id)
@@ -3562,7 +3521,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
-  /** Fails when a limited sender's command would touch a thread running above its limit. */
   const refuseAboveDispatchModeLimit = Effect.fn("orchestrationV2.dispatch.refuseAboveModeLimit")(
     function* (
       command: OrchestrationV2ServerCommand,
@@ -4096,10 +4054,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
 
       if (steeringPolicy === "active_steering") {
-        // The steer's selection becomes the saved next-turn choice, even when it
-        // matches the running run again. A delegated completion carries the
-        // run's selection, not a user choice, so it never replaces the saved one.
-        // The saved choice may name another instance, so it moves with the steer.
+        // A user's steer saves its next-turn selection, including the instance. Delegated
+        // completions carry the run's selection and must not replace the saved choice.
         const instanceChanged =
           input.projection.thread.providerInstanceId !== input.modelSelection.instanceId;
         if (
@@ -4953,9 +4909,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         (candidate) => candidate.id === projection.thread.activeProviderThreadId,
       );
       const activeRun = projection.runs.find(isBlockingRun);
-      // A message queued during worktree setup can arrive after that setup failed
-      // without a worktree. It waits, held, like the messages queued before the
-      // failure, instead of starting in the project checkout.
+      // Hold messages after failed worktree setup so they cannot run in the project checkout.
       const latestRun = latestExecutedRun(projection.runs);
       const worktreeMissingRun =
         activeRun === undefined &&
@@ -6867,9 +6821,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
-  // A follow-up is new requested work in the same child conversation. Give it
-  // its own task so results, acknowledgments, Stop, and recovery use the same
-  // lifecycle as a fresh delegation without replacing the original result.
+  // A published child's follow-up needs a new task lifecycle without replacing its original result.
   const recordSubagentFollowup = Effect.fnUntraced(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -7026,11 +6978,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
-  // Rewrites a delegated task's completionWake after creation. The wait path
-  // uses this when its blocking window ends without a terminal (timeout), so
-  // a child that later terminalizes mid-parent-turn still wakes the parent.
-  // Runs under the parent thread's dispatch lock, which is also what finalize
-  // takes for its parent-side writes, so the two never interleave on this row.
+  // After a blocking wait times out, upgrade completionWake so a late result wakes
+  // the parent. Share finalize's parent lock to avoid clobbering its task row.
   const dispatchDelegatedTaskWakePolicy = Effect.fn(
     "orchestrationV2.dispatch.delegatedTaskWakePolicy",
   )(function* (
@@ -7051,8 +7000,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const task = parentProjection.subagents.find(
       (candidate) => candidate.id === command.taskId && candidate.origin === "app_owned",
     );
-    // No-op commands reject with a descriptive cause, matching the thread
-    // mutation handlers ("already archived", "not archived").
     if (task === undefined) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
@@ -7074,17 +7021,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       completionWake: command.completionWake,
       updatedAt: now,
     };
-    // A non-terminal task needs no offer here: finalize reads the upgraded
-    // policy when the child terminalizes. Both writers hold this parent lock,
-    // so a terminal task means finalize already committed the terminal row and
-    // already made its offer decision under the pre-upgrade policy: under
-    // settled_only it offered iff the spawning run was not live. Plan a
-    // delivery only when that run is live now, which is precisely the case
-    // where finalize skipped. The mailbox steers a capable active session or
-    // queues behind that run. When that run is not live, finalize already
-    // offered and a second offer would wake the parent twice. (If the parent settled in between,
-    // this skips a wake that finalize also skipped; a missed wake is cheaper
-    // than a duplicate one, and the result is already in the projection.)
+    // Offer upgrades only while the spawning run is live, when finalize skipped its wake.
+    // Parent-lock serialization avoids duplicates; a settle race can miss a wake but keeps the result.
     const parentRun =
       task.runId === null
         ? undefined
@@ -7255,11 +7193,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
-  /**
-   * Records or updates the card for a secret an agent asked the user for. The
-   * item carries the request and its status only; the value goes straight to
-   * the server's secret store and never through orchestration.
-   */
+  // Secret values go directly to the secret store; orchestration records only the request and status.
   const dispatchSecretRequestRecord = Effect.fn("orchestrationV2.dispatch.secretRequestRecord")(
     function* (
       command: Extract<OrchestrationV2InternalCommand, { readonly type: "secret_request.record" }>,
@@ -8310,11 +8244,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     });
 
-  /**
-   * Returns a run whose workspace preparation failed to preparing. The failure
-   * item turns cancelled so clients stop offering the retry; ThreadLaunchService
-   * runs the recorded preparation again once this commits.
-   */
+  // Cancel the failure card so clients stop offering retries; after commit,
+  // ThreadLaunchService re-runs the recorded preparation.
   const dispatchPreparedRunRetry = (
     command: Extract<OrchestrationV2Command, { readonly type: "prepared-run.retry" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -8408,14 +8339,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     });
 
-  /**
-   * Ends the background work a settled thread still shows that no provider
-   * process will report on: work on the provider thread whose interrupt just
-   * returned (`stoppedProviderThreadId`), and work on provider threads with no
-   * live session at all. Only the stopped run's work and older runs' is ended
-   * (`throughRunOrdinal`); a later run's work is its own. A dead process's
-   * roster goes too, as on restart.
-   */
+  // Settle stopped or dead provider work only through the stopped run's ordinal;
+  // newer work belongs to a later run.
   const settleBackgroundWork = (input: {
     readonly command: Extract<
       OrchestrationV2ServerCommand,
@@ -8489,9 +8414,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         });
         if (item.type !== "subagent") continue;
-        // A native subagent died with the process too: end its record, its own
-        // thread's runless root turn, and the subagents it started there, which
-        // a provider can record on that thread rather than this one.
+        // Dead native subagents can own runless roots and nested subagents on their
+        // own thread; those records must end with the process too.
         const dying: Array<{
           readonly projection: Pick<
             OrchestrationV2ThreadProjection,
@@ -8775,11 +8699,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     });
 
-  /**
-   * Whether Stop reached a run, as its interrupt request records. Its agent can call tools
-   * until the provider stops it, and a slow call can land after that, but nothing it starts
-   * may outlive the Stop. A restart continuation of that run must not start either.
-   */
+  // Tools can arrive after Stop, but nothing they start may outlive it;
+  // a restart continuation of the stopped run must not start either.
   const stopReachedRun = (
     command: OrchestrationV2ServerCommand,
     threadId: ThreadId,
@@ -8848,12 +8769,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
-  /**
-   * What Stop holds besides the run it interrupts: durable queued messages wait for the
-   * user, buffered provider wakes are cancelled, and the thread's pull request watches end.
-   * Every wake its delegated tasks still owe is dropped, since Stop stops those tasks too.
-   * `cohortRunIds` are dropped even when they owe nothing, like a plain interrupt's.
-   */
+  // Stop holds durable queued messages for the user, discards buffered wakes,
+  // and ends watches and delegated completion cohorts, including ones that owe nothing.
   const holdStoppedThread = (input: {
     readonly command: Extract<
       OrchestrationV2ServerCommand,
@@ -9303,11 +9220,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         message: command.reason ?? "Interrupt requested",
       };
 
-      // Background work can outlive a provider switch, such as a Codex dev
-      // server left running when the thread moved to Claude. Stop also reaches
-      // each other live provider thread that owns pending work; that
-      // interrupt's settle follow-up ends what its provider leaves behind.
-      // Work on a dead session is settled with this run's below.
+      // Background work can outlive a provider switch; Stop must reach every live
+      // provider thread with pending work. Dead sessions are settled locally.
       const otherProviderInterrupts: Array<PendingOrchestrationEffectV2> = [];
       if (hasBackgroundWork || command.holdQueue === true) {
         const runOrdinals = new Map(
@@ -9315,11 +9229,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         );
         const runOrdinalOf = (item: (typeof projection.turnItems)[number]) =>
           item.runId === null ? -1 : (runOrdinals.get(item.runId) ?? -1);
-        // Each provider thread is interrupted at its latest pending work: that
-        // turn's run bounds the settle follow-up, which must cover all of the
-        // thread's work. The target comes from the item's provider turn, since
-        // a native subagent item names its own provider thread but its
-        // parent's turn; interrupting the parent's turn reaches the subagent.
+        // Bound settlement by the latest pending work's run. Native subagent items
+        // name their own thread but the parent's turn, which reaches the subagent on interrupt.
         const latestTurnByProviderThread = new Map<
           OrchestrationV2ProviderThread["id"],
           { readonly turn: (typeof projection.providerTurns)[number]; readonly runOrdinal: number }
@@ -9573,12 +9484,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return undefined;
     });
 
-  /**
-   * Stop for a thread whatever it is doing, the way the Stop button stops the run it
-   * shows: the running turn (or one whose background work is still pending) is interrupted,
-   * and the rest of the thread is held. A turn that cannot be interrupted still leaves the
-   * thread held. Delegated tasks under the thread are stopped by the sender.
-   */
+  // Stop holds the thread even if interruption fails. The sender also stops
+  // delegated tasks after the command commits.
   const dispatchThreadStop = (
     command: Extract<OrchestrationV2ServerCommand, { readonly type: "thread.stop" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -9835,11 +9742,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ]);
     });
 
-  /**
-   * Records a provider rollback that failed after every retry, so clients
-   * waiting on it stop and show the reason. A newer rollback clears it, and a
-   * late failure from a rollback it superseded is rejected.
-   */
+  // Record only the latest rollback's final failure so waiting clients can stop;
+  // a superseded rollback must not overwrite it.
   const dispatchCheckpointRollbackFail = (
     command: Extract<OrchestrationV2InternalCommand, { readonly type: "checkpoint.rollback.fail" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -9873,11 +9777,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     });
 
-  /**
-   * Parent thread of an app-owned delegated child, or undefined when the
-   * thread is not one. Thread lineage and fork origin are immutable, so this
-   * is safe to read without holding either thread's dispatch lock.
-   */
+  // Thread lineage and fork origin are immutable, so the parent can be read without either lock.
   const appOwnedSubagentParentThreadId = (childThreadId: ThreadId) =>
     Effect.gen(function* () {
       const childThread = yield* projectionStore.getThread(childThreadId);
@@ -9889,12 +9789,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : undefined;
     });
 
-  /**
-   * A run with a pending restart continuation has no outcome yet: restart
-   * reconciliation cancelled it mid-turn, or cancelled the background work a
-   * settled turn was waiting on. The continuation's own run settles it, or
-   * RestartContinuation recovers the thread when it declines to continue.
-   */
+  // A pending restart continuation postpones the outcome; its run or
+  // RestartContinuation settles the result if continuation is declined.
   const awaitsRestartContinuation = (run: OrchestrationV2Run) =>
     effectOutbox
       .get(`effect:restart-continuation:${run.id}`)
@@ -10118,16 +10014,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     };
   });
 
-  /**
-   * Transfers a terminal child's result into its parent and offers the parent
-   * wake. Every mutation here targets the PARENT thread, so callers must hold
-   * the parent thread's dispatch lock rather than the child's: the
-   * delegated_task.wake-policy handler rewrites the same subagent row under
-   * that lock with a full-row payload, and unserialized writers clobber each
-   * other (stale policy on the terminal row, or a terminal row regressed to
-   * running). `settledContinuationOf` names the restart continuation that just
-   * declined or failed, so its own still-running effect does not hold the child.
-   */
+  // Call under the parent's dispatch lock: wake-policy writes the same full task row.
+  // Exclude settledContinuationOf's still-running effect when checking whether the child is held.
   const finalizeAppOwnedSubagentTask = (
     childControls: ProjectionRecords<
       "runs" | "messages" | "subagents" | "providerThreads" | "providerTurns" | "attempts"
@@ -10756,10 +10644,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchThreadVisit(command, events);
         break;
       case "thread.auto-settle": {
-        // Automatic settlement (#8600): the sweep evaluated a shell snapshot,
-        // so re-check against the live thread before settling. Any change
-        // after the snapshot — or any explicit override, including the
-        // un-settle button's "active" — wins over the sweep.
+        // Recheck the live thread before automatic settlement; changes since the shell
+        // snapshot and explicit overrides must win over the sweep.
         const thread = yield* projectionStore
           .getThread(command.threadId)
           .pipe(
@@ -11052,9 +10938,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           detail: receipt.error ?? "Previously rejected.",
         });
       }
-      // A receipt only proves this exact command was handled for its own
-      // thread. Replaying it for a command aimed at another thread would
-      // report success for work that never happened.
       const dispatchThreadId = commandThreadId(command);
       if (!canReplayCommandReceipt(receipt.threadId, dispatchThreadId)) {
         return yield* new OrchestratorCommandIdConflictError({
@@ -11255,12 +11138,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const handleTerminalRun = (stored: OrchestrationV2StoredEvent) =>
     Effect.gen(function* () {
       const threadId = stored.event.threadId;
-      // finalize writes the parent thread and startNextQueuedRun writes this
-      // thread, so each takes its own thread's lock, sequentially and never
-      // nested: dispatchDelegatedTaskRequest already writes child events
-      // while holding the parent lock, so nesting the parent lock inside the
-      // child lock here would invert that order, and the keyed executor's
-      // semaphores are neither reentrant nor deadlock-aware.
+      // Take child and parent locks sequentially: delegation holds parent then writes
+      // child events, so nesting parent inside child would deadlock these nonreentrant semaphores.
       if (stored.event.type === "run.updated") {
         yield* threadDispatch.withLock(
           threadId,
@@ -11326,11 +11205,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.forkDetach,
     );
 
-  // Settles child results and completion deliveries whose runs ended without
-  // the listener above: before this boot, or in runtime reconciliation, which
-  // it skips. Startup runs this after reconciliation and before the effect
-  // worker. Queue recovery instead holds unstarted runs until an explicit
-  // queue.resume command arrives.
+  // Recover results missed by the listener before boot or during reconciliation,
+  // after reconciliation and before the worker. Unstarted runs wait for queue.resume.
   const recoverDelegatedTasks = Effect.gen(function* () {
     yield* projectionStore.getRecoveryThreadIds("subagent-results").pipe(
       Effect.flatMap((threadIds) =>
@@ -11564,10 +11440,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       ),
-    // Live tail only. eventSink.stream() with no cursor replays the whole
-    // store from genesis first; domain-event subscribers (the awareness relay)
-    // react to new activity, and startup replay made them grind through the
-    // entire event history doing per-event work after every boot.
+    // Start from the live tail: awareness subscribers react to new activity,
+    // and genesis replay would repeat per-event work for the entire history on each boot.
     streamDomainEvents: Stream.unwrap(
       eventSink
         .latestSequence()

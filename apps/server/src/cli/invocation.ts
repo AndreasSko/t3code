@@ -12,18 +12,7 @@ import packageJson from "../../package.json" with { type: "json" };
 
 export type CliRunner = "npx" | "pnpm dlx" | "bunx";
 
-/**
- * How the CLI was launched, judged by where its entry script lives. Each
- * package runner executes out of a distinctive cache/temp layout:
- *
- *   npx      ~/.npm/_npx/<hash>/node_modules/...
- *   pnpm dlx ~/.cache/pnpm/dlx/..., $PNPM_HOME/.pnpm/dlx/...,
- *            or %LOCALAPPDATA%/pnpm-cache/dlx/... on Windows
- *   bunx     ~/.bun/install/cache/... or $TMPDIR/bunx-<uid>-<spec>/...
- *
- * Global installs and repo checkouts match none of these and return null.
- * Detection is best-effort; callers must fail closed to a plain `t3` command.
- */
+// Detect runner-specific cache paths; unresolved launchers must fall back to plain t3.
 function detectCliRunner(entryPath: string): CliRunner | null {
   const path = entryPath.replaceAll("\\", "/");
   if (path.includes("/_npx/")) {
@@ -104,23 +93,13 @@ export const resolveServerInstallation = Effect.gen(function* () {
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
 
-/**
- * The `t3` package spec to suggest. The literal spec the user typed (e.g.
- * `t3@nightly`) is resolved away before our process starts, so re-derive it
- * from the running version: nightly builds re-suggest the nightly channel,
- * anything else suggests the bare package.
- */
+// The typed package spec is resolved away at startup; derive its channel from the version.
 function suggestedPackageSpec(version: string): string {
   const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
   return channel === undefined ? "t3" : `t3@${channel}`;
 }
 
-/**
- * Render a `t3 <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: `npx t3 connect` suggests
- * `npx t3 serve`, a global install suggests `t3 serve`, and a nightly build
- * keeps the `@nightly` tag.
- */
+/** Preserve the launcher and release channel in copyable subcommand suggestions. */
 export function formatCliCommand(input: {
   readonly subcommand: string;
   readonly entryPath: string;
@@ -143,16 +122,11 @@ export const resolveCliCommand = (subcommand: string) =>
     }),
   );
 
-/** Quotes `value` for a POSIX shell when it needs it. */
 const shellWord = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 
-/**
- * The launcher a person can type to run this install when `t3` is not on
- * PATH: the desktop app's `t3` shim, which the app and the shim itself name in
- * `T3CODE_CLI_PATH`, or a standalone binary's own path. Script installs (a
- * repo checkout) have no single launcher and keep plain `t3`.
- */
+// Desktop shims or standalone binaries can provide an absolute launcher
+// when t3 is absent from PATH; script installs fall back to plain t3.
 const resolveInstallLauncher = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
@@ -164,11 +138,7 @@ const resolveInstallLauncher = Effect.gen(function* () {
     : Option.none<string>();
 });
 
-/**
- * `t3 <subcommand>` for a person to run on this host: `t3` when it is on PATH,
- * the package runner this process came from, or else the absolute path of the
- * launcher for this install, such as the one the desktop app installs.
- */
+// Prefer t3 on PATH, then the package runner, then this install's absolute launcher.
 const resolveHostCliCommand = (subcommand: string) =>
   Effect.gen(function* () {
     const command = yield* resolveCliCommand(subcommand);
@@ -180,13 +150,8 @@ const resolveHostCliCommand = (subcommand: string) =>
       : { command, launcher: false };
   });
 
-/**
- * `t3 <subcommand>` as root, for setup a person runs once on the host. `sudo`
- * resets PATH on most distributions, which drops a user-installed Node (nvm,
- * fnm, a tarball) and with it `npx` or a global `t3`, so the command carries
- * PATH through unless Node is on root's PATH too. An absolute launcher needs
- * neither.
- */
+/** sudo resets PATH, so preserve it unless root can already find Node
+ * or an absolute launcher needs no PATH lookup. */
 export const resolveRootCliCommand = (subcommand: string) =>
   Effect.gen(function* () {
     const { command, launcher } = yield* resolveHostCliCommand(subcommand);

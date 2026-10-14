@@ -93,8 +93,6 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     }
   }, [order, translation]);
 
-  // Nothing left to manage: the sheet closes rather than sitting on an empty
-  // list the user has to dismiss themselves.
   const hadQueuedRuns = useRef(queuedRuns.length > 0);
   useEffect(() => {
     if (queuedRuns.length > 0) {
@@ -251,8 +249,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               }
             >
               {canReorder ? (
-                // Outside the swipeable: two pans on one row would race, and
-                // the handle owns vertical movement while the row owns sideways.
+                // Keep vertical drag and horizontal swipe handlers separate to avoid competing pans.
                 <QueueDragHandle
                   disabled={busyRunId !== null}
                   title={title}
@@ -415,8 +412,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
   );
 
   if (Platform.OS === "ios") {
-    // A plain formSheet screen never renders a stack header, so it comes from
-    // a nested native stack inside the sheet (same shape as the git sheet).
+    // formSheet omits a stack header; provide one with a nested native stack.
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View collapsable={false} className="flex-1 bg-sheet">
@@ -485,7 +481,6 @@ function QueueShiftedRow(props: {
   );
 }
 
-/** Swipe left to remove, the one destructive action that needs no menu. */
 function QueueRowSwipeable(props: {
   readonly enabled: boolean;
   readonly background: string;
@@ -500,8 +495,7 @@ function QueueRowSwipeable(props: {
       friction={2}
       rightThreshold={40}
       overshootRight={false}
-      // The sheet's own vertical scroll and the drag handle both move up and
-      // down; a swipe has to be clearly sideways before it takes the gesture.
+      // Require sideways intent before stealing gestures from vertical sheet scrolling and row dragging.
       failOffsetY={[-12, 12]}
       containerStyle={{ backgroundColor: props.background, flex: 1 }}
       childrenContainerStyle={{ backgroundColor: props.background }}

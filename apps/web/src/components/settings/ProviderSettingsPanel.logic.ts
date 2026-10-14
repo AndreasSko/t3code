@@ -72,12 +72,7 @@ export type ProviderEnvironmentAccess =
   | { readonly kind: "unavailable" }
   | { readonly kind: "error" };
 
-/**
- * Whether the session may change provider configuration on an environment.
- * `pending` means the answer is still unknown, which must not be presented as
- * editable: rendering controls we already know might be rejected only turns a
- * permission problem into a failed write.
- */
+/** Pending grants must not be presented as editable because their writes may be rejected. */
 export type ProviderOperateAccess = "granted" | "denied" | "pending";
 
 /** Cached grants remain usable during revalidation; unknown or failed lookups grant nothing. */
@@ -109,19 +104,8 @@ export function resolveRemoteOperateAccess(input: {
   return resolveSessionOperateAccess(input);
 }
 
-/**
- * The patch for one instance's project override, following the envelope
- * replacement rule for `projectSettingsOverrides`: the returned entry
- * replaces the project's whole override set, and `null` removes it.
- * `value: undefined` resets that single instance back to inheriting the
- * environment's enablement, leaving any other overridden keys untouched.
- *
- * `providerInstances` is always sent explicitly, even as `{}`, because the
- * server keeps a stored `providerInstances` map when an incoming entry omits
- * the key (so older clients that don't know the field cannot wipe it by
- * editing another setting). Omitting it here would undo the very clear this
- * function means to make.
- */
+/** Undefined resets one instance while retaining other overrides. Send
+ * providerInstances even when empty or server omission-preservation would undo the clear. */
 /** Every checkout of a project on one environment shares the same choice. */
 export function buildProviderInstanceOverridePatch(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,

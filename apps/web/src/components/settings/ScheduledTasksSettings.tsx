@@ -138,7 +138,6 @@ const EMPTY_DRAFT: DraftState = {
   maxDeliveryAgeMinutes: "",
 };
 
-/** Labelled field: a caption sitting above its control. */
 function Field({
   label,
   hint,
@@ -190,11 +189,7 @@ export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
   return `${days} at ${schedule.timeOfDay}`;
 }
 
-/**
- * Human label for a run timestamp. `formatRelativeTime` only handles the
- * past, and `nextRunAt` is a future instant — render "in 5m" style labels
- * for upcoming runs instead of a misleading "just now".
- */
+/** formatRelativeTime handles the past; future runs need explicit in-time labels. */
 export function relativeLabel(value: string | null): string {
   if (!value) return "Not scheduled";
   const diffMs = new Date(value).getTime() - Date.now();
@@ -748,11 +743,8 @@ function WebhookEndpointField({
   );
 }
 
-/**
- * Whether T3 Connect forwards requests live or holds them while the
- * environment is offline. The setting is per environment and only readable
- * for this machine's own environment, so other environments show nothing.
- */
+/** Delivery mode is readable only for this machine's own environment;
+ * other environments show no control. */
 function WebhookDeliveryMode({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const cloudLink = usePrimaryCloudLinkState();
   if (cloudLink.target?.environmentId !== environmentId || cloudLink.data === null) return null;
@@ -813,15 +805,13 @@ function ScheduledTaskEditorDialog({
     draft.editingId !== null &&
     tasksQuery.data !== null &&
     !tasksQuery.data.tasks.some((entry) => entry.id === draft.editingId);
-  // The live row, so a rotated URL shows up without reopening the dialog.
-  // Once the list has loaded, a missing task is gone; don't keep showing its URL.
+  // Resolve rotated URLs from live tasks; a missing task after loading must not retain its URL.
   const liveTask = tasksQuery.data
     ? (tasksQuery.data.tasks.find((entry) => entry.id === draft.editingId) ?? null)
     : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
-  // The task runs in selectedProject, so its model picker should reflect that
-  // project's effective enablement, not just the machine's.
+  // Resolve model enablement for the task project rather than machine-wide defaults.
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
@@ -834,8 +824,6 @@ function ScheduledTaskEditorDialog({
     [providers, settings, selectedProject?.id],
   );
 
-  // The real model picker is keyed by a `${instanceId}:${model}` string, which
-  // is exactly how the draft stores its selection.
   const firstInstance = instanceEntries[0];
   const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
   const activeSelection =
@@ -910,8 +898,7 @@ function ScheduledTaskEditorDialog({
       reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
       return;
     }
-    // Keep the original selection object (with provider options) when the
-    // picker still points at the same instance+model.
+    // Preserve provider options while the instance/model selection remains unchanged.
     const modelSelection =
       draft.baseModelSelection !== null &&
       draft.baseModelSelection.instanceId === selection.instanceId &&

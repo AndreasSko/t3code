@@ -1,7 +1,4 @@
-/**
- * Runs asynchronous operations in call order while keeping the queue usable
- * after an individual operation rejects.
- */
+/** Rejections do not prevent subsequent operations from running in call order. */
 export class SerializedAsyncQueue {
   private tail: Promise<void> = Promise.resolve();
 

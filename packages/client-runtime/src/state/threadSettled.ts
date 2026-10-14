@@ -29,25 +29,11 @@ interface QueuedThreadShell {
   readonly runtime?: SettlementRuntimeLike | null;
 }
 
-/**
- * A queued turn start lives for at most this long: session adoption takes
- * seconds, so a user message still unadopted after the grace window is a
- * failed start (or stale data — shells from older servers can carry user
- * messages with no latestTurn at all), not pending work. Without this bound
- * such threads would be permanently unsettleable.
- */
+// Bound unadopted starts so failed starts and stale shells cannot make threads permanently unsettleable.
 export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
-/**
- * A user message no turn has picked up yet: the turn.start command was
- * dispatched (message-sent + turn-start-requested) but no session has
- * adopted it, so `session` is still null and the pending work is invisible
- * to the session-status checks. Detectable as a user message strictly newer
- * than every timestamp on the latest turn — on adoption the new turn's
- * requestedAt equals the message time, clearing the condition — and only
- * within the adoption grace window.
- */
+/** User messages newer than all latest-turn stamps are queued only within the adoption grace window. */
 export function hasQueuedTurnStart(
   shell: QueuedThreadShell,
   options: { readonly now: string },
@@ -67,10 +53,7 @@ export function hasQueuedTurnStart(
   if (Number.isNaN(messageAt)) return false;
   const nowMs = Date.parse(options.now);
   if (Number.isNaN(nowMs)) return false;
-  // Bounded on both sides: message timestamps originate on whichever device
-  // sent the message, so a clock ahead of this one yields a negative age
-  // that would otherwise hold the queued state for the whole skew. Mirrors
-  // the decider's guard.
+  // Bound both signs of age because message timestamps come from other device clocks.
   if (Math.abs(nowMs - messageAt) > QUEUED_TURN_START_GRACE_MS) return false;
   const turn = shell.latestRun ?? shell.latestTurn ?? null;
   if (turn === null) return true;
@@ -79,12 +62,7 @@ export function hasQueuedTurnStart(
   );
 }
 
-/**
- * The snooze lifecycle fields plus everything needed to detect a raised
- * hand. Snooze is an overlay on the active state: a snoozed thread stays
- * "active" in the data model and is only suppressed from the inbox until
- * its wake time passes or the thread demands attention.
- */
+/** Snooze overlays active state until wake time or required attention; it never stops the agent. */
 export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly snoozedUntil?: string | null;
   readonly snoozedAt?: string | null;
@@ -92,22 +70,12 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly hasPendingUserInput: boolean;
 }
 
-/**
- * A snoozed thread "raises its hand" when something happens that outranks
- * the user's snooze: the agent is blocked on them (approval / user input),
- * the session failed, or a run completed after the snooze was set — the
- * v1 taste of event-based snooze ("something happened" wakes early).
- * Raising a hand never clears the server-side snooze fields; it only stops
- * the thread from classifying as snoozed.
- */
+/** Fresh attention wakes the thread early without clearing server snooze fields. */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;
   const runtime = shell.runtime ?? shell.session ?? null;
   const latestRun = shell.latestRun ?? shell.latestTurn ?? null;
-  // Only a FRESH failure raises the hand: a thread snoozed while already
-  // failed stays snoozed — that snooze was the user saying "I saw it, not
-  // now". session.updatedAt stamps the status edge, so an error newer than
-  // the snooze is new information.
+  // A failure raises attention only when newer than snooze; snoozing an existing error acknowledges it.
   if (
     (runtime?.status === "error" || runtime?.status === "failed") &&
     (shell.snoozedAt == null ||
@@ -126,14 +94,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   return false;
 }
 
-/**
- * A thread may be snoozed unless the agent is blocked on the user: hiding a
- * pending approval or user-input request defeats the request, and a queued
- * turn start (a message no turn has adopted yet) is invisible pending work
- * the same way it is for settle. A running session IS snoozable — snooze
- * only affects visibility, never the agent. Client-side twin of the server
- * invariants so the UI can reject before a round trip.
- */
+/** Reject pending approvals, input, and unadopted starts; running sessions remain snoozable. */
 export function canSnooze(
   shell: Pick<
     ThreadSnoozeShell,
@@ -152,13 +113,7 @@ export function canSnooze(
   return true;
 }
 
-/**
- * Snoozed resolution: hidden from the inbox while the wake time is in the
- * future and the thread has not raised its hand. Timer wakes are derived —
- * no server event fires when snoozedUntil passes; the stale fields simply
- * stop classifying as snoozed (and feed the woke indicator until the user
- * visits or re-engages).
- */
+/** Timer wakes are derived without server events; stale snooze fields stop hiding the thread. */
 export function effectiveSnoozed(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
@@ -171,17 +126,7 @@ export function effectiveSnoozed(
   return !threadRaisedHandWhileSnoozed(shell);
 }
 
-/**
- * When a previously-snoozed thread woke, or null if it never snoozed / is
- * still snoozed. Used for the "Woke" indicator: the thread reappears in its
- * original sort position (the inbox sort is deliberately static), so the
- * wake signal has to carry the weight. Compare against the client's
- * lastVisitedAt — visiting clears the indicator like it clears unread.
- *
- * Timer wakes report the wake time itself; raised-hand wakes report the
- * triggering timestamp so a visit BEFORE the early wake doesn't suppress
- * the indicator.
- */
+/** Timer wakes use scheduled time; early wakes use the trigger timestamp so earlier visits cannot hide them. */
 export function threadWokeAt(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
@@ -189,10 +134,7 @@ export function threadWokeAt(
   if (shell.snoozedUntil == null) return null;
   const wakeAtMs = Date.parse(shell.snoozedUntil);
   if (Number.isNaN(wakeAtMs)) return null;
-  // An early hand-raise wake stays authoritative even after the scheduled
-  // wake time passes: reporting snoozedUntil then would resurface a Woke
-  // indicator the user already cleared by visiting (snoozedUntil is newer
-  // than that visit's lastVisitedAt).
+  // Preserve early wake time after the timer passes so a cleared indicator cannot reappear.
   if (threadRaisedHandWhileSnoozed(shell)) {
     const latestRun = shell.latestRun ?? shell.latestTurn ?? null;
     const runtime = shell.runtime ?? shell.session ?? null;
@@ -206,7 +148,6 @@ export function threadWokeAt(
     }
     return runtime?.updatedAt ?? shell.snoozedAt ?? null;
   }
-  // No raised hand: woke iff the timer elapsed (still-snoozed → null).
   return wakeAtMs <= Date.parse(options.now) ? shell.snoozedUntil : null;
 }
 
@@ -245,13 +186,7 @@ function addSnoozeDays(base: Date, days: number): Date {
   return next;
 }
 
-/**
- * Shared "snooze until" choices for every client. "This evening" only
- * appears while it is meaningfully before evening; after that the calendar
- * choices start at "Tomorrow". Calendar presets that land on the same
- * instant collapse: on Sundays "Tomorrow" and "Next week" are both Monday
- * morning, so only "Tomorrow" is offered.
- */
+/** Calendar presets deduplicate equal instants, e.g. Tomorrow and Next week on Sunday. */
 export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
   const inAnHour = DateTime.toDate(DateTime.makeUnsafe(now.getTime() + HOUR_MS));
   const inThreeHours = DateTime.toDate(DateTime.makeUnsafe(now.getTime() + 3 * HOUR_MS));
@@ -302,11 +237,7 @@ export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
   return presets;
 }
 
-/**
- * Compact "wakes in" label for snoozed rows: "2h", "18h", "3d". Minutes
- * round up so a snooze never reads "0m" while still hidden. Shared by web
- * and mobile so the same wake time never reads differently per client.
- */
+/** Compact wake duration; minutes round up so still-hidden threads never show 0m. */
 export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: string }): string {
   const wakeMs = Date.parse(snoozedUntil);
   const nowMs = Date.parse(options.now);

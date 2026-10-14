@@ -1,17 +1,5 @@
 // @effect-diagnostics globalDate:off
-/**
- * Folds parsed transcript records into `(day, hourStart?, provider, model)`
- * buckets.
- *
- * `Intl.DateTimeFormat` is the only reliable way to resolve a wall-clock day in
- * an arbitrary IANA zone, and it takes a `Date`. That is why the raw `Date`
- * construction is allowed here; nothing in this module reads the clock.
- *
- * Pure, so the bucketing and de-duplication rules are testable without touching
- * the filesystem or the network.
- *
- * @module usageAggregation
- */
+/** Intl.DateTimeFormat needs Date to resolve IANA-zone days; this module never reads the clock. */
 import type {
   UsageBucket,
   UsageCategoryCost,
@@ -23,12 +11,7 @@ import type {
 import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/usage";
 import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
 
-/**
- * Formats an instant as a `YYYY-MM-DD` day in `timeZone`.
- *
- * `en-CA` yields ISO-ordered parts, which is why it is used here rather than
- * assembling the day from `Date` getters (those are host-local only).
- */
+/** en-CA yields ISO-ordered day parts in the requested zone; Date getters are host-local. */
 function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
   let format: Intl.DateTimeFormat;
   try {
@@ -47,11 +30,8 @@ function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
       day: "2-digit",
     });
   }
-  // Formatting once per quarter-hour slot keeps `Intl` (about 2µs a call) off
-  // the per-record path. A slot whose two ends fall on one day lies wholly in
-  // that day. Named zones put midnight on a quarter hour, so their slots never
-  // split; a fixed offset such as `+00:01` can, and records in a split slot are
-  // formatted exactly. `null` marks a split slot.
+  // Cache quarter-hour days to avoid Intl's ~2µs per record. Fixed-offset midnight can split
+  // a slot; null marks those slots so their records are formatted exactly.
   const days = new Map<number, string | null>();
   return (timestampMs) => {
     const slot = Math.floor(timestampMs / QUARTER_HOUR_MS);
@@ -96,11 +76,7 @@ export interface AggregateOptions {
   readonly untilTimeMs?: number;
 }
 
-/**
- * Resolves user model mappings to their final target, so `a -> b` and
- * `b -> c` both land on `c`. A model whose chain enters a loop is left
- * unmapped.
- */
+/** Resolve aliases transitively; leave models whose chains enter a cycle unmapped. */
 export function resolveModelAliases(
   aliases: Readonly<Record<string, string>>,
 ): ReadonlyMap<string, string> {
@@ -120,19 +96,12 @@ export function resolveModelAliases(
 
 export interface AggregateResult {
   readonly buckets: readonly UsageBucket[];
-  /** Records dropped because an earlier record carried the same dedupe key. */
   readonly duplicatesDropped: number;
-  /** Records whose day fell outside the requested window. */
   readonly outOfWindow: number;
 }
 
-/**
- * Accumulates records across many files.
- *
- * De-duplication is global across the whole scan, not per file: Claude Code
- * copies a message's records forward when a session is resumed or forked, so
- * the same `dedupeKey` legitimately appears in several transcripts.
- */
+/** Deduplicate across the whole scan: Claude resumes and forks copy message records
+ * into multiple transcripts with the same dedupeKey. */
 export class UsageAggregator {
   readonly #buckets = new Map<string, MutableBucket>();
   readonly #seen = new Set<string>();
@@ -166,11 +135,7 @@ export class UsageAggregator {
     }
   }
 
-  /**
-   * Folds one record in. Returns whether it actually contributed, so callers
-   * can derive per-window facts (distinct sessions, for one) from the records
-   * that landed rather than everything the mtime prefilter happened to admit.
-   */
+  /** True only when the record contributes, so callers count sessions from accepted records. */
   add(input: UsageRecord, sourcePath?: string): boolean {
     const record = this.#mapModel(input);
     if (record.dedupeKey !== null) {
@@ -250,11 +215,7 @@ export class UsageAggregator {
     return { ...rest, model };
   }
 
-  /**
-   * Records arrive file by file in time order, so most land in the bucket the
-   * previous record used. Checking that first skips building and hashing a
-   * key string per record.
-   */
+  /** Time-ordered records usually reuse the last bucket; skip building and hashing a key each time. */
   #bucketFor(
     day: string,
     hourIndex: number,
@@ -353,19 +314,12 @@ export class UsageAggregator {
   }
 }
 
-/**
- * Rounds to micro-dollars. The split and speed figures need no more precision,
- * and shorter numbers keep them cheap on the wire.
- */
+/** Micro-dollar precision keeps split and speed figures small on the wire. */
 function roundUsd(value: number): number {
   return Math.round(value * 1e6) / 1e6;
 }
 
-/**
- * A bucket mixes records from one model, but their cost provenance can differ
- * when only some records carried a reported cost. The weakest provenance in the
- * bucket wins so the UI never overstates confidence.
- */
+/** Mixed cost provenance must not be presented as fully provider-reported. */
 function resolveCostSource(bucket: MutableBucket): UsageBucket["costSource"] {
   if (bucket.unpricedRecords === bucket.records) return "unpriced";
   if (bucket.providerReportedRecords === bucket.records) return "providerReported";

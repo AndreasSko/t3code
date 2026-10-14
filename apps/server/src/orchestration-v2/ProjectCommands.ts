@@ -59,7 +59,6 @@ export class ProjectCommandInvariantError extends Schema.TaggedError<ProjectComm
   }
 }
 
-/** The command targets a project that does not exist or was deleted. */
 export class ProjectCommandMissingProjectError extends Schema.TaggedError<ProjectCommandMissingProjectError>()(
   "ProjectCommandMissingProjectError",
   {
@@ -92,10 +91,7 @@ export const ProjectCommandRejection = Schema.Union([
 export type ProjectCommandRejection = typeof ProjectCommandRejection.Type;
 
 const ProjectCommandRejectionJson = Schema.fromJsonString(ProjectCommandRejection);
-/**
- * A rejected receipt stores its rejection as JSON, so a retried command id
- * replays the same typed error even when a fresh plan would now succeed.
- */
+/** Persist typed rejections so retries return the original error even if a fresh plan would succeed. */
 export const encodeProjectCommandRejection = Schema.encodeSync(ProjectCommandRejectionJson);
 /** None for receipts that predate structured rejections. */
 export const decodeProjectCommandRejection = Schema.decodeUnknownOption(
@@ -105,17 +101,13 @@ export const decodeProjectCommandRejection = Schema.decodeUnknownOption(
 export interface ProjectCommandState {
   /** The target project's row, including a soft-deleted one; only create sees deleted rows as taken. */
   readonly project: ProjectRow | undefined;
-  /** The active project that holds the command's requested workspace root, if any. */
   readonly workspaceOwner: ProjectRow | undefined;
 }
 
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
-/**
- * Decide one project command against the rows it touches. The caller reads
- * `state` under the project's lock and commits the planned event.
- */
+/** Read state under the project's lock, then commit the planned event. */
 export function planProjectCommand(input: {
   readonly command: ProjectCommand;
   readonly state: ProjectCommandState;
@@ -168,8 +160,7 @@ export function planProjectCommand(input: {
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
-          // Project creation has no user model choice. Older clients sent an
-          // automatic seed, but only a metadata update records an explicit default.
+          // Only a metadata update records an explicit project model default.
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
@@ -190,8 +181,7 @@ export function planProjectCommand(input: {
         return invariant("Project monograms must contain at most two characters.");
       }
       if (command.scripts !== undefined) {
-        // Persisted IDs predate shortcut validation. Let users edit or remove them
-        // without allowing another invalid ID to enter the project.
+        // Allow editing existing invalid script IDs without admitting new invalid IDs.
         const existingIds = new Set(project.scripts.map((script) => script.id));
         for (const script of command.scripts) {
           if (!existingIds.has(script.id) && !isScriptRunCommand(`script.${script.id}.run`)) {

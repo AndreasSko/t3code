@@ -33,7 +33,6 @@ const variantColors: Record<ComposerBannerVariant, string> = {
     "[--chat-composer-attached-outline:color-mix(in_srgb,var(--warning)_28%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--warning)_8%,transparent)]",
 };
 
-/** Shared glass and attachment seam, also used by the command menu without banner row padding. */
 function Surface({
   placement = "attached",
   variant = "default",
@@ -51,10 +50,7 @@ function Surface({
         surfaceColors,
         "relative isolate border-0 bg-transparent shadow-none [--chat-composer-attached-tint:transparent]",
         variantColors[variant],
-        // The mask cut-off (1rem) bleeds one pixel past the seam (1rem + 1px): Chromium
-        // drops the last device-pixel row of a filtered backdrop when the cut-off lands
-        // off the device-pixel grid, and the composer's surface starts exactly there.
-        // The composer's own glass covers the extra row, so the overlap never shows.
+        // Chromium drops off-grid backdrop edge pixels; bleed the mask 1px under the composer's own glass.
         placement === "attached"
           ? "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-2xl before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4"
           : "[--chat-composer-attachment-overlap:0px] before:rounded-2xl",
@@ -131,7 +127,6 @@ function Dock({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** Attachments share a column while neighboring tabs keep their own surface. */
 function Column({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
@@ -165,9 +160,7 @@ function Root({
         density === "comfortable" && "[--composer-banner-padding-block:--spacing(1.25)]",
         density === "spacious" && "px-3 [--composer-banner-padding-block:--spacing(3)]",
         width === "content" ? "w-fit max-w-full flex-none" : "@container",
-        // The first row's last action sits in the banner's corner: its outer corner follows the
-        // banner's curve (2xl minus the 1 spacing inset), and floating banners curve below too.
-        // Actions may also arrive grouped in one wrapper element (usage-limit recovery).
+        // Corner actions follow the banner curve (2xl minus inset), including grouped action wrappers.
         "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
         "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>:last-child>[data-slot=button]:last-of-type]:rounded-se-xl",
         "[&>:first-child>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
@@ -200,8 +193,7 @@ function Row({
       "group/banner-row grid min-h-(--composer-banner-icon-column) w-full min-w-0 grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)_auto] items-center gap-x-1 text-start",
       "not-has-[>[data-slot=composer-banner-actions]]:grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)]",
       "[&:is(button)]:cursor-pointer [&:is(button)]:rounded-md [&:is(button)]:focus-visible:outline-2 [&:is(button)]:focus-visible:-outline-offset-2 [&:is(button)]:focus-visible:outline-ring",
-      // Actions share the title row while the title fits and move below it otherwise.
-      // The content's max width keeps it beside the icon, so a long title truncates instead of wrapping.
+      // Cap title width beside the icon so wrap-actions moves controls instead of wrapping the title.
       layout === "wrap-actions" &&
         "flex flex-wrap *:data-[slot=composer-banner-content]:max-w-[calc(100%-var(--composer-banner-icon-column)-var(--spacing))] *:data-[slot=composer-banner-content]:grow",
       layout === "approval" && "items-start gap-x-2 gap-y-3",
@@ -275,7 +267,6 @@ function Actions({ className, ...props }: ComponentProps<"span">) {
   );
 }
 
-/** Child rows keep their parent's columns and begin immediately after its header. */
 function Children({ className, render, ...props }: useRender.ComponentProps<"div">) {
   return useRender({
     defaultTagName: "div",
@@ -287,7 +278,6 @@ function Children({ className, render, ...props }: useRender.ComponentProps<"div
   });
 }
 
-/** Bounded banner content uses the app's scroll area and fades only overflowing edges. */
 function Scroll({ className, children, ...props }: ComponentProps<typeof ScrollArea>) {
   return (
     <ScrollArea

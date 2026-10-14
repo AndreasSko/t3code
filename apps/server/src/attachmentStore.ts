@@ -103,12 +103,7 @@ export function createDeterministicAttachmentId(
   return `${threadSegment}-${uuid}`;
 }
 
-/**
- * Stable key for an inline chat attachment. A retry resends the same bytes and
- * keeps its id. Editing a queued message reuses the message id, so the bytes
- * also stop a new image from taking an earlier image's id and file. Clients
- * cache attachment images by id, which relies on ids never changing bytes.
- */
+/** Include bytes in the stable key so retries reuse ids while edits cannot change cached content. */
 export function chatAttachmentStableKey(
   messageId: string,
   index: number,
@@ -130,11 +125,7 @@ export function parseThreadSegmentFromAttachmentId(attachmentId: string): string
   return match[1]?.toLowerCase() ?? null;
 }
 
-/**
- * Attachments a thread's tool calls published: `html_render` pages and
- * captured MCP App documents. Only ids minted for this thread count, so
- * deleting a fork never removes its source's pages.
- */
+/** Return only HTML render ids minted for this thread, so deleting a fork preserves source pages. */
 export function threadHtmlRenderAttachmentIds(
   threadId: string,
   items: Iterable<{ readonly toolName: string | null | undefined; readonly output?: unknown }>,

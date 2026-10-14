@@ -63,7 +63,6 @@ function opaqueNativeHexColor(color: string, background: string): string {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** `wordWrap` wraps line rows at the view width instead of panning them horizontally. */
 export function createNativeReviewDiffStyle(
   codeSurface: ResolvedMobileCodeSurface,
   wordWrap: boolean,
@@ -176,8 +175,7 @@ export function createNativeReviewDiffTheme(
   const terminalTheme = getMobileTerminalTheme(themeId, scheme);
   const [, terminalRed] = terminalTheme.palette;
   // Swift expects #RRGGBB/#RRGGBBAA while Android expects #RRGGBB/#AARRGGBB.
-  // Flatten translucent app tokens onto the code surface so both native
-  // implementations receive the one unambiguous shared format.
+  // Flatten alpha onto the code surface to share unambiguous six-digit colors.
   const screen = opaqueNativeHexColor(
     appTheme["--color-screen"],
     scheme === "dark" ? "#000000" : "#ffffff",
@@ -602,9 +600,8 @@ export function buildNativeReviewDiffData(
 }
 
 /**
- * Prepares source rows once per parsed diff, including its section-specific IDs.
- * Comment edits reuse those rows, word ranges, and targets. Each file retains
- * only its latest comment overlay, and the weak key releases old parsed diffs.
+ * Reuses source rows and word ranges across comment edits. Weak keys release
+ * old parsed diffs; each file retains only its latest comment overlay.
  */
 export function getCachedNativeReviewDiffData(
   input: BuildNativeReviewDiffDataInput,

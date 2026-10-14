@@ -12,7 +12,6 @@ export interface ComposerSendPresentation {
   readonly action: ActiveTurnComposerAction | null;
   /** What the long-press menu and the Command chord do instead. */
   readonly alternate: ActiveTurnComposerAction | null;
-  /** The follow-up menu is meaningless outside a running turn or during an edit. */
   readonly offersFollowUpChoice: boolean;
 }
 
@@ -22,17 +21,12 @@ const ACTION_LABEL: Record<ActiveTurnComposerAction, string> = {
   restart: "Restart",
 };
 
-/**
- * What the composer's primary button says and does. Steering is only offered
- * when the provider can actually steer the live turn, so the button never
- * promises something the server would have to silently downgrade.
- */
+/** Offer steering only when the provider supports it so the button cannot promise a downgraded action. */
 export function resolveComposerSendPresentation(input: {
   readonly editingQueuedMessage: boolean;
   readonly running: boolean;
   readonly canSteer: boolean;
   readonly followUpBehavior: FollowUpBehavior;
-  /** Outbox reasons the send waits rather than leaving immediately. */
   readonly deliveryDeferred: boolean;
 }): ComposerSendPresentation {
   if (input.editingQueuedMessage) {
@@ -53,8 +47,7 @@ export function resolveComposerSendPresentation(input: {
       offersFollowUpChoice: false,
     };
   }
-  // Without steering support the choice collapses: every follow-up queues, so
-  // offering a menu with one usable entry would be noise.
+  // Without steering, every follow-up queues and a one-choice menu adds no action.
   const action: ActiveTurnComposerAction = input.canSteer ? input.followUpBehavior : "queue";
   const alternate = alternateComposerDispatchAction(action);
   return {

@@ -19,7 +19,6 @@ import type { RestartingMachine, SkippedMachine } from "./updateEverything.logic
 const isRunning = (status: string) =>
   status === "preparing" || status === "starting" || status === "running";
 
-/** Running threads across the environments in a newline-joined key. */
 const runningThreadCountAtom = Atom.family((environmentIds: string) =>
   Atom.make((get) =>
     environmentIds

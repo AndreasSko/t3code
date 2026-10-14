@@ -42,22 +42,12 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
-/** Core `major.minor.patch`, dropping any prerelease or build suffix. */
 function versionCore(version: string): string {
   return version.replace(/[-+].*$/, "");
 }
 
-/**
- * The skew a user can act on: the connected server runs an older T3 Code than
- * this client (or than `clientVersion`, the version this client is about to
- * update to), so the server is the side that needs updating.
- *
- * Two nightly builds compare their full versions, including the date and run.
- * Other combinations compare their core `major.minor.patch` only, so a stable
- * build and a nightly build with the same core do not cause an update warning.
- * A server ahead of the client does not need an update. Versions that do not
- * parse as semver fall back to plain string inequality.
- */
+/** Compares full nightly versions, otherwise semver cores; only older servers need an update.
+ * Unparseable versions fall back to string inequality. */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
   clientVersion: string = APP_VERSION,
@@ -105,23 +95,18 @@ export function resolveServerSelfUpdateCapability(
   return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
 }
 
-/** True when the desktop app supervising this server can be told to update
-    itself over RPC. Older desktop servers only get the manual instruction. */
 export function supportsDesktopAppUpdate(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): boolean {
   return serverConfig?.environment.capabilities.desktopAppUpdate === true;
 }
 
-/** True when the connected server can recover opted-in running turns after
-    its self-update restart. */
 export function supportsServerUpdateThreadContinuation(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): boolean {
   return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
 }
 
-/** The command to hand users whose server cannot update itself. */
 export function manualServerUpdateCommand(
   targetVersion: string,
   installation?: ServerInstallation,

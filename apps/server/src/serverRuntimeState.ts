@@ -21,11 +21,7 @@ export const PersistedServerRuntimeState = Schema.Struct({
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
   devUrl: Schema.optional(Schema.String),
   startedAt: Schema.String,
-  /**
-   * Set when the boot-service launcher supervises this server. Lets a CLI
-   * tell a service-managed server apart from one started by hand, which is
-   * the difference between "restart the service" and "stop your terminal".
-   */
+  /** Distinguishes service-managed servers so the CLI can offer the appropriate restart or stop action. */
   serviceManaged: Schema.optional(Schema.Boolean),
   /**
    * The server build that wrote this record. `t3 triage` reports it because
@@ -122,12 +118,7 @@ export const clearPersistedServerRuntimeState = (path: string) =>
     );
   });
 
-/**
- * Report whether the pid recorded in a persisted runtime state is still
- * running. Signal 0 delivers nothing; it only reports whether the pid exists.
- * EPERM means it exists but belongs to another user, which still counts as
- * alive.
- */
+/** Signal 0 checks existence without delivery; EPERM still means the process is alive. */
 export const isProcessAlive = (pid: number): boolean => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {

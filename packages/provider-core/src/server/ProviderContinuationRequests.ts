@@ -19,9 +19,8 @@ export interface ProviderContinuationRequest {
   readonly detail: string | null;
   readonly notification?: OrchestrationV2Notification;
   /**
-   * Durable ownership for an app-owned delegated-task completion delivery.
-   * The continuation worker re-reads the cohort before dispatching so a later
-   * task can join a queued wake and a stopped or acknowledged cohort is dropped.
+   * Re-read the cohort before dispatch so later completions join a queued wake
+   * and stopped or acknowledged cohorts are dropped.
    */
   readonly delegatedCompletion?: {
     readonly parentRunId: RunId;
@@ -29,22 +28,13 @@ export interface ProviderContinuationRequest {
     readonly messageId: MessageId;
   };
   /**
-   * How the continuation turn gets its content.
-   *
-   * `adapter_buffered` (default) is the provider-native wake: the adapter has
-   * already buffered the CLI's wake output, and the dispatched message only
-   * triggers ingestion. `ClaudeAdapterV2` deliberately discards the message
-   * text on that path.
-   *
-   * `message_text` is for app-owned work with no buffered provider output, such
-   * as a delegated child finishing. The text is the entire wake, so it must
-   * reach the provider as a real prompt.
+   * adapter_buffered (default) attaches CLI wake output (Claude ignores message text).
+   * message_text sends app-owned wake content as a real prompt.
    */
   readonly delivery?: "adapter_buffered" | "message_text";
   /**
-   * The message the continuation run starts from, when the adapter picks it:
-   * its turn input carries this id, so the adapter can tell which of its held
-   * wakes a run was dispatched for. Otherwise the service allocates one.
+   * Use this id to correlate a dispatch with the adapter's held wake;
+   * omitted means the service allocates one.
    */
   readonly messageId?: MessageId;
   readonly dispatchIfCurrent?: <A, E, R>(
@@ -55,12 +45,8 @@ export interface ProviderContinuationRequest {
 }
 
 /**
- * Adapters offer a continuation request when provider-native work completes
- * outside an active turn (for example a Claude background task wake turn) so
- * the orchestrator can start a run that ingests it. The default reference
- * drops requests, keeping adapter construction dependency-free in tests; the
- * live layer must be shared with the ProviderContinuationService worker that
- * drains it.
+ * Share the live reference with ProviderContinuationService so it drains offers;
+ * the default drops them for dependency-free adapter construction.
  */
 export class ProviderContinuationRequests extends Context.Reference<{
   readonly offer: (request: ProviderContinuationRequest) => Effect.Effect<void>;

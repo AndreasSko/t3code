@@ -132,10 +132,7 @@ interface AntigravityProviderOptions {
   readonly auth?: { readonly type: string; readonly label: string };
 }
 
-/**
- * Health uses initialize only. Session callbacks supply account-specific
- * metadata, which a disabled instance never shows.
- */
+/** Health only initializes; session callbacks supply account metadata, hidden for disabled instances. */
 export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(function* (
   settings: AntigravitySettings,
   options: AntigravityProviderOptions,
@@ -168,9 +165,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     draft: initialDraft,
     authRevision: 0,
   });
-  // Skills the driver discovered on disk per workspace. Session callbacks
-  // rewrite the workspace entry with native commands and must keep these, or
-  // the registry drops the suggestions and never re-reads the workspace.
+  // Preserve filesystem-discovered skills when native session callbacks rewrite workspace entries.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
   const getSnapshot = SubscriptionRef.get(metadata).pipe(
     Effect.flatMap((state) => options.stampIdentity(state.draft)),

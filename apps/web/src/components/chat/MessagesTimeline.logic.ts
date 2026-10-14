@@ -83,7 +83,6 @@ function timelineEntryRunId(entry: TimelineEntry): RunId | null {
   return entry.kind === "work" ? (entry.entry.runId ?? null) : null;
 }
 
-/** Whether the entry still represents live activity, not a settled result. */
 function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
   return (
     entry.toolLifecycleStatus === "inProgress" ||
@@ -152,9 +151,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (action === "read" && readPaths[0]) {
     return formatReadToolLabel(readPaths[0], readPaths.length - 1);
   }
-  // Retrying providers keep their progress label; other diagnostics expose
-  // the retained message instead of a generic error heading. File bodies
-  // are never a compact read label.
+  // Retry diagnostics keep progress labels; other errors expose retained messages, never file bodies.
   const providerRetry =
     entry.projectedItem?.item.type === "error" && entry.projectedItem.item.retry !== undefined;
   const item = entry.structuredPayload;
@@ -181,7 +178,6 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
 }
 
-/** The trimmed thread id a `t3_thread_read` call targets, or null for any other entry. */
 export function threadReadTargetId(entry: Pick<WorkLogEntry, "structuredPayload">) {
   const item = entry.structuredPayload;
   if (item?.type !== "dynamic_tool") return null;
@@ -201,17 +197,13 @@ export function threadReadTargetTitle(
   return shell.title.trim() || null;
 }
 
-/**
- * Names the read thread in place of the generic object ("Read a T3 thread" becomes
- * `Read thread “Title”`), keeping the label's tense. Null keeps the generic label.
- */
+/** Keep the read label's tense when inserting a live thread title; null preserves the generic label. */
 export function threadReadLabelPrefix(label: string) {
   return label.endsWith(THREAD_READ_OBJECT)
     ? `${label.slice(0, -THREAD_READ_OBJECT.length)} thread`
     : null;
 }
 
-/** Inspectable read-file output is the path when we have one, otherwise nothing. */
 export function workEntryReadOutput(
   entry: Pick<
     WorkLogEntry,
@@ -330,11 +322,7 @@ export interface TimelineEndState {
   readonly scrollLength?: number;
 }
 
-/**
- * The follow re-arm band (#5566): strict isAtEnd flickers false for a frame
- * while streaming content grows under the viewport, so follow re-arms within
- * this distance of the real content bottom instead.
- */
+/** Strict isAtEnd flickers during streaming growth; re-arm follow within this band of the real content bottom (#5566). */
 const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
 export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boolean | undefined {
@@ -345,12 +333,7 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   if (contentLength === undefined || scroll === undefined || scrollLength === undefined) {
     return state.isAtEnd;
   }
-  // contentLength includes the composer inset spacer, but the composer hides
-  // the same amount of viewport, so the inset cancels: plain
-  // contentLength - scroll - scrollLength is the gap between the last real row
-  // and the visible edge above the composer. LegendList's own isAtEnd subtracts
-  // the inset and is true anywhere in the bottom composer-height band, so it is
-  // only a fallback here, never a short-circuit.
+  // Composer inset cancels between content and hidden viewport; LegendList subtracts it again, so isAtEnd is only a fallback.
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
@@ -400,7 +383,6 @@ export function resolveTimelineMinimapCurrentIndex(input: {
     const inView =
       item.top < input.scrollBottom && item.top + Math.max(1, item.height ?? 1) > input.scrollTop;
     if (inView) {
-      // The first visible marker is the turn at the reader's current position.
       return index;
     }
     if (item.top <= input.scrollTop) {
@@ -411,11 +393,7 @@ export function resolveTimelineMinimapCurrentIndex(input: {
   return precedingIndex;
 }
 
-/**
- * Side gutter between the viewport edge and the centered content column.
- * `contentWidth` is the rendered column width, which follows the Chat width
- * setting, so callers measure it rather than assume a fixed maximum.
- */
+/** Measure contentWidth: Chat width preferences change the centered column's gutter. */
 function resolveTimelineSideGutter(viewportWidth: number, contentWidth: number): number {
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || !Number.isFinite(contentWidth)) {
     return 0;
@@ -436,13 +414,7 @@ const TIMELINE_MINIMAP_HIT_STRIP_LEFT = 12;
 const TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH = 40;
 const TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH = "22rem";
 
-/**
- * The minimap overlays the viewport's left edge while the content column is
- * centered, so the side gutter between them shrinks under browser zoom, a
- * narrow pane, or a wider Chat width setting. A fixed-width hover strip would then sit on top of the message
- * text and swallow its pointer events. Cap the strip's width so it never
- * extends past the gutter into the content column; 0 disables the strip.
- */
+/** Cap hover-strip width to the gutter so zoom or wider chat columns cannot swallow message pointer events; 0 disables it. */
 export function resolveTimelineMinimapHitStripWidth(
   viewportWidth: number,
   contentWidth: number,
@@ -461,11 +433,7 @@ export function resolveTimelineMinimapHitStripWidth(
 // their hitbox reaches 14px past the strip's left edge.
 const TIMELINE_MINIMAP_NAVIGATION_REACH = 14;
 
-/**
- * The prev/next buttons hang outside the strip's height, so the strip's own
- * width cap does not cover them. Keep them inert to the pointer unless the
- * gutter can hold them; keyboard focus still reaches them.
- */
+/** Buttons extend beyond the strip height; enable their pointer hitbox only when the gutter fits it. */
 export function resolveTimelineMinimapNavigationInteractive(collapsedWidth: number): boolean {
   return collapsedWidth >= TIMELINE_MINIMAP_NAVIGATION_REACH;
 }
@@ -754,14 +722,7 @@ interface SupersededAttemptFold {
   readonly hiddenEntryIds: ReadonlySet<string>;
 }
 
-/**
- * Final replies of superseded attempts that finished before the steer replaced
- * them. A steer stamps the attempt's completedAt when it is dispatched, and the
- * provider closes a reply it cut off only after that, so a reply whose item
- * completed earlier was whole. Item status alone cannot tell: an interrupted
- * stream also closes as `completed`. The reply must be the attempt's last
- * output; trailing tool or reasoning work means the attempt was still going.
- */
+/** Interrupted streams also close as completed; compare completion before steer dispatch and require the attempt's final output. */
 function completeSupersededReplyEntryIds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
 ): ReadonlySet<string> {
@@ -797,13 +758,7 @@ function completeSupersededReplyEntryIds(
   return replyEntryIds;
 }
 
-/**
- * Groups only provider output owned by an explicitly superseded V2 attempt
- * that the steer cut off. An attempt that had already finished its reply is
- * left in the timeline like any other turn output.
- * User messages remain visible because they are inputs to the logical run,
- * including the steer message that started the replacement attempt.
- */
+/** Fold only explicitly cut-off attempt output; finished replies and logical-run user inputs remain visible. */
 function deriveSupersededAttemptFolds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
   unfoldedRunIds: ReadonlySet<RunId>,
@@ -853,13 +808,7 @@ function deriveSupersededAttemptFolds(
   return foldsByAnchorEntryId;
 }
 
-/**
- * The latest turn counts as unsettled while it is still running (or has not
- * recorded a completion). This is deliberately keyed on the turn's own
- * lifecycle rather than transient working state: right after the user sends
- * a message, the previous turn is still the "active" one until the server
- * creates the new turn, and folding must not flicker through that window.
- */
+/** Use run lifecycle, not transient working state, so sending before the next run exists cannot flicker folds. */
 function deriveUnsettledRunId(
   latestRun: TimelineLatestRun | null,
   runningRunId: RunId | null = null,
@@ -876,14 +825,7 @@ function deriveUnsettledRunId(
   return isSettled ? null : latestRun.runId;
 }
 
-/**
- * Subagent cards that stay out of their turn's folds. A child can keep working
- * after its launching turn settles (or its attempt is superseded), and the
- * waiting footer counts it, so its card stays visible until the child ends.
- * Adjacent cards from one provider turn render as a single grouped row; the
- * whole group stays visible while any member is live, so a launch batch never
- * shows half of its children.
- */
+/** Child work can outlive its launching turn; keep the whole adjacent batch visible while any child remains live. */
 function liveSubagentCardEntryIds(entries: ReadonlyArray<TimelineEntry>): ReadonlySet<string> {
   const visible = new Set<string>();
   let batch: Array<Extract<TimelineEntry, { kind: "event" }>> = [];
@@ -1051,21 +993,14 @@ function deriveTurnFolds(input: {
     entries: Array<TimelineEntry>;
     terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
     hasStreamingMessage: boolean;
-    /**
-     * The user message or notification that kicked the turn off. Entry timestamps alone
-     * undercount the duration (the first entry appears only once the
-     * provider starts producing output), and a turn cut short by a steer may
-     * hold a single instantaneous commentary message.
-     */
+    /** Use the input boundary: provider output starts late and steer-cut turns may hold only instantaneous commentary. */
     startBoundary: string | null;
     anchorEntryId: string;
   }
   const groupsByRunId = new Map<RunId, TurnGroup>();
   const runlessFailedKeys = new Set<RunId>();
 
-  // Fold state is keyed by run, so each runless prompt lends its response a
-  // stable key of its own. Decide per prompt, not per thread: a V1 thread's
-  // first V2 run must not unfold every imported turn above it.
+  // Synthetic keys are per prompt so a first app run cannot unfold every imported runless turn.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
@@ -1100,9 +1035,7 @@ function deriveTurnFolds(input: {
         entries: [],
         terminalEntry: null,
         hasStreamingMessage: false,
-        // Each user boundary starts at most one turn; a second turn after the
-        // same user message (e.g. a steer-superseded continuation) falls back
-        // to its own first entry.
+        // A continuation after the same user input starts at its own first entry instead of reusing that boundary.
         startBoundary: pendingBoundary?.createdAt ?? null,
         anchorEntryId: pendingBoundary?.anchorEntryId ?? entry.id,
       };
@@ -1216,11 +1149,7 @@ function deriveTurnFolds(input: {
   return foldsByAnchorEntryId;
 }
 
-/**
- * When a settled turn ends with tool calls after its terminal text, treat the
- * text and tools as one visual response. The message metadata becomes the
- * footer for the whole block instead of separating the prose from the tools.
- */
+/** Trailing tools share the terminal text's footer so metadata cannot separate one response. */
 function attachTrailingToolGroupsToAssistant(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): MessagesTimelineRow[] {
@@ -1371,7 +1300,6 @@ function timelineRowEntries(entries: ReadonlyArray<TimelineEntry>) {
   return withoutSubagentDelegationRows(settleSupersededReasoning(entries));
 }
 
-/** The turn folds the timeline would draw, before applying expansion state. */
 function deriveTimelineTurnFolds(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -1405,17 +1333,12 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
-  /**
-   * The live work has no app run (a provider-native subagent thread), so
-   * runless entries are the current response instead of settled history.
-   */
+  /** Native subagents have no app run; their runless entries represent live response, not history. */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   supportsConversationRollback: boolean;
-  /** Task ids of subagents still working, used by the active tool indicator. */
   liveAgentTaskIds?: ReadonlySet<string> | undefined;
-  /** Live bootstrap progress. Renders a stage card under the first user message. */
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
@@ -1490,10 +1413,7 @@ export function deriveMessagesTimelineRows(input: {
     ? lastResponseBoundaryIndex(timelineEntries) + 1
     : timelineEntries.length;
 
-  // Contiguous trailing work entries of the active run collapse into one live
-  // row that survives between actions: while a tool runs it shows that tool,
-  // and once everything settles it keeps the latest tool in past tense
-  // instead of vanishing (#8984).
+  // Keep one live work row between actions, retaining the last tool label after it settles (#8984).
   const activeToolEntries: Array<Extract<TimelineEntry, { kind: "work" }>> = [];
   if (input.isWorking && (unsettledRunId !== null || runlessWorkActive)) {
     let tailAttemptId: string | null | undefined;
@@ -1912,14 +1832,7 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
-  // Until the agent's turn is live, the setup card sits under the send with
-  // the working header above it (the header reads "Setting up worktree…" and
-  // later swaps its text in place, so nothing moves at the handoff). "Live"
-  // means the turn is in the timeline, not just that the server dispatched
-  // it: the card must not vanish in the gap between. Once the turn is live
-  // the stage list leaves the timeline; a script that is still running is
-  // surfaced by the working header itself. A failed or cancelled setup stays
-  // under the send so its outcome and actions remain reachable.
+  // Keep setup under the working header until the turn reaches the timeline; failed/cancelled outcomes remain reachable.
   const setupHandedOff =
     input.worktreeSetup !== null &&
     input.worktreeSetup !== undefined &&
@@ -1941,9 +1854,6 @@ export function deriveMessagesTimelineRows(input: {
     const firstUserRowIndex = nextRows.findIndex(
       (row) => row.kind === "message" && row.message.role === "user",
     );
-    // While the setup runs, the working header leads the card in the same
-    // slot it keeps once the agent's own turn takes over. The main pass may
-    // already have placed that header (a bootstrap counts as working).
     const workingRowIndex = setupOwnsWorkingSlot
       ? nextRows.findIndex((row) => row.kind === "working")
       : -1;
@@ -1968,8 +1878,6 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
 
-  // A setup that owns the working slot sits under it and shows no activity
-  // row of its own; every other state gets the usual tail.
   const hasWorkingRow = nextRows.some((row) => row.kind === "working");
   if (input.isWorking && !hasWorkingRow && activeTurnHeaderIndex === timelineEntries.length) {
     appendWorkingRow();
@@ -2021,7 +1929,6 @@ export function deriveMessagesTimelineRows(input: {
   );
 }
 
-/** Adjacent work stays one visual list even when virtualization splits its groups. */
 function timelineRowIsWorkLog(row: MessagesTimelineRow | undefined): boolean {
   return (
     row !== undefined &&
@@ -2090,11 +1997,7 @@ export interface MessagesTimelineRowsProjection {
   readonly rows: MessagesTimelineRow[];
 }
 
-/**
- * The turn fold that holds an entry, keyed as `expandedRunIds` expects. Runless
- * (imported V1) turns fold under a synthetic key, so the entry's own run id is
- * not enough to open them.
- */
+/** Imported runless turns use synthetic fold keys; entry.runId alone cannot expand them. */
 export function timelineEntryTurnFoldRunId(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -2105,7 +2008,6 @@ export function timelineEntryTurnFoldRunId(
   return timelineTurnFoldRunIdsByEntryId(input).get(entryId) ?? null;
 }
 
-/** Every folded entry's fold key, computed once for callers that check many entries. */
 export function timelineTurnFoldRunIdsByEntryId(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -2153,8 +2055,7 @@ function replaceStreamingMessageRows(
     expandedWorkGroupIds,
     ...context
   } = input;
-  // V2 shell and checkpoint selectors produce fresh summaries for each event.
-  // Equivalent summaries must not invalidate a text-only projection.
+  // Fresh equivalent shell/checkpoint summaries must not invalidate text-only projections.
   if (
     timelineEntries.length !== previousEntries.length ||
     !shallow(previousContext, context) ||
@@ -2209,7 +2110,6 @@ function replaceStreamingMessageRows(
   });
 }
 
-/** Keep one projection per timeline. Reuse rows only when streaming content changes. */
 export function deriveMessagesTimelineRowsWithState(
   input: MessagesTimelineRowsInput,
   previous: MessagesTimelineRowsProjection | null = null,
@@ -2242,7 +2142,6 @@ export function computeStableMessagesTimelineRows(
   return anyChanged ? { byId: next, result } : previous;
 }
 
-/** Shallow field comparison per row variant — avoids deep equality cost. */
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
   if (a.kind !== b.kind || a.id !== b.id) return false;
 
@@ -2292,7 +2191,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     }
 
     case "mcp-app": {
-      // Same reason: an equal app keeps its live frame and its state.
+      // Equal apps must keep their mounted frame and its live state through unrelated tool updates.
       const bm = b as typeof a;
       return (
         a.createdAt === bm.createdAt &&

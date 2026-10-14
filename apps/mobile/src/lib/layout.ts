@@ -6,13 +6,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-/**
- * Use available space, not device or orientation labels, to choose the shell.
- *
- * The height floor deliberately keeps every current iPhone in the compact shell
- * when it rotates to landscape, while still allowing iPad and foldable-sized
- * windows to adopt the persistent sidebar as they resize.
- */
+/** The height floor keeps landscape phones compact while allowing larger windows to adopt the sidebar. */
 export const SPLIT_LAYOUT_MIN_WIDTH = 720;
 export const SPLIT_LAYOUT_MIN_HEIGHT = 600;
 
@@ -240,10 +234,7 @@ export function deriveFileInspectorPaneLayout(input: {
   };
 }
 
-/**
- * Keep an auxiliary pane within native-feeling bounds without squeezing its
- * neighboring content below a usable reading/editor width.
- */
+/** Preserve the neighboring editor's minimum reading width while sizing the auxiliary pane. */
 export function constrainAuxiliaryPaneWidth(input: {
   readonly preferredWidth: number;
   readonly availableWidth: number;

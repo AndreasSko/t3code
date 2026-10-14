@@ -1,11 +1,3 @@
-/**
- * Keybindings - Keybinding configuration service definitions.
- *
- * Owns parsing, validation, merge, and persistence of user keybinding
- * configuration consumed by the server runtime.
- *
- * @module Keybindings
- */
 import {
   KeybindingRule,
   KeybindingsConfig,
@@ -104,11 +96,8 @@ function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): bool
   );
 }
 
-// Default rules added to a command after startup sync had already persisted
-// that command. Backfill skips commands a config already has, so startup adds
-// each rule once per config, only next to the untouched earlier default
-// (`alongside`), and records its id. Customized commands and later removals
-// stay as the user set them.
+// Add late defaults once beside untouched earlier defaults; retain user
+// customizations and removals, recording applied ids.
 const LATE_DEFAULT_KEYBINDINGS: ReadonlyArray<{
   readonly id: string;
   readonly alongside: KeybindingRule;
@@ -226,62 +215,30 @@ function invalidEntryIssue(index: number, detail: string): ServerConfigIssue {
   };
 }
 
-/**
- * Keybindings - Service tag for keybinding configuration operations.
- */
 export class Keybindings extends Context.Service<
   Keybindings,
   {
-    /**
-     * Start the keybindings runtime and attach file watching.
-     *
-     * Safe to call multiple times. The first successful call establishes the
-     * runtime; later calls await the same startup.
-     */
+    /** Idempotent; subsequent calls await the same successful startup. */
     readonly start: Effect.Effect<void, KeybindingsConfigError>;
 
-    /**
-     * Await keybindings runtime readiness.
-     *
-     * Readiness means the config directory exists, the watcher is attached, the
-     * startup sync has completed, and the current snapshot has been loaded.
-     */
+    /** Ready after directory creation, watcher attachment, startup sync, and snapshot loading. */
     readonly ready: Effect.Effect<void, KeybindingsConfigError>;
 
-    /**
-     * Ensure the on-disk keybindings file exists and includes all default
-     * commands so newly-added defaults are backfilled on startup.
-     */
     readonly syncDefaultKeybindingsOnStartup: Effect.Effect<void, KeybindingsConfigError>;
 
-    /**
-     * Load runtime keybindings state along with non-fatal configuration issues.
-     */
+    /** Includes non-fatal configuration issues. */
     readonly loadConfigState: Effect.Effect<KeybindingsConfigState, KeybindingsConfigError>;
 
-    /**
-     * Read the latest keybindings snapshot from cache/disk.
-     */
     readonly getSnapshot: Effect.Effect<KeybindingsConfigState, KeybindingsConfigError>;
 
-    /**
-     * Stream of keybindings config change events.
-     */
     readonly streamChanges: Stream.Stream<KeybindingsChangeEvent>;
 
-    /**
-     * Upsert a keybinding rule and persist the resulting configuration.
-     *
-     * Writes config atomically and enforces the max rule count by truncating
-     * oldest entries when needed.
-     */
+    /** Persist atomically; truncate oldest entries at the rule-count limit. */
     readonly upsertKeybindingRule: (
       input: ServerUpsertKeybindingInput,
     ) => Effect.Effect<ResolvedKeybindingsConfig, KeybindingsConfigError>;
 
-    /**
-     * Remove a single persisted keybinding rule by exact key/command/when match.
-     */
+    /** Remove by exact key/command/when match. */
     readonly removeKeybindingRule: (
       input: ServerRemoveKeybindingInput,
     ) => Effect.Effect<ResolvedKeybindingsConfig, KeybindingsConfigError>;
@@ -424,7 +381,6 @@ const make = Effect.gen(function* () {
     return { keybindings, issues };
   });
 
-  // One applied migration id per line, next to the config file.
   const appliedMigrationsPath = path.join(
     path.dirname(keybindingsConfigPath),
     "keybindings-migrations",
@@ -558,8 +514,7 @@ const make = Effect.gen(function* () {
         }
         missingDefaults.push(defaultRule);
       }
-      // The loop above backfills whole missing commands. Late defaults join
-      // an untouched earlier default, when their shortcut is still free.
+      // Late defaults join only untouched earlier defaults while their shortcut remains free.
       for (const { alongside, rule } of pendingLateDefaults) {
         if (
           customConfig.some((entry) => isSameKeybindingRule(entry, alongside)) &&
@@ -639,9 +594,7 @@ const make = Effect.gen(function* () {
 
     const revalidateAndEmitSafely = revalidateAndEmit.pipe(Effect.ignoreCause({ log: true }));
 
-    // Debounce watch events so the file is fully written before we read it.
-    // Editors emit multiple events per save (truncate, write, rename) and
-    // `fs.watch` can fire before the content has been flushed to disk.
+    // Debounce editor saves because fs.watch can precede flushed content and emit multiple events.
     const debouncedKeybindingsEvents = fs.watch(keybindingsConfigDir).pipe(
       Stream.filter((event) => {
         return (

@@ -1,9 +1,4 @@
-/**
- * GitHub's pull request template convention: the first single template found at a known path,
- * or the only Markdown file in a template directory, read from the committed base tree.
- *
- * @module source-control-github/server/gitHubChangeRequestTemplate
- */
+/** Read the first conventional single template, or a directory's sole Markdown template, from committed base. */
 import type { GitCommandError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

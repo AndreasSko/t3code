@@ -5,7 +5,6 @@ import * as NodePath from "node:path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 export interface FakeCliOptions {
-  /** Directory the launcher and its stub are written into. */
   readonly directory: string;
   /** Command name as callers spawn it, e.g. `codex`. */
   readonly name: string;

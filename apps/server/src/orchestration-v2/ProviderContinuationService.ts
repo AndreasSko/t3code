@@ -50,13 +50,8 @@ function delegatedCompletionRetryKey(
   return `${request.threadId}:${completion.parentRunId}:${completion.generation}:${completion.messageId}`;
 }
 
-/**
- * Drains ProviderContinuationRequests and dispatches an internal
- * message.dispatch per request so the wake turn buffered by the adapter is
- * ingested as a normal run. Delegated completions are durable mailbox offers:
- * the orchestrator selects native steering or queued delivery under its thread
- * lock. Adapter-buffered continuations still queue behind active work.
- */
+// Delegated completions choose steering or queued delivery under the thread lock;
+// adapter-buffered continuations queue behind active work.
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const ids = yield* IdAllocator.IdAllocatorV2;
@@ -144,16 +139,8 @@ export const layer = Layer.effectDiscard(
               },
             })
             .pipe(
-              // The project turned the target instance off between the cohort
-              // read above and this dispatch. The finalize that claimed this
-              // delivery already wrote the children's results to the parent's
-              // history unconditionally, so nothing is lost: acknowledge each
-              // task administratively (observedByRunId: null, the same shape
-              // task_status uses when no run observed it) to consume this
-              // delivery instead of leaving it open to retry. The parent's
-              // next turn against an enabled instance reads those results from
-              // history the same way any turn does; nothing here re-offers
-              // this generation.
+              // Results are already in parent history. If its instance was disabled,
+              // acknowledge tasks administratively so this delivery cannot retry or re-offer.
               Effect.catchTags({
                 ThreadManagementProviderInstanceDisabledError: (error) =>
                   Effect.logInfo(
@@ -223,20 +210,12 @@ export const layer = Layer.effectDiscard(
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
           createdBy: "agent",
-          // "provider" marks an adapter-buffered wake, which ClaudeAdapterV2
-          // detects to attach the buffered CLI output and drop this text. A
-          // message_text wake has no buffered output, so it must not carry that
-          // marker or the turn settles immediately having prompted nothing.
+          // Only buffered wakes use the provider marker, which tells Claude to consume
+          // buffered output; message_text would otherwise settle without sending its prompt.
           creationSource: request.delivery === "message_text" ? "server" : "provider",
         });
-        // The adapter's buffered wake has nowhere else to go once the
-        // instance is off: drop it rather than warn, since nothing here
-        // retries it either way. This catch sits outside dispatchIfCurrent so
-        // an adapter that clears its own sticky offer flag on dispatch
-        // failure (inside dispatchIfCurrent) observes the raw failure first.
-        // Not every adapter self-clears that way, so the explicit callback is
-        // called here too; clearIfCurrent implementations are idempotent, so
-        // a source that already cleared is unaffected.
+        // Catch outside dispatchIfCurrent so adapters see the raw failure before clearing.
+        // Also invoke the idempotent clear callback for adapters that do not self-clear.
         const logInstanceDisabled = (
           error: ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
         ) =>

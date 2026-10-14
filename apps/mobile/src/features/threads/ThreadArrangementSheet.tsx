@@ -198,7 +198,6 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
     );
     return {
       pinned,
-      // The Working beta orders the inbox by time; show that order here too.
       active: workingShelfEnabled
         ? sortInboxThreadsByReturn(active, threadListInboxReturns.returnedAt)
         : active,
@@ -212,8 +211,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
         ordered: sections[section],
         allThreads: threads,
         section,
-        // A time-ordered inbox has no slots, so Active takes no drops while
-        // the Working beta is on. The saved arrangement stays untouched.
+        // The time-ordered inbox has no reorder slots; preserve its saved arrangement for later.
         reorderableEnvironmentIds: new Set(
           [...configs].flatMap(([id, config]) =>
             (

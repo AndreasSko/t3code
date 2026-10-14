@@ -388,12 +388,7 @@ function findTaskListMarkerOffset(markdown: string, listItemStart: number): numb
   return listItemStart + firstLine.indexOf(match[1]);
 }
 
-/**
- * The default `1.25rem` marker gutter (`.chat-markdown ol`) fits one-character
- * markers. Wider markers can extend past it and get clipped by a collapsed
- * message's overflow. Widen the gutter to fit the widest marker, including a
- * negative marker's minus sign, the period, and the trailing space.
- */
+/** The default 1.25rem gutter fits one-character markers; widen it so multi-digit and negative markers avoid clipping. */
 function orderedListGutterStyle(
   itemCount: number,
   start: unknown,
@@ -445,7 +440,7 @@ const GITHUB_ALERT_PRESENTATIONS: Record<
 function extractFenceLanguage(className: string | undefined): string {
   const match = className?.match(CODE_FENCE_LANGUAGE_REGEX);
   const raw = match?.[1] ?? "text";
-  // Shiki doesn't bundle a gitignore grammar; ini is a close match (#685)
+  // Shiki has no gitignore grammar; ini is a close match (#685).
   return raw === "gitignore" ? "ini" : raw;
 }
 
@@ -740,12 +735,6 @@ function MarkdownDetails({
   );
 }
 
-/**
- * The code block frame, shared with the composer so an editable fence and a
- * rendered one cannot drift apart: the wrapper, its header row with the
- * language title, an optional actions slot, and the body as children. The
- * composer passes Tiptap's node view wrapper as the outer element.
- */
 const THREAD_FIND_IGNORE_PROPS = {
   "data-thread-find-ignore": "",
 } as React.HTMLAttributes<HTMLDivElement>;
@@ -801,11 +790,6 @@ export function MarkdownCodeBlockFrame({
   );
 }
 
-/**
- * Filename titles render icon + text; language-only titles render just the
- * icon (redundant next to its own name) and fall back to the language text
- * when no specific icon exists or it fails to load.
- */
 function MarkdownCodeBlockTitleContent({
   fenceTitle,
   language,
@@ -1009,10 +993,6 @@ function MarkdownCodeBlock({
   );
 }
 
-/**
- * Mermaid fences render as a diagram once the response settles; streaming and
- * the code toggle keep the highlighted source.
- */
 function MarkdownMermaidCodeBlock({
   code,
   fenceTitle,
@@ -1162,12 +1142,10 @@ function UncachedShikiCodeBlock({
         ? highlighter.codeToHast(code, { lang: language, theme: themeName })
         : highlighter.codeToHtml(code, { lang: language, theme: themeName });
     } catch (error) {
-      // Log highlighting failures for debugging while falling back to plain text
       console.warn(
         `Code highlighting failed for language "${language}", falling back to plain text.`,
         error instanceof Error ? error.message : error,
       );
-      // If highlighting fails for this language, render as plain text
       return preserveLines
         ? highlighter.codeToHast(code, { lang: "text", theme: themeName })
         : highlighter.codeToHtml(code, { lang: "text", theme: themeName });
@@ -1234,7 +1212,7 @@ const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 /** Hosts whose favicon request already failed this session — skip straight to the globe. */
 const failedFaviconHosts = new Set<string>();
 
-/** Sites whose brand mark (drawn in `currentColor`) replaces the fetched favicon so it follows the theme. */
+/** Use currentColor brand marks so these sites' link icons follow the theme. */
 function brandLinkIcon(host: string): typeof GitHubIcon | null {
   const hostname = host.toLowerCase();
   if (hostname === "github.com" || hostname.endsWith(".github.com")) return GitHubIcon;
@@ -1290,11 +1268,7 @@ function markdownImageCopy(alt: string, src: string, title: string | undefined):
   return `![${escapedAlt}](${src}${titleSuffix})`;
 }
 
-/**
- * `maxHeightRem` folds a height cap into the width bound: `max-height` alone
- * would not feed back through `aspect-ratio` once `width` is definite, so a
- * tall image would keep a box wider than the picture it draws.
- */
+/** Fold the height cap into width: max-height cannot adjust aspect-ratio once width is definite. */
 function authoredImageSizeStyle(
   width: string | number | undefined,
   height: string | number | undefined,
@@ -1363,7 +1337,6 @@ function ChatMarkdownMediaUnavailableLabel(props: {
   );
 }
 
-/** Inline chip for an image that sits in a line of text or can never load. */
 function ChatMarkdownImageFallback(props: {
   readonly alt: string;
   readonly copyMarkdown?: string | undefined;
@@ -1395,19 +1368,9 @@ const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
   CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
 );
 
-/**
- * A standalone image holds a 16:9 slot (or its authored size) until it has
- * decoded, and keeps that slot if it fails, so a timeline row moves at most
- * once: when the natural size arrives. A bare `<img>` is zero height until
- * then. Once decoded the image renders bare again so its box, hit area, and
- * alignment are exactly the image's own. Inline images (badges, icons in a
- * sentence) skip the slot: a placeholder taller than the image would move the
- * page more than the image does.
- *
- * Callers key this on the file's identity, not its URL: a re-signed URL for
- * the same file keeps the decoded image on screen while the new bytes arrive,
- * and a different file starts from the slot again.
- */
+/** Reserve 16:9 or authored space through loading and failure so standalone rows move only when decoded.
+ * Inline images skip the slot because it would exceed their height. Key by file identity so re-signed URLs
+ * retain the decoded image while different files reset the slot. */
 function ChatMarkdownImage(props: {
   /** Null while the URL is being resolved; the last decoded image stays up. */
   readonly src: string | null;
@@ -1431,7 +1394,6 @@ function ChatMarkdownImage(props: {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const src = props.src ?? loadedSrc;
   const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
-  // A failure forgets the decoded image so the next URL loads behind the slot.
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = useCallback(
@@ -1569,7 +1531,6 @@ function ChatMarkdownVideo(props: {
   );
 }
 
-/** Environment-hosted media loads through an exact-file signed asset URL. */
 export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props: {
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
@@ -1629,9 +1590,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       : fallbackSrc === undefined
         ? null
         : fallbackSrc + (props.srcFragment ?? "");
-  // The server reads the pixel size from the file header, so the slot can be
-  // the image's final box instead of a 16:9 guess. An authored size wins; a
-  // caller's height cap shrinks the box while keeping the ratio.
+  // Header dimensions let the loading slot match the image's final box instead of guessing 16:9.
   const knownSize = assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined;
   const maxHeightRem = props.maxHeightRem ?? 30;
   const style =
@@ -1741,11 +1700,7 @@ function plainHastText(node: unknown): string | null {
   return parts.every((part) => part !== null) ? parts.join("") : null;
 }
 
-/**
- * The anchor's words, gathered through any nesting. A context label that picked up emphasis or a
- * code span still has to read as its label; `plainHastText` gives up on the first non-text child,
- * which would leave the raw context id showing in its place.
- */
+/** Recurse through emphasis/code nodes so context labels do not fall back to raw ids. */
 function hastPlainTextDeep(node: unknown): string {
   if (!node || typeof node !== "object") return "";
   if ("type" in node && node.type === "text" && "value" in node && typeof node.value === "string") {
@@ -1755,11 +1710,7 @@ function hastPlainTextDeep(node: unknown): string {
   return node.children.map(hastPlainTextDeep).join("");
 }
 
-/**
- * Whether the link carries any words of its own. An anchor that is only an image — a badge, a
- * "Fix in Cursor" button — already shows its identity, and a favicon bolted on in front of it
- * is a stray logo rather than a hint.
- */
+/** Image-only anchors already show their identity, so they need no favicon. */
 function hastHasText(node: unknown): boolean {
   if (!node || typeof node !== "object") return false;
   if (
@@ -1846,11 +1797,7 @@ function githubHeadingSlug(text: string): string {
     .replace(/ /g, "-");
 }
 
-/**
- * Gives headings without an authored id GitHub's slug id, deduplicated per document. Like the
- * sanitizer's ids, they carry the `user-content-` prefix so they cannot clobber app element ids;
- * fragment lookup strips it.
- */
+/** Prefix generated ids with user-content- to prevent clobbering app ids, matching the sanitizer. */
 function rehypeHeadingIds() {
   return (tree: HeadingHastNode) => {
     // Every id already in the document, authored or assigned, so a suffix never
@@ -2948,7 +2895,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
     } = use(ChatMarkdownRendererContext);
     const citation = href ? parseAssistantCitationHref(href) : null;
     if (citation) return <AssistantCitationChip citation={citation} />;
-    // A thread link names a thread in this message's environment and opens it in the app.
     const linkedThreadId = href ? parseThreadLinkHref(href) : null;
     if (linkedThreadId) {
       const label = hastPlainTextDeep(node) || linkedThreadId;
@@ -3037,19 +2983,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
               );
               return;
             }
-            // A link to a change request in a workspace project opens beside the
-            // conversation instead of in a browser: it is the thing being talked about, and
-            // the panel it opens offers the browser as one of its actions.
             if (
               !href ||
               openChangeRequestLink(event, href, undefined, environmentId ?? undefined)
             ) {
               return;
             }
-            // Anything else follows the "Open links in" setting. The system browser
-            // keeps the `_blank` the shell already handles; the in-app browser needs
-            // the click intercepted here. A modifier click is the way out of the
-            // in-app default, so it is left to the shell too.
+            // In-app links need synchronous interception; system and modifier clicks keep the shell's _blank.
             if (event.defaultPrevented) return;
             if (
               resolveLinkTarget({
@@ -3285,9 +3225,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           originalUrl={resolveProtocolRelativeMediaUrl(directUri)}
           // A pull request body draws its own boxes; keep the author's, not the workspace frame.
           framed={false}
-          // A server too old to sign this resource, or one with no route to GitHub, still leaves
-          // the public half of these working exactly as it did before. The canonical URL, not the
-          // authored one: a `blob` link addresses the page, and only the raw host has the bytes.
+          // Fall back to public media when signing fails. Use the raw host: blob links address an HTML page.
           fallbackSrc={githubMediaUrl}
           onImageExpand={imageExpand}
         />
@@ -3465,7 +3403,6 @@ function ChatMarkdown({
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/[calc(80%+var(--appearance-contrast-boost)/5)] [overflow-wrap:anywhere] [word-break:break-word]",
         className,
       )}
-      // Gates the fade-in for blocks that arrive while the response streams.
       data-streaming={componentState.isStreaming ? "" : undefined}
       onCopy={handleCopy}
     >

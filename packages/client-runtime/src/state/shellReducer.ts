@@ -10,7 +10,6 @@ import * as Schema from "effect/Schema";
 const sameThreadShell = Schema.toEquivalence(OrchestrationV2ThreadShell);
 const sameLinks = Schema.toEquivalence(Schema.UndefinedOr(Schema.Array(ThreadPullRequestLink)));
 
-/** Whether two rows' pull request links are equal, including both absent. */
 export function sameThreadPullRequests(
   left: OrchestrationV2ThreadShell["pullRequests"],
   right: OrchestrationV2ThreadShell["pullRequests"],
@@ -18,11 +17,7 @@ export function sameThreadPullRequests(
   return left === right || sameLinks(left, right);
 }
 
-/**
- * Keep the previous object for each row a full snapshot left unchanged, so the list only
- * re-renders rows that changed. Links are compared apart from the rest of the row because a
- * deferred snapshot arrives without them; such a row keeps its links until they fill in.
- */
+/** Reuses unchanged row identities while retaining links omitted by deferred snapshots. */
 export function reuseUnchangedThreadShells(
   previous: OrchestrationV2ShellSnapshot | null,
   next: OrchestrationV2ShellSnapshot,
@@ -68,25 +63,14 @@ function retainRepositoryIdentity(
 }
 
 export interface MergeShellSnapshotOptions {
-  /**
-   * Metadata-only enrichment refresh: structure and sequence never change;
-   * listed roots accept identity exactly (including null).
-   * Omit this options object for authoritative HTTP/initial WebSocket snapshots.
-   */
+  /** Enrichment keeps structure/sequence unchanged; listed roots accept identities including null.
+   * Omit for authoritative snapshots. */
   readonly resolvedRepositoryIdentityRoots: ReadonlyArray<string>;
 }
 
-/**
- * Merge an incoming full shell snapshot into prior client state.
- *
- * Authoritative snapshots (no options) replace structure and sequence even when
- * lower than cache, while retaining a prior non-null identity when the candidate
- * is still unresolved/null for the same root.
- *
- * Enrichment snapshots (options present) only patch repository identity for
- * matching current projects. They never replace projects, threads, archives,
- * or sequence, regardless of the incoming snapshot sequence.
- */
+/** Authoritative snapshots replace structure/sequence even when their sequence is lower than the cache.
+ * Incoming nulls keep prior resolved same-root identities; enrichment accepts resolved nulls
+ * without replacing lists or sequence. */
 export function mergeShellSnapshotProjects(
   previous: OrchestrationV2ShellSnapshot | null | undefined,
   next: OrchestrationV2ShellSnapshot,
@@ -144,10 +128,7 @@ export function applyShellStreamEvent(
 
   switch (event.kind) {
     case "project.updated": {
-      // Enrichment is async. A project mutation can land with null
-      // repositoryIdentity while an earlier snapshot already resolved it.
-      // Keep the prior identity for the same workspace root so multi-env
-      // grouping does not split until a full snapshot refresh arrives.
+      // Async enrichment may race a null identity mutation; preserve same-root identity so grouping stays stable.
       const previous = snapshot.projects.find((project) => project.id === event.project.id);
       const project = retainRepositoryIdentity(previous, event.project);
       return {
@@ -180,9 +161,7 @@ export function applyShellStreamEvent(
           event.location === "active"
             ? upsertById(snapshot.threads, event.thread)
             : withoutThread(snapshot.threads),
-        // The archive has its own bounded query/subscription. Older servers may
-        // still send archive-located deltas here; remove them from the normal
-        // shell instead of growing its persisted cache again.
+        // Archive deltas from older servers must not regrow the normal shell cache; archives have a separate query.
         archivedThreads: withoutThread(snapshot.archivedThreads),
         snapshotSequence: event.sequence,
       };

@@ -15,8 +15,7 @@ export function nextScheduledRunAt(
 ): DateTime.DateTime | null {
   if (schedule.type === "webhook") return null;
   if (schedule.type === "interval") {
-    // Persisted rows created before the one-minute floor remain readable, but
-    // they must not retain their old high-frequency execution rate.
+    // Clamp legacy persisted intervals to the one-minute floor so they cannot retain high-frequency execution.
     return DateTime.add(from, {
       milliseconds: Math.max(schedule.everyMs, MIN_SCHEDULED_TASK_INTERVAL_MS),
     });
@@ -40,11 +39,7 @@ export function nextScheduledRunAt(
   return null;
 }
 
-/**
- * Canonical form of a weekday mask, mirroring how `nextScheduledRunAt` reads
- * it: order and duplicates are irrelevant, and an empty/omitted mask means the
- * same as explicitly listing all seven days — daily.
- */
+/** Empty and omitted weekday masks mean daily, as does listing all seven days. */
 function weekdayKey(weekdays: ReadonlyArray<number> | undefined): string {
   const unique = [...new Set(weekdays ?? [])].toSorted((x, y) => x - y);
   if (unique.length === 0 || unique.length === 7) return "daily";
@@ -59,9 +54,7 @@ export function isSameSchedule(a: ScheduledTaskSchedule, b: ScheduledTaskSchedul
   // Webhook tasks never have a next run, whatever their signature settings.
   if (a.type === "webhook") return b.type === "webhook";
   if (b.type !== "fixed_time") return false;
-  // The contract accepts padded and unpadded hours ("9:00" and "09:00"), so
-  // compare the parsed time — string equality would treat a format-only edit
-  // as a schedule change and recompute the pending run.
+  // Padded and unpadded hours are equivalent; format-only edits must not reschedule pending work.
   const aTime = parseTimeOfDay(a.timeOfDay);
   const bTime = parseTimeOfDay(b.timeOfDay);
   return (
@@ -73,19 +66,10 @@ export function isSameSchedule(a: ScheduledTaskSchedule, b: ScheduledTaskSchedul
   );
 }
 
-/**
- * How late a fixed-time run may fire before it counts as missed. Covers poll
- * jitter and short sleeps, while a server booted hours after the slot skips
- * to the next occurrence instead of firing stale work at a random time.
- */
+/** Allow poll jitter and short sleeps, but skip fixed-time work missed by hours. */
 const MISSED_FIXED_TIME_GRACE_MS = 10 * MINUTE_MS;
 
-/**
- * True when a due fixed-time run was missed by more than the grace window and
- * should be rescheduled to its next occurrence instead of firing now.
- * Interval schedules are never considered missed: an overdue interval task
- * catching up with a single run is the desired behaviour.
- */
+/** Fixed-time runs beyond the grace window are missed; overdue intervals should catch up with one run. */
 export function isMissedFixedTimeRun(
   schedule: ScheduledTaskSchedule,
   dueAt: DateTime.DateTime,

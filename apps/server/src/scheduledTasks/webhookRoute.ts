@@ -29,13 +29,7 @@ export const layer = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
     const relayDeliveryProof = yield* RelayDeliveryProof.RelayDeliveryProof;
-    /**
-     * Handles `/api/hooks/:hookId/:token` for every accepted method. The endpoint
-     * is raw so the signature is checked over the exact body bytes; the service
-     * checks the token and signature. It is reachable directly, over the managed
-     * tunnel, or through the relay's stable `/v1/hooks/:endpointKey/:hookId/:token`
-     * URL, where the endpoint key is this environment's managed tunnel key.
-     */
+    /** Keep the exact body bytes for signature checks; the service verifies token and signature. */
     const handler = ({
       params,
       request,
@@ -57,7 +51,6 @@ export const layer = HttpApiBuilder.group(
           ),
           Effect.option,
         );
-        // Refused before a task is looked up, so the service never sees them.
         const tooLarge = (error: string) =>
           Metrics.increment(Metrics.webhookDeliveriesTotal, {
             outcome: "body_too_large",
@@ -73,9 +66,7 @@ export const layer = HttpApiBuilder.group(
           if (typeof value === "string") headers[name.toLowerCase()] = value;
         }
         const queryIndex = request.url.indexOf("?");
-        // The relay's delivery id and receive time count only with its signed
-        // proof; the URL can also be called directly. The receive time matters
-        // for requests the relay held while we were offline.
+        // Relay metadata needs signed proof; receive time accounts for requests held while offline.
         const relay = yield* relayDeliveryProof.verify({ headers, hookId: params.hookId });
         const relayDeliveryId = Option.isSome(relay) ? relay.value.deliveryId : undefined;
         const relayReceivedAt = Option.isSome(relay) ? relay.value.receivedAt : undefined;

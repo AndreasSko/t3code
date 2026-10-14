@@ -1,16 +1,3 @@
-/**
- * UsageLimitSources — quota from places this environment cannot run turns
- * on, today a CLIProxyAPI hub pooling several subscription accounts.
- *
- * Each configured `settings.usageLimitSources` entry is polled on the
- * provider health-check interval and on every settings change, then
- * published as one snapshot per source over `subscribeServerConfig`. A source
- * that fails keeps its row with `error` set so the user can see it is
- * configured but unreachable. Nothing is persisted: like provider status,
- * this is live state that re-derives on boot.
- *
- * @module usage/UsageLimitSources
- */
 import {
   DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL,
   UsageLimitSourceError,
@@ -61,7 +48,7 @@ function sourceLabel(id: string, config: UsageLimitSourceConfig): string {
   }
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const api = yield* makeCliproxyApi;
   const settingsService = yield* Settings.ServerSettingsService;
@@ -97,9 +84,7 @@ export const make = Effect.gen(function* () {
       if (changed) yield* PubSub.publish(changes, next);
     });
 
-  // One refresh at a time: a slow hub read started before a settings change
-  // must not publish after the change's own refresh and resurrect a removed
-  // source. Callers queue behind the in-flight run and see current settings.
+  // Serialize refreshes so a slow read cannot resurrect a source removed by a settings change.
   const refreshLock = yield* Semaphore.make(1);
   const refresh = Effect.gen(function* () {
     const settings = yield* settingsService.getSettings.pipe(
@@ -137,8 +122,6 @@ export const make = Effect.gen(function* () {
       return result;
     }).pipe(refreshLock.withPermits(1));
 
-  // Settings edits re-read straight away so a new hub shows up without
-  // waiting for the interval, and a removed one leaves the list.
   yield* settingsService.streamChanges.pipe(
     Stream.map((settings) => settings.usageLimitSources),
     Stream.changes,

@@ -120,12 +120,8 @@ export const make = Effect.gen(function* () {
     }
   };
 
-  /**
-   * A sweep for one thread reads only that thread's shell, not every thread's.
-   * Finished runs and checkpoints queue one of these each. A sweep over all
-   * threads reads only active, unsettled ones, since discovery skips the rest;
-   * backfill looks up settled threads, so its passes read every active thread.
-   */
+  // Read one shell per targeted refresh; periodic discovery skips settled threads,
+  // while backfill includes all active threads.
   const readThreadSnapshot = ({ threadId, backfill }: RefreshRequest) =>
     threadId === null
       ? orchestrator
@@ -162,9 +158,8 @@ export const make = Effect.gen(function* () {
         }
       }
     }
-    // A single-thread read only shows whether its own thread is gone. A thread
-    // with no branch has nothing to look up, and its entry would keep every
-    // periodic pass on the full read.
+    // Single-thread reads cannot prove other threads gone. Drop branchless entries
+    // or they would force every periodic pass onto a full snapshot.
     const visibleThreadIds = new Set(
       threadSnapshot.threads.filter((thread) => thread.branch !== null).map((thread) => thread.id),
     );

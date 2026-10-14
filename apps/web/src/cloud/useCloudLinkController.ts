@@ -151,10 +151,7 @@ export function useCloudLinkController() {
     const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
     if (!canManageLink()) return false;
 
-    // A failure after this point may follow a partially applied mutation (e.g.
-    // the link succeeded but the preference update did not), so every exit —
-    // success or failure — refreshes the rendered state to whatever the server
-    // actually holds now.
+    // Refresh on every exit: a failed mutation may have partially changed server state.
     if (!wantsLink) {
       // Unlink works without a relay token — a failed token read must not
       // leave the user unable to turn T3 Connect off.

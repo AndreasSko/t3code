@@ -24,9 +24,7 @@ export const ConnectionCatalogDocument = Schema.Struct({
   credentials: Schema.Array(StoredConnectionCredential),
   remoteDpopTokens: Schema.Array(TokenStore.RemoteDpopAccessToken),
   githubRoutingPermissions: Schema.optionalKey(Schema.Array(StoredGitHubRoutingPermission)),
-  // Saved environments the user switched off. They stay registered with their
-  // credentials and cache but never connect until switched back on. Older
-  // documents predate the key, so decoding defaults it to none.
+  // Disabled entries retain credentials and cache; missing flags default to enabled.
   disabledEnvironmentIds: Schema.Array(EnvironmentId).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed([])),
   ),
@@ -92,11 +90,7 @@ function removeRouteMetadata(
   };
 }
 
-/**
- * An environment's saved routes in preference order. Targets of one
- * environment keep their relative order in `targets`, so a document written
- * before routes existed is one environment with one route.
- */
+/** Preference order follows targets, including single-route documents. */
 export function catalogRoutes(
   document: ConnectionCatalogDocument,
   environmentId: EnvironmentId,
@@ -104,12 +98,8 @@ export function catalogRoutes(
   return document.targets.filter((target) => target.environmentId === environmentId);
 }
 
-/**
- * Replaces an environment's routes with `routes`, preferred first. Records
- * owned by a dropped route go with it; the environment keeps its position in
- * the catalog. An empty list leaves the environment's other records in place;
- * use `removeConnectionFromCatalog` to forget the environment.
- */
+/** Replaces routes and removes their owned records while retaining catalog position.
+ * Empty routes keep other records; use removeConnectionFromCatalog to forget the environment. */
 export function setRoutesInCatalog(
   document: ConnectionCatalogDocument,
   environmentId: EnvironmentId,
@@ -170,7 +160,6 @@ export function registerConnectionInCatalog(
   }
 }
 
-/** Forgets an environment and every route it had. */
 export function removeConnectionFromCatalog(
   document: ConnectionCatalogDocument,
   environmentId: EnvironmentId,

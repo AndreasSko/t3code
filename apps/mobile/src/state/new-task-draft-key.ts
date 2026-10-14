@@ -1,6 +1,5 @@
 const NEW_TASK_DRAFT_PREFIX = "new-task:";
 
-/** Every new-task draft key: `new-task:<draftId>`. */
 export function newTaskDraftKey(draftId: string): string {
   return `${NEW_TASK_DRAFT_PREFIX}${draftId}`;
 }
@@ -9,21 +8,12 @@ export function isNewTaskDraftKey(draftKey: string): boolean {
   return draftKey.startsWith(NEW_TASK_DRAFT_PREFIX);
 }
 
-/**
- * The draft a rejected queued task's content is restored into. The outbox
- * drain writes it and the thread screen's "Edit task" action opens it, so both
- * sides derive the key here rather than rebuilding the string.
- */
+/** Outbox recovery and "Edit task" must derive the same key for a rejected creation. */
 export function restoredNewTaskDraftKey(messageId: string): string {
   return newTaskDraftKey(`restored-${messageId}`);
 }
 
-/**
- * Builds before drafts were id-keyed used `new-task:<environmentId>:<projectId>`,
- * one slot per project. Ids are UUIDs and never contain a colon, so a colon
- * after the prefix marks the legacy shape. Returns the split scope, or null
- * when the key is not legacy.
- */
+/** UUID draft ids contain no colon; a colon after the prefix identifies an environment/project key. */
 export function parseLegacyNewTaskDraftKey(
   draftKey: string,
 ): { readonly environmentId: string; readonly projectId: string } | null {

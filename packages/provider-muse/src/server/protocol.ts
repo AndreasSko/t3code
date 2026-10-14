@@ -202,10 +202,7 @@ export function museApprovalDecision(
   }
 }
 
-/**
- * Maps each canonical decision to one native choice. Muse shell approvals offer
- * no `denied` choice, only `abort` ("Reject"), so `decline` falls back to it.
- */
+/** Muse offers abort (Reject) instead of denied for shell approvals, so decline falls back to it. */
 export function museApprovalChoices(approval: Pick<MuseApproval, "availableChoices">) {
   const choices = new Map<ProviderApprovalDecision, MuseApproval["availableChoices"][number]>();
   const rank = (choice: MuseApproval["availableChoices"][number]) =>

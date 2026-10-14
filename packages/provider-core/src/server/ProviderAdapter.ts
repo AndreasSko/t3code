@@ -91,10 +91,8 @@ export const ProviderAdapterV2Event = Schema.Union([
     driver: ProviderDriverKind,
     providerThread: OrchestrationV2ProviderThread,
     /**
-     * Set when the provider rewound its own conversation outside T3, for
-     * example a Pi extension moving the session-tree leaf back. Lists every
-     * native turn id still on the active branch; the ingestor rolls back
-     * earlier runs whose turns fell off it.
+     * Provider-side rewind reports all native turns retained on its branch
+     * so ingestion can roll back runs whose turns fell off.
      */
     retainedNativeTurnIds: Schema.optional(Schema.Array(Schema.String)),
   }),
@@ -418,9 +416,8 @@ export interface ProviderAdapterV2TurnInput {
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
   /**
-   * What the thread's MCP Apps want the agent to know (`ui/update-model-context`),
-   * latest per app, keyed stably per app. Adapters that host apps deliver it as
-   * application context; others never receive any.
+   * Latest MCP App context keyed per app; deliver as application context
+   * only to adapters hosting those apps.
    */
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
 }
@@ -498,7 +495,6 @@ export interface ProviderAdapterV2HistoricalContext {
   readonly context: string;
 }
 
-/** An MCP tool as the provider's MCP client lists it. */
 export interface ProviderAdapterV2McpTool {
   readonly name: string;
   readonly _meta?: unknown;
@@ -545,22 +541,15 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly providerSession: OrchestrationV2ProviderSession;
   readonly events: Stream.Stream<ProviderAdapterV2Event, ProviderAdapterV2Error>;
   /**
-   * Manager-owned runtimes expose a synchronous subscription so concurrent
-   * provider threads receive independent copies of the process event stream.
-   * Adapter runtimes may omit this and expose only their single-consumer event stream.
+   * Shared processes need independent event subscriptions for concurrent threads;
+   * single-consumer adapters may omit this.
    */
   readonly subscribeEvents?: Effect.Effect<ProviderAdapterV2EventSubscription>;
-  /**
-   * Adapters whose native runtime can hold pending work outside an active
-   * turn (for example Claude background tasks and their wake turns) report it
-   * here so the session manager defers idle release while it is pending.
-   */
+  /** Defers idle release while native background work remains outside an active turn. */
   readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;
   /**
-   * Per-provider-thread pending work for root-run ingestion stop gates. When
-   * present, RunExecutionService uses only this probe (never the session-wide
-   * hasPendingBackgroundWork) so sibling native threads cannot pin an
-   * unrelated root subscription open.
+   * RunExecutionService uses this instead of the session-wide probe
+   * so sibling native threads cannot pin an unrelated run subscription.
    */
   readonly hasPendingBackgroundWorkForThread?: (
     providerThread: OrchestrationV2ProviderThread,
@@ -582,8 +571,9 @@ export interface ProviderAdapterV2SessionRuntime {
     modelSelection: ModelSelection,
     cwd?: string | null,
   ) => number | undefined;
-  /** Whether an option-only change preserves measured native usage and capacity.
-   * Compaction thresholds are still discarded. Unknown transitions invalidate usage.
+  /**
+   * Unknown transitions invalidate usage; reusable option changes still discard
+   * compaction thresholds.
    */
   readonly canReuseContextUsage?: (previous: ModelSelection, next: ModelSelection) => boolean;
   readonly ensureThread: (
@@ -625,9 +615,8 @@ export interface ProviderAdapterV2SessionRuntime {
     readonly requestedAt?: NonNullable<OrchestrationV2Subagent["startedAt"]>;
   }) => Effect.Effect<void | ProviderAdapterV2SubagentOutcome, ProviderAdapterV2Error>;
   /**
-   * Lets a runtime shared by several app threads unload one provider thread's
-   * native state (and its MCP servers) when that app thread detaches, while
-   * the runtime keeps serving the others. A later resume reloads it.
+   * Unload one thread's native state and MCP servers without stopping sibling threads;
+   * resume reloads it.
    */
   readonly unloadThread?: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;
@@ -638,19 +627,12 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly readThreadSnapshot: (
     input: ProviderAdapterV2ReadThreadSnapshotInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;
-  /**
-   * Providers that accept product feedback for a thread (#7949, Codex → OpenAI)
-   * expose it here; absent means the driver has no feedback channel.
-   */
+  /** Absent means the driver has no feedback channel. */
   readonly uploadFeedback?: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;
     readonly reason?: string;
   }) => Effect.Effect<{ readonly feedbackId: string }, ProviderAdapterV2Error>;
-  /**
-   * MCP Apps host operations through the provider's own MCP client, for
-   * drivers whose protocol exposes them (Codex). Absent means apps from this
-   * provider are not interactive and their tool calls stay plain tool rows.
-   */
+  /** Absent means MCP Apps cannot interact and their calls render as plain tool rows. */
   readonly mcpApps?: ProviderAdapterV2McpApps;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,

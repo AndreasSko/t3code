@@ -1,12 +1,6 @@
 /**
- * otelEnvironment: the OpenTelemetry kill switch, exporter, and endpoint variables,
- * shared by the server and the desktop main process so both agree on what
- * turns export off and where it goes.
- *
- * `T3CODE_OTEL_SDK_DISABLED` is read first, so a machine that sets
- * `OTEL_SDK_DISABLED` for everything else can still opt T3 Code back in.
- *
- * @module otelEnvironment
+ * T3CODE_OTEL_SDK_DISABLED overrides OTEL_SDK_DISABLED so T3 can opt back in.
+ * Server and desktop main share this precedence.
  */
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -18,14 +12,11 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { OtlpHeadersFromString, OtlpProtocol, type SignalExport } from "./observability.ts";
 
-/** The signals T3 Code exports, spelled as the variable names spell them. */
 type OtlpSignalName = "TRACES" | "METRICS" | "LOGS";
 
 /**
- * What the OTEL variables say about one signal. `Off` is a signal they
- * claimed with an endpoint, protocol, or headers that do not read, or turned
- * off with `OTEL_<SIGNAL>_EXPORTER=none`, so it is exported nowhere rather
- * than to the bootstrap or Settings collector.
+ * Off prevents fallback to bootstrap or Settings collectors when a signal's
+ * configuration is invalid or its exporter is none.
  */
 export type OtelSignal = Data.TaggedEnum<{
   Unset: {};
@@ -43,7 +34,7 @@ export interface OtelEnvironment {
   readonly disabled: boolean;
   /** Messages for the caller to log once at startup. */
   readonly warnings: ReadonlyArray<string>;
-  /** `OTEL_RESOURCE_ATTRIBUTES`, or nothing when it could not be read. */
+  /** Decoded OTEL_RESOURCE_ATTRIBUTES, or an empty record when unreadable. */
   readonly resourceAttributes: Readonly<Record<string, string>>;
   readonly traces: OtelSignal;
   readonly metrics: OtelSignal;
@@ -71,10 +62,7 @@ const TrimmedLowercase = Schema.String.pipe(
   ),
 );
 
-/**
- * Reads a boolean that accepts `truthy` and `falsy`, ignoring case and padding.
- * Any other value is ignored with a warning rather than failing startup.
- */
+/** Invalid flags warn without failing startup; matching ignores case and padding. */
 const flag = (
   name: string,
   truthy: ReadonlyArray<string>,
@@ -189,10 +177,8 @@ const EXPORTERS: ReadonlySet<string> = new Set<Exporter>(["otlp", "none"]);
 const isExporter = (entry: string): entry is Exporter => EXPORTERS.has(entry);
 
 /**
- * `OTEL_<SIGNAL>_EXPORTER`, a case-insensitive list whose default is `otlp`.
- * Entries T3 Code has no exporter for are named in a warning and dropped, and
- * a list left with nothing to honor reads as unset, as the specification asks
- * of any enum value an implementation does not recognize.
+ * Unknown exporter entries warn and are dropped; an empty result is unset, per the spec.
+ * Supported values are case-insensitive otlp (default) and none.
  */
 const exporter = (name: string): Config.Config<Setting<Exporter>> =>
   Config.String(name).pipe(
@@ -248,10 +234,8 @@ interface ResolvedSignal {
 }
 
 /**
- * A signal whose endpoint, protocol, or headers do not read is not exported
- * rather than sent somewhere, in a format, or without the credentials its
- * collector expects. `none` turns the signal off before any of those are read,
- * whether or not an endpoint was named.
+ * Invalid endpoint, protocol, or headers disable export to avoid mismatched collectors or credentials.
+ * none takes precedence and suppresses warnings for unused settings.
  */
 const signal = (
   name: OtlpSignalName,
@@ -297,9 +281,8 @@ export const load: Effect.Effect<OtelEnvironment> = Config.all({
     T3CODE_FALSE,
     (value) => `T3CODE_OTEL_SDK_DISABLED=${value} is not a yes or a no and was ignored`,
   ),
-  // The specification: a boolean it defines is true "only by the
-  // case-insensitive string `true`", implementations "MUST NOT" accept other
-  // values as true, and should warn about unrecognized ones.
+  // OTEL booleans are true only for case-insensitive true; other values must not enable them.
+  // Unrecognized values should warn.
   spec: flag(
     "OTEL_SDK_DISABLED",
     ["true"],
@@ -366,10 +349,8 @@ export interface SignalEndpoint {
 }
 
 /**
- * Where one signal exports and how. `T3CODE_OTLP_*_URL` wins outright with
- * T3 Code's own export, then an OTEL endpoint with its own headers and
- * protocol, since `T3CODE_OTLP_HEADERS` was written for a different
- * collector, then the first of `fallbackUrls` with T3 Code's own export.
+ * Prefer a T3 URL, then OTEL, then fallbacks; keep each collector's credentials and protocol.
+ * T3 headers must not leak to an OTEL collector.
  */
 export const resolveSignalEndpoint = (
   otel: OtelEnvironment,
@@ -398,9 +379,8 @@ export const resolveSignalEndpoint = (
 };
 
 /**
- * Provide this around Effect's OTLP exporters, which read
- * `OTEL_RESOURCE_ATTRIBUTES` for themselves and die when it does not decode,
- * so they see what `load` accepted instead.
+ * Effect's OTLP exporters decode OTEL_RESOURCE_ATTRIBUTES themselves and die on malformed input.
+ * Supply the validated attributes from load instead.
  */
 export const layerResourceAttributes = (attributes: Readonly<Record<string, string>>) =>
   ConfigProvider.layerAdd(

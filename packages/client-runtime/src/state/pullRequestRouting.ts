@@ -212,10 +212,7 @@ const invalidateTarget = Effect.fn("PullRequestRouting.invalidateTarget")(functi
   );
 });
 
-/**
- * The origin owns the threads linked to this pull request, but a routed read never reaches it.
- * Tell it which state the read saw so it checks again. Best effort, and never holds up the read.
- */
+// Routed reads bypass the origin's linked threads; report observed state without delaying the read.
 const reportState = (
   { allowStale: _allowStale, expectedAccountId: _expectedAccountId, ...reference }: PullRequestRef,
   state: PullRequestState,

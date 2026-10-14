@@ -1,17 +1,3 @@
-/**
- * Guided reviews: a maintainer-facing brief on a pull request, written by the environment's
- * source-control writer model. See `PullRequestReviewGuide` in contracts for what a guide is for.
- *
- * The model reads the change itself, read-only, from a disposable checkout of the head, so a
- * guide has no size limit. That takes minutes on a large change, so a run belongs to the server
- * rather than to the request that started it: Generate returns as soon as the run is under way
- * and readers watch its state through `get`.
- *
- * Generation is explicit and the result is stored per pull request, so opening a guide never
- * spends a model run. A push leaves the stored guide in place and the reader sees it as stale.
- *
- * @module pullRequest/PullRequestReviewGuideService
- */
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -62,12 +48,7 @@ export class PullRequestReviewGuideService extends Context.Service<
     readonly get: (
       input: PullRequestRef,
     ) => Effect.Effect<PullRequestReviewGuideResult, PullRequestService.PullRequestError>;
-    /**
-     * Start writing a guide for the current head and return once it is under way. Joins a run
-     * already going for that head. A stored guide stays readable until the new one replaces it,
-     * so a reader can rewrite one after changing the guide model or instructions. `started` says
-     * whether this call began the run or joined one already going.
-     */
+    /** Starts or joins a run for the current head; returns immediately while the stored guide remains readable. */
     readonly generate: (
       input: PullRequestRef,
     ) => Effect.Effect<
@@ -97,10 +78,8 @@ const make = Effect.gen(function* () {
   const serviceScope = yield* Effect.scope;
   // In memory on purpose: a restart drops a run in progress, and a reader presses Generate again.
   const runs = yield* Ref.make<ReadonlyMap<string, PullRequestReviewGuideRun>>(new Map());
-  // Names each run's private git refs; unique for the server's lifetime, like the runs map.
   let runCounter = 0;
-  // Claiming a run and storing a finished guide take turns, so a run that still owns its pull
-  // request when it checks is the one whose guide is stored: a newer claim cannot land between.
+  // Claims and writes share a lock so a newer run cannot take ownership between the check and storage.
   const ownership = yield* Semaphore.make(1);
 
   const keyFor = Effect.fn("PullRequestReviewGuideService.keyFor")(function* (
@@ -119,11 +98,7 @@ const make = Effect.gen(function* () {
     return { key, workspaceRoot: project.workspaceRoot, identity: project.repositoryIdentity };
   });
 
-  /**
-   * A guide reads the change in a checkout fetched from the project's own remote, so the pull
-   * request has to be in that repository. One from another repository is refused rather than
-   * measured against commits that are not its own.
-   */
+  /** The checkout comes from this project's remote; cross-repository PRs would be measured against unrelated commits. */
   const requireOwnRepository = Effect.fn("PullRequestReviewGuideService.requireOwnRepository")(
     function* (key: ThreadPullRequestKey, identity: RepositoryIdentity | null | undefined) {
       const own =
@@ -175,11 +150,7 @@ const make = Effect.gen(function* () {
     };
   });
 
-  /**
-   * A detached checkout of the head beside the project, removed when the run ends. Pinned to
-   * the reported commit, so a branch checked out elsewhere works and the checkout is exactly
-   * what the host reported.
-   */
+  /** Pin a disposable detached checkout to the host's reported head, even if its branch is checked out elsewhere. */
   const checkoutHead = Effect.fn("PullRequestReviewGuideService.checkoutHead")(function* (
     workspaceRoot: string,
     detail: PullRequestDetail,
@@ -195,9 +166,7 @@ const make = Effect.gen(function* () {
         args: ["fetch", "--quiet", "--no-tags", remote, ...args],
         timeoutMs: 5 * 60_000,
       });
-    // The base branch is what the change is measured from; the head commit is the change.
-    // The host names the base branch. A name git rejects, or one that would change the refspec
-    // (a leading `+`, a `:`), is refused before it reaches `git fetch`.
+    // Refuse invalid branch names and refspec-changing + or : before fetching host-supplied input.
     yield* git
       .execute({
         operation: "PullRequestReviewGuideService.checkBaseBranch",
@@ -214,8 +183,7 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
-    // Fetched into a ref of this run's own: FETCH_HEAD is shared by every fetch in the
-    // workspace, so a concurrent run could otherwise measure this change from its base.
+    // FETCH_HEAD is shared across concurrent fetches; use this run's private base ref.
     const baseRef = `refs/t3/review-guide/${runId}/base`;
     yield* fetch([`+refs/heads/${detail.baseBranch}:${baseRef}`]);
     yield* Effect.addFinalizer(() =>
@@ -285,8 +253,7 @@ const make = Effect.gen(function* () {
       });
     });
     const resolvedHead = yield* fetchHead(detail.number, headSha, detail.headBranch);
-    // The other layers of a stack are context the model may read across a seam. A layer that
-    // cannot be fetched is still named in the prompt, without a head to read.
+    // Unfetchable stack layers remain prompt context without a readable head.
     const layers: ReadonlyArray<ReviewGuideStackLayer> = yield* Effect.forEach(
       stack?.layers ?? [],
       (layer) => {
@@ -322,8 +289,7 @@ const make = Effect.gen(function* () {
         .removeWorktree({ cwd: workspaceRoot, path, force: true })
         .pipe(Effect.ignore({ log: true })),
     );
-    // Measured from where the head left the base, so a stacked change is briefed alone rather
-    // than with everything below it that the base has not taken yet.
+    // Merge-base isolates this stack layer from lower changes its base has not taken yet.
     const mergeBase = yield* git.execute({
       operation: "PullRequestReviewGuideService.mergeBase",
       cwd: path,
@@ -332,7 +298,6 @@ const make = Effect.gen(function* () {
     return { path, baseCommit: mergeBase.stdout.trim(), stack: layers };
   });
 
-  /** The changed paths and their hunks, which a generated guide is held to. */
   const readChange = Effect.fn("PullRequestReviewGuideService.readChange")(function* (
     cwd: string,
     baseCommit: string,
@@ -342,8 +307,7 @@ const make = Effect.gen(function* () {
         .execute({
           operation: "PullRequestReviewGuideService.readChange",
           cwd,
-          // Fixed prefixes: a user's diff.noPrefix or custom prefixes would hide the headers the
-          // parser reads.
+          // User diff prefixes could hide the headers this parser requires.
           args: [
             "-c",
             "core.quotePath=false",
@@ -353,7 +317,6 @@ const make = Effect.gen(function* () {
             `${baseCommit}...HEAD`,
           ],
           timeoutMs: 60_000,
-          // Hunk headers only, but a large change still has many of them.
           maxOutputBytes: 64 * 1024 * 1024,
         })
         .pipe(Effect.map((result) => result.stdout));
@@ -378,7 +341,6 @@ const make = Effect.gen(function* () {
         pullRequests.activity(input),
         serverSettings.getSettings,
         providerRegistry.getProviders,
-        // A guide without its stack is still a guide; the stack only adds seams to point at.
         pullRequests.stack(input).pipe(Effect.orElseSucceed(() => null)),
       ],
       { concurrency: "unbounded" },
@@ -389,8 +351,6 @@ const make = Effect.gen(function* () {
       providers,
       input.projectId,
     );
-    // The checkout lives only as long as the model is reading it. The change's hunks are read
-    // from it too, so the guide can be held to the lines the change actually touched.
     const { generated, change } = yield* checkoutHead(
       workspaceRoot,
       detail,
@@ -421,8 +381,7 @@ const make = Effect.gen(function* () {
       modelSelection,
       ...normalizeReviewGuide(generated, change),
     };
-    // A newer run for this pull request, say after a push, owns its guide now; this one's result
-    // is for an older head and is dropped rather than written over it.
+    // A newer run owns the PR after a push; do not overwrite its guide with this older head.
     yield* ownership.withPermits(1)(
       Effect.gen(function* () {
         if (yield* owns) yield* guides.put(key, guide);
@@ -430,7 +389,6 @@ const make = Effect.gen(function* () {
     );
   });
 
-  /** What a reader is told when a run fails; the full cause goes to the log. */
   const failureDetail = (cause: Cause.Cause<unknown>): string => {
     const error = Cause.squash(cause);
     if (error instanceof Error && "detail" in error && typeof error.detail === "string") {
@@ -442,7 +400,6 @@ const make = Effect.gen(function* () {
   const generate: PullRequestReviewGuideService["Service"]["generate"] = Effect.fn(
     "PullRequestReviewGuideService.generate",
   )(function* (input) {
-    // A beta the server owns, so every client and agent sees the same answer.
     const settings = yield* serverSettings.getSettings.pipe(
       Effect.mapError(
         (cause) =>
@@ -462,8 +419,7 @@ const make = Effect.gen(function* () {
     const { key, workspaceRoot, identity } = yield* keyFor(input);
     yield* requireOwnRepository(key, identity);
     const runKey = keyString(key);
-    // A press asks for the head as it is now, not a read shared from the last minute, so a guide
-    // is never started for a commit the pull request has already moved past.
+    // Bypass the read cache so generation cannot start for a stale PR head.
     yield* pullRequests.invalidate({ reference: input });
     const [detail, stored] = yield* Effect.all([pullRequests.detail(input), readStored(key)], {
       concurrency: "unbounded",
@@ -480,9 +436,7 @@ const make = Effect.gen(function* () {
       headSha: currentHeadSha,
       startedAt: yield* nowIso,
     };
-    // Claimed atomically, so two readers pressing Generate start one run between them. The head
-    // is read again under the claim: a press that read an older head before a push must not
-    // replace a run another press started for the new one, so it asks to be pressed again.
+    // Claim atomically and re-read the head so concurrent requests cannot replace a newer run with a stale one.
     const claimed = yield* ownership.withPermits(1)(
       pullRequests.detail(input).pipe(
         Effect.flatMap((latest) =>
@@ -505,8 +459,7 @@ const make = Effect.gen(function* () {
     );
     if (claimed !== running) return { guide: stored, run: claimed, currentHeadSha, started: false };
 
-    // The run is identified by its own Running value: a later claim replaces it, and from then
-    // on this run's completion leaves the newer run's state and guide alone.
+    // Reference identity keeps an older completion from changing a newer run's state.
     const owns = Ref.get(runs).pipe(Effect.map((current) => current.get(runKey) === running));
     const finish = (next: PullRequestReviewGuideRun | null) =>
       Ref.update(runs, (current) => {

@@ -57,12 +57,8 @@ function deliver(entries: readonly ResizeObserverEntry[]) {
 }
 
 /**
- * Observes element sizes on one shared ResizeObserver. Its callbacks run after
- * layout and before paint, but React commits state set there after the paint,
- * so layout derived from an observed size would land one frame late. Every
- * resize delivered in a frame runs inside one flushSync, so all size-derived
- * state commits in a single render before that paint. A callback gets one call
- * with the entries for all of its targets, starting with an initial one each.
+ * Batch resize-derived React updates in one flushSync before paint to avoid a frame of stale layout.
+ * Callbacks receive all target entries, starting with an initial delivery for each.
  */
 export function observeResize(
   elements: Element | readonly Element[],
@@ -99,7 +95,6 @@ export function observeResize(
     if (targets.size > 0) {
       for (const element of unobserved) shared.unobserve(element);
     } else {
-      // A fresh observer next time also picks up a ResizeObserver a test stubbed since.
       observer?.disconnect();
       observer = null;
     }

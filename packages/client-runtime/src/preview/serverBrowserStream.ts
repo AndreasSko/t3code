@@ -124,7 +124,6 @@ const previewStreamUploadUrl = (
     target.access,
   );
 
-/** Sends files to a page's open picker. Rejects when the server refuses them. */
 export async function uploadPreviewStreamFiles(
   chooser: PreviewStreamFileChooser,
   files: ReadonlyArray<Blob & { readonly name?: string }>,
@@ -153,7 +152,6 @@ export const previewStreamDownloadUrl = (
     target.access,
   );
 
-/** Answer to a `probe`, echoing its point. */
 export interface PreviewStreamProbe {
   readonly x: number;
   readonly y: number;
@@ -196,12 +194,9 @@ export interface PreviewStreamEvents {
   readonly onFrame: (jpeg: ArrayBuffer) => void;
   readonly onViewport: (viewport: PreviewStreamViewport) => void;
   readonly onProbe?: (probe: PreviewStreamProbe) => void;
-  /** The agent's cursor moved to, or clicked at, a page point. */
   readonly onPointer?: (pointer: PreviewStreamPointer) => void;
   readonly onControl?: (control: PreviewStreamControl) => void;
-  /** Text the page just copied or cut while this viewer had control. */
   readonly onClipboard?: (text: string) => void;
-  /** A file the page downloaded while this viewer had control. */
   readonly onDownload?: (download: PreviewStreamDownload) => void;
   /** The page this viewer controls opened a new tab (a link or `window.open`). */
   readonly onPopup?: (tabId: string) => void;

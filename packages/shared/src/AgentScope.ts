@@ -2,15 +2,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
 /**
- * Isolates long-lived agent and terminal processes from the server on Linux.
- *
- * Each wrapped command runs with a high `oom_score_adj`, so the kernel OOM
- * killer picks it before the server. Under a systemd user manager it also runs
- * in its own transient scope, so systemd-oomd (which kills whole leaf cgroups)
- * kills one agent instead of the server and every other agent.
- *
- * The server provides the real implementation. The default leaves commands
- * unchanged, which is also the behavior on macOS, Windows, and in tests.
+ * Linux agents get high oom_score_adj so OOM kills them before the server.
+ * Separate systemd scopes prevent systemd-oomd from killing every agent with the server.
  */
 export interface AgentScopeShape {
   /**
@@ -74,7 +67,6 @@ export const AgentScopeThreadId = Context.Reference<string | undefined>(
  */
 export const AGENT_OOM_SCORE_ADJ = 800;
 
-/** Shell line that raises the score of the current process, ignoring failure. */
 export const RAISE_OOM_SCORE_LINE = `{ echo ${AGENT_OOM_SCORE_ADJ} >/proc/self/oom_score_adj; } 2>/dev/null`;
 
 const LAUNCH_SCRIPT = [RAISE_OOM_SCORE_LINE, 'exec "$@"'].join("\n");

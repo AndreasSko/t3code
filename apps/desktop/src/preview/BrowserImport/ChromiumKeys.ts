@@ -1,21 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - `node:crypto` implements the
 // OSCrypt key derivation Chromium uses; Effect has no equivalent.
 /**
- * Chromium cookie-encryption keys, per platform.
- *
- * Chromium calls this OSCrypt, and it works differently on each OS:
- *
- * - **macOS** keeps one key in the login keychain. Reading it prompts the
- *   user, which is the consent this feature is built around.
- * - **Linux** may keep a key in libsecret/kwallet (`v11` records), or use a
- *   hardcoded `peanuts` passphrase when no keyring is available (`v10`). Both
- *   can appear in the same database, so both are derived up front and chosen
- *   per record.
- *
- * - **Windows** legacy Chromium stores protect a random AES key with DPAPI.
- *   App-Bound Encryption remains deliberately unsupported.
- *
- * @module ChromiumKeys
+ * Linux databases can mix keyring-backed v11 and fallback v10 records, so derive both keys.
+ * Windows App-Bound Encryption remains unsupported.
  */
 import * as NodeCrypto from "node:crypto";
 
@@ -83,19 +70,8 @@ const derive = (passphrase: string, iterations: number) =>
   NodeCrypto.pbkdf2Sync(passphrase, KEY_SALT, iterations, KEY_LENGTH, "sha1");
 
 /**
- * Reads the macOS OSCrypt secret from the login keychain.
- *
- * Uses the in-process Keychain API rather than shelling out to
- * `/usr/bin/security`, because macOS attributes both the consent prompt and the
- * resulting ACL entry to the binary that asks. Via the CLI the prompt says
- * "security" and "Always Allow" grants trust to a tool every process on the
- * machine can invoke; in-process it names this app and the grant belongs to it.
- * (In an unsigned dev build the name is the dev binary, not the shipped app
- * identity.)
- *
- * Deliberately untimed: macOS answers this with a modal, and a timeout racing
- * the user means the prompt can be approved while nothing is left listening,
- * which reads as "approving did nothing".
+ * Read in-process so Keychain consent and ACL trust belong to this app rather than the shared security CLI.
+ * Do not time out the modal prompt: approval must still have a waiting caller.
  */
 const readKeychainSecret = Effect.fn("ChromiumKeys.readKeychainSecret")(function* (
   service: string,
@@ -127,10 +103,8 @@ const readKeychainSecret = Effect.fn("ChromiumKeys.readKeychainSecret")(function
 });
 
 /**
- * The bundled helper searches Chromium's libsecret schema and application
- * attribute, retaining the desktop's normal unlock prompt. Its exit codes
- * distinguish a missing key, denied access, and an unavailable keyring without
- * parsing localized error messages. Stdout is the unmodified secret.
+ * The bundled helper preserves keyring consent and reports failures through exit codes rather than localized text.
+ * Stdout contains only the unmodified secret.
  */
 export const readLinuxSecret = Effect.fn("ChromiumKeys.readLinuxSecret")(function* (
   application: string,

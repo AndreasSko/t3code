@@ -27,10 +27,8 @@ import type {
 } from "@t3tools/contracts";
 import { isProjectFaviconPath } from "@t3tools/shared/projectFavicon";
 
-// fff-node stays external to the CLI bundle because it dlopens a native
-// library. A static `import` of an external package is a hard error inside a
-// Node single-executable (only built-ins resolve there), so load it through
-// `require`, which reads from the real filesystem in every runtime.
+// Native fff-node stays external to the bundle. Node single-executables resolve external
+// packages through filesystem require, while static imports resolve only built-ins.
 const requireForFff = NodeModule.createRequire(import.meta.url);
 const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
 
@@ -259,15 +257,8 @@ function mapContentMatchRanges(
   }));
 }
 
-/**
- * Whole-word filtering happens after the grep rather than by wrapping the
- * pattern in boundary regex: consuming boundaries such as `(?:^|\W)` swallow
- * the separator between adjacent matches and widen the reported ranges, and
- * `\b` cannot match punctuation-edged queries at all. Matching VS Code, a
- * match edge is a word boundary when it touches the line edge, the
- * neighbouring character is not a word character, or the match's own edge
- * character is not a word character.
- */
+/** Filter after grep: consuming boundaries swallow adjacent separators, and \b misses
+ * punctuation-edged queries. Match edges use VS Code's word-boundary semantics. */
 function isWholeWordRange(
   line: string,
   range: { readonly start: number; readonly end: number },
@@ -309,9 +300,7 @@ const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
       FileFinder.create({
         basePath: cwd,
         disableMmapCache: true,
-        // Content indexing costs scan CPU and memory, so only the on-demand
-        // content-search index pays for it; path-only consumers (file tree,
-        // composer path search, file picker) keep the lightweight index.
+        // Only on-demand content searches should pay the indexing CPU and memory cost.
         disableContentIndexing: variant !== "content",
         aiMode: false,
         enableFsRootScanning: true,
@@ -548,11 +537,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
 export const WORKSPACE_SEARCH_INDEX_VARIANTS = ["paths", "content"] as const;
 export type WorkspaceSearchIndexVariant = (typeof WORKSPACE_SEARCH_INDEX_VARIANTS)[number];
 
-/**
- * Composite LayerMap key so the lightweight path index and the on-demand
- * content-search index of the same workspace are separate resources with
- * independent lifecycles. "\n" cannot appear in a filesystem path.
- */
+/** Separate path and content indexes so the same workspace can have independent resource lifecycles. */
 export const workspaceSearchIndexKey = (cwd: string, variant: WorkspaceSearchIndexVariant) =>
   `${variant}\n${cwd}`;
 
@@ -567,12 +552,7 @@ function parseWorkspaceSearchIndexKey(key: string): {
   };
 }
 
-/**
- * A layer factory is required because every index is scoped to a concrete
- * workspace root and variant. WorkspaceSearchIndexMap owns memoization and
- * idle cleanup; using a default cwd here would mix resources from different
- * workspaces.
- *
+/** Scope indexes to the workspace root and variant; the map owns memoization and idle cleanup.
  * @public Service construction is part of the canonical Effect module API.
  */
 export const layer = (key: string) => {

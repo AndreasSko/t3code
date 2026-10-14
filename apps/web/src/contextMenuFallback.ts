@@ -197,29 +197,20 @@ function isNodeWithinMenuStack(target: EventTarget | null, menuStack: readonly H
   return false;
 }
 
-// Only one fallback menu exists at a time in the renderer; the active one is
-// tracked so a state change (for example a terminal selection clearing) can
-// dismiss it with the same result as an outside click or Escape.
+// Track the single fallback menu so state changes can dismiss it like an outside click or Escape.
 let activeContextMenuDismiss: (() => void) | null = null;
 
 export function isContextMenuOpen(): boolean {
   return activeContextMenuDismiss !== null;
 }
 
-/**
- * Closes the currently open fallback context menu, resolving its show() with
- * null (the same result as dismissing by outside click or Escape). No-op when
- * no fallback menu is open.
- */
+/** Dismiss resolves show() with null, like Escape or an outside click; no-op when closed. */
 export function dismissContextMenu(): void {
   activeContextMenuDismiss?.();
   activeContextMenuDismiss = null;
 }
 
-/**
- * Imperative DOM-based context menu for non-Electron environments.
- * Supports nested submenus and resolves with the clicked leaf item id.
- */
+/** For non-Electron callers; resolves with the clicked leaf item id. */
 export function showContextMenuFallback<T extends string>(
   items: readonly ContextMenuItem<T>[],
   position?: { x: number; y: number },

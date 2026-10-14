@@ -101,7 +101,6 @@ export const ProjectFaviconPath = TrimmedNonEmptyString.check(
 );
 export type ProjectFaviconPath = typeof ProjectFaviconPath.Type;
 
-/** A project's chosen icon, as clients set it. */
 export const ProjectIconOverride = Schema.Union([
   ProjectLucideIcon,
   ProjectEmojiIcon,
@@ -110,9 +109,8 @@ export const ProjectIconOverride = Schema.Union([
 export type ProjectIconOverride = typeof ProjectIconOverride.Type;
 
 /**
- * Before v2, servers sent a monogram as a lucide icon carrying its text, so
- * older clients showed a folder. Icons stored then, and v2 servers released
- * before this change, still use that shape; it is read here, never written.
+ * Stored and older-server monograms can arrive as lucide icons with monogramText.
+ * Decode that shape without writing it.
  */
 const ProjectLucideIconWithLegacyMonogram = Schema.Struct({
   ...ProjectLucideIcon.fields,

@@ -684,11 +684,8 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  // Threads whose transcript import this process has already confirmed.
-  // `transcript_imported_at` is never reset to NULL, so a positive answer
-  // stays valid for the process lifetime; ensureTranscript runs on most
-  // thread reads and command dispatches, so skipping the lock + lookup here
-  // keeps that path off the database entirely after first confirmation.
+  // transcript_imported_at never resets, so cache positive confirmations
+  // to keep frequent reads and dispatches off the import lock and database.
   const confirmedTranscriptThreadIds = new Set<ThreadId>();
 
   const ensureTranscriptBase = (threadId: ThreadId) =>

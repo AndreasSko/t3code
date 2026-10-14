@@ -73,11 +73,7 @@ export function selectOnboardingProvidersByDriver(
   return providersByDriver;
 }
 
-/**
- * Official standalone installers. Neither needs Node or npm, and both land in
- * the paths the server's provider maintenance recognizes as native, so the
- * one-click updater in Settings keeps working after install.
- */
+/** Native installers use paths the server updater recognizes, preserving one-click maintenance. */
 const NATIVE_INSTALL_COMMANDS = {
   claudeAgent: {
     windows: "irm https://claude.ai/install.ps1 | iex",
@@ -89,12 +85,7 @@ const NATIVE_INSTALL_COMMANDS = {
   },
 } as const;
 
-/**
- * Install command for the setup terminal, keyed on the environment's platform
- * (not the client's): a Windows desktop driving a WSL server gets the shell
- * script. Unknown platforms get the shell script too, since the terminal there
- * is a POSIX shell in practice.
- */
+/** Choose by environment platform, not client platform; unknown platforms use the terminal's POSIX shell. */
 export function resolveOnboardingProviderInstallCommand(
   driver: keyof typeof NATIVE_INSTALL_COMMANDS,
   platform: ExecutionEnvironmentPlatformOs,

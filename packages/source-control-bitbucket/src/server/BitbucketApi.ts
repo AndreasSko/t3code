@@ -61,8 +61,6 @@ const BitbucketApiOperation = Schema.Literals([
   "createPullRequest",
   "probeAuth",
   "checkoutPullRequest",
-  // The raw escape hatch. Callers name their own operation in their own error, the way the
-  // pull request wrappers do on top of `gh` and `glab`.
   "request",
 ]);
 type BitbucketApiOperation = typeof BitbucketApiOperation.Type;
@@ -234,11 +232,7 @@ export class BitbucketCheckoutError extends Schema.TaggedError<BitbucketCheckout
   }
 }
 
-/**
- * A url that does not belong to the configured Bitbucket. Refused rather than followed, because
- * the request carries the account's credentials and a url that came back in a response — a
- * pagination cursor, or the target of a redirect — is not this server's to trust.
- */
+/** Refuse response-supplied pagination/redirect URLs outside the configured host before sending credentials. */
 export class BitbucketUntrustedUrlError extends Schema.TaggedError<BitbucketUntrustedUrlError>()(
   "BitbucketUntrustedUrlError",
   {
@@ -330,19 +324,11 @@ export class BitbucketApi extends Context.Service<
   {
     readonly probeAuth: Effect.Effect<SourceControlProviderAuth, never>;
 
-    /**
-     * One authenticated request, returning the body verbatim. Bitbucket answers most endpoints
-     * with JSON and a few — a pull request diff, for one — with plain text, so the body is
-     * handed back undecoded for the caller to read as it sees fit.
-     */
+    /** Returns raw JSON or patch text; callers decode according to the endpoint. */
     readonly request: (input: {
       readonly method: "GET" | "POST" | "PUT" | "DELETE";
-      /**
-       * A path below the API base, or a whole URL as a paged response reports its next page.
-       * A whole URL is refused unless it belongs to the configured Bitbucket.
-       */
+      /** API-relative path or same-origin pagination URL; foreign URLs are refused. */
       readonly url: string;
-      /** A JSON document, for the endpoints that take one. */
       readonly body?: string;
       /** Response bytes to keep; past this the body comes back cut short and marked. */
       readonly maxBytes?: number;
@@ -547,10 +533,7 @@ type BitbucketCredential =
   | { readonly kind: "access-token"; readonly accessToken: string }
   | { readonly kind: "api-token"; readonly email: string; readonly apiToken: string };
 
-/**
- * Visible ASCII only. A value the HTTP stack rejects makes it throw an error quoting the whole
- * header, and that error travels to clients as a cause, so an unusable token is treated as unset.
- */
+/** Reject unsafe header values before the HTTP stack can quote the whole token in an error. */
 const HEADER_SAFE = /^[\x21-\x7e]+$/u;
 
 function credentialFrom(input: {
@@ -567,10 +550,7 @@ function credentialFrom(input: {
   return null;
 }
 
-/**
- * Credentials saved in settings win over the `T3CODE_BITBUCKET_*` environment variables, which
- * stay as a fallback. Within each source the access token wins.
- */
+/** Saved credentials precede environment values; access tokens win within either source. */
 function resolveCredential(
   settings: BitbucketClient.BitbucketSettings,
   env: Config.Success<typeof BitbucketApiEnvConfig>,
@@ -614,7 +594,6 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
   };
 }
 
-/** Null for anything that is not a url at all, which is never the configured Bitbucket. */
 function originOf(value: string): string | null {
   try {
     return new URL(value).origin;
@@ -876,14 +855,7 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  // A pull request's diff, diffstat and conflicts are served as redirects to a commit-range
-  // URL, and the client does not follow redirects unless asked. The hop stays on the same host,
-  // so the credentials travel with it.
-  /**
-   * The one host these credentials may be sent to. A url that came back inside a response — a
-   * pagination cursor, or the target of a redirect — is data, not instruction, so it is checked
-   * against this before the account's token travels with it.
-   */
+  /** Response URLs are untrusted data; tokens may only travel to this API origin. */
   const apiOrigin = originOf(config.baseUrl);
 
   const trustedUrl = (value: string): string | null => {
@@ -892,11 +864,8 @@ export const make = Effect.gen(function* () {
     return origin !== null && origin === apiOrigin ? value : null;
   };
 
-  /**
-   * Redirects are followed here rather than by the client, which forwards every header to
-   * whatever host it is sent to. A pull request diff, diffstat and conflicts are all served as
-   * redirects, so they have to be followed — but only back to the same Bitbucket.
-   */
+  /** Follow diff/diffstat/conflict redirects manually and only to the same Bitbucket;
+   * the HTTP client otherwise forwards credentials to any redirect target. */
   const send = (input: {
     readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly url: string;
@@ -950,9 +919,7 @@ export const make = Effect.gen(function* () {
     send({ ...input, redirects: 0 }).pipe(
       Effect.flatMap((response) =>
         HttpClientResponse.matchStatus({
-          // Read through the body stream rather than `text`, so an oversized diff is stopped
-          // as it arrives instead of being materialized whole and then cut. The same collector
-          // the process runner bounds command output with.
+          // Stream under a byte bound so oversized diffs never materialize whole in memory.
           "2xx": (success) =>
             collectUint8StreamText({
               stream: success.stream,
@@ -1111,12 +1078,8 @@ export const make = Effect.gen(function* () {
         ),
         Effect.map(defaultChangeRequestTargetBranch),
       ),
-    // Bitbucket Cloud pull requests are Git-backed and Bitbucket does not provide
-    // an official checkout CLI. This provider-local path uses GitVcsDriver as a
-    // narrow escape hatch to materialize Bitbucket PR refs. Do not generalize this
-    // as the source-control provider model: if we support non-Git-compatible
-    // hosting providers or native JJ/Sapling checkout flows, move this into a
-    // VCS-specific change-request checkout capability.
+    // Bitbucket has no checkout CLI, so use GitVcsDriver here. Non-Git or native JJ/Sapling
+    // checkouts would need a VCS-specific change-request checkout capability.
     checkoutPullRequest: (input) =>
       Effect.gen(function* () {
         const destinationRepository = yield* resolveRepository(input);

@@ -40,7 +40,7 @@ export function latestProviderTurnTokenUsage(
   return latest;
 }
 
-/** Prefers the provider's live usage report (#8144); falls back to the last compaction item. */
+/** Prefer live usage (#8144), then provider-thread context usage, then the last compaction item. */
 export function deriveLatestContextWindowSnapshot(
   entries: ReadonlyArray<{
     readonly item: OrchestrationV2TurnItem;

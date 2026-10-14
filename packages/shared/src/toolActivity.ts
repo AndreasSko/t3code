@@ -14,7 +14,6 @@ function asTrimmedString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-/** A Claude `Skill` call: the skill it loads and the arguments it passes, if any. */
 export function claudeSkillInvocation(
   toolName: string | null | undefined,
   input: unknown,
@@ -46,10 +45,7 @@ export function dynamicToolSurface(toolName: string | null | undefined, input: u
     : undefined;
 }
 
-/**
- * Activity log heading a dynamic tool derives from its input: a REPL's `title`,
- * or the skill a Claude `Skill` call loads.
- */
+/** Heading from a REPL's title or the skill loaded by a Claude Skill call. */
 export function dynamicToolTitle(
   toolName: string | null | undefined,
   input: unknown,
@@ -201,10 +197,7 @@ function extractPrimaryPath(data: Record<string, unknown> | undefined): string |
   return collectToolFilePaths(data)[0];
 }
 
-/**
- * Later ACP updates often resend `rawInput: {}`. Keep the first object that
- * actually carried keys so a parsed path is not wiped out.
- */
+/** Preserve useful rawInput when ACP resends an empty object. */
 export function mergeToolActivityData(
   previous: unknown,
   next: unknown,

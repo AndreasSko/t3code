@@ -54,10 +54,6 @@ interface ChatHeaderProps {
   onOpenProjectSettings?: (() => void) | undefined;
 }
 
-/**
- * Rename commit rule shared with the sidebar's inline rename: trim, reject
- * empty (the caller toasts), and skip the mutation when nothing changed.
- */
 export function resolveRenameCommit(input: {
   readonly title: string;
   readonly originalTitle: string;
@@ -68,12 +64,7 @@ export function resolveRenameCommit(input: {
   return { action: "commit", title: trimmed };
 }
 
-// How long a click on the thread title waits before opening the action menu,
-// so a double-click-to-rename can cancel it first. Only the native desktop
-// menu needs this: it swallows input while open, so the wait must cover the
-// OS double-click interval. The browser fallback menu keeps seeing DOM
-// events (the second click dismisses it and dblclick still fires), so it
-// opens immediately.
+// Native menus swallow the second click; wait through the OS double-click interval so rename can cancel opening.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
@@ -103,9 +94,7 @@ export const ChatHeader = memo(function ChatHeader({
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
-  // Inline rename, keyed by thread: navigating away drops an in-progress
-  // rename instead of committing stale text. Cleared on thread change (not
-  // just hidden) so returning to the thread doesn't revive the old draft.
+  // Clear rename state on navigation so returning cannot revive an abandoned draft.
   const [renaming, setRenaming] = useState<{
     threadId: ThreadId;
     environmentId: EnvironmentId;
@@ -240,8 +229,6 @@ export const ChatHeader = memo(function ChatHeader({
         openTitleMenuNow();
         return;
       }
-      // Stay pending long enough for dblclick to cancel the open before the
-      // native menu appears and swallows the second click.
       cancelPendingTitleMenu();
       titleMenuTimerRef.current = window.setTimeout(() => {
         titleMenuTimerRef.current = null;

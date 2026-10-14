@@ -26,11 +26,7 @@ import {
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-/**
- * The checks behind the rollup, for a row that only carries the rollup. Mounted by the popup, so
- * the read starts when somebody opens it rather than once per row of a listing — the detail read
- * is a request per pull request, and a page of them at rest would be a hundred.
- */
+/** Fetch only when the popup opens to avoid one detail request per resting listing row. */
 function LazyChecksBody({
   environmentId,
   reference,
@@ -122,13 +118,8 @@ function ChecksBody({
   );
 }
 
-/**
- * The checks indicator and what it opens, in both places a change request is shown: a listing
- * row, which knows only the rollup, and the detail header, which is already holding every check.
- *
- * `checks` decides between the two. Given them, nothing is read; without them, the popup reads
- * the detail itself, which is why the row must also say which environment it came from.
- */
+/** Passing checks avoids a detail read; otherwise supply environment and
+ * reference so the popup can fetch checks when opened. */
 export function PullRequestChecksPopover({
   checksState,
   checks,
@@ -153,7 +144,6 @@ export function PullRequestChecksPopover({
   render?: React.ReactElement;
 }) {
   const presentation = pullRequestChecksStatePresentation(checksState);
-  // Counts beat the rollup's own wording where they are known, the way GitHub's own header reads.
   const runningCount = checks?.filter((check) => check.status === "pending").length ?? 0;
   const failedCount =
     checks?.filter((check) => check.status === "failure" || check.status === "cancelled").length ??
@@ -161,9 +151,7 @@ export function PullRequestChecksPopover({
   const summary = checks === undefined || stale ? null : summarizePullRequestChecks(checks);
   return (
     <Popover>
-      {/* A listing row is itself a button, so the trigger renders as a span: a nested button is
-          not valid inside one. The click is stopped here so opening the checks does not also
-          select the row it sits on. */}
+      {/* Listing rows are buttons, so use a span trigger and stop clicks from selecting the row. */}
       <PopoverTrigger
         nativeButton={variant === "count"}
         aria-label={

@@ -1,11 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Bridges Playwright's WebSocket transport to the desktop's fds.
 /**
- * The server end of the desktop browser channel (see `DesktopBrowserEvent`).
- *
- * Playwright connects over CDP only through a WebSocket URL, so each attached
- * desktop tab gets a loopback endpoint with an unguessable path. Its frames
- * cross the bootstrap file descriptors to the desktop's relay, which owns the
- * tab's `webContents.debugger`. The endpoint only bridges to that one tab.
+ * Playwright requires a CDP WebSocket URL, so each desktop tab gets an unguessable loopback endpoint.
+ * Frames cross bootstrap fds to the relay owning its webContents.debugger (see DesktopBrowserEvent).
  */
 import * as NodeStream from "@effect/platform-node/NodeStream";
 import * as NodeSocketServer from "@effect/platform-node/NodeSocketServer";
@@ -47,12 +43,8 @@ export class DesktopBrowserChannel extends Context.Service<
   {
     /** False when this server was not started by a desktop app. */
     readonly available: boolean;
-    /**
-     * Waits for a tab to be attached. Subscribes before it checks, so an
-     * attach landing in between is never missed. False after `timeout`.
-     */
+    /** Subscribe before checking attachment to avoid missing an intervening attach; false means timeout. */
     readonly awaitAttached: (key: DesktopTabKey, timeout: Duration.Input) => Effect.Effect<boolean>;
-    /** Desktop tabs as they detach. */
     readonly detached: Stream.Stream<DesktopTabKey>;
     /** Desktop tabs as they attach, including a tab coming back after its DevTools close. */
     readonly attached: Stream.Stream<DesktopTabKey>;

@@ -124,8 +124,7 @@ export const AcpRegistryUrlAuthAction = Schema.Struct({
   elicitationId: AcpRegistryProbeText,
   url: AcpRegistryUrl,
   message: Schema.String.check(Schema.isMaxLength(1_024)),
-  // Optional for mixed-version clients. New servers include both timestamps
-  // so a pending browser login remains understandable on another device.
+  // Optional timestamps keep pending browser auth readable on mixed-version clients.
   createdAt: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
   expiresAt: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
 });

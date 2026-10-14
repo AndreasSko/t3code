@@ -5,18 +5,10 @@ import * as FileSystem from "effect/FileSystem";
 
 import * as ProcessRunner from "../processRunner.ts";
 
-/**
- * Best-effort hardware detection for the environment icon. Every probe is
- * allowed to fail: a null result means "no signal", and the client draws a
- * generic server until the user picks something in Settings → Connections.
- */
-
 const DMI_ROOT = "/sys/class/dmi/id";
 const KERNEL_RELEASE_PATH = "/proc/sys/kernel/osrelease";
 
-// SMBIOS 3.x System Enclosure types (table 17). Codes that describe a shape
-// rather than a machine (docking stations, blades enclosures, IoT gateways)
-// fall through to null on purpose.
+// SMBIOS 3.x enclosure codes (table 17); non-machine shapes intentionally fall through.
 const DMI_CHASSIS_KINDS: Readonly<Record<string, EnvironmentMachineKind>> = {
   "3": "desktop", // Desktop
   "4": "desktop", // Low Profile Desktop
@@ -44,11 +36,8 @@ const DMI_CHASSIS_KINDS: Readonly<Record<string, EnvironmentMachineKind>> = {
   "35": "desktop", // Mini PC
 };
 
-// Hypervisors and cloud providers write themselves into the DMI vendor or
-// product strings; any hit means the box is a VM, and a VM reads as "cloud"
-// regardless of the chassis type the hypervisor fakes. Hyper-V is matched on
-// its "Virtual Machine" product, not the "Microsoft Corporation" vendor that
-// physical Surface devices share.
+// VM markers override chassis type; match Hyper-V's Virtual Machine product,
+// not the Microsoft vendor shared by physical Surface hardware.
 const VIRTUALIZATION_MARKERS = [
   "qemu",
   "kvm",
@@ -129,9 +118,7 @@ const runProbe = Effect.fn("runMachineProbe")(function* (input: {
     );
 });
 
-// IOKit's `product` node carries the marketing name ("Mac mini (2024)") on
-// Apple silicon; Intel Macs lack it, so `hw.model` ("Macmini8,1") is the
-// fallback. Both are single-digit-millisecond calls.
+// Apple silicon reports marketing names via IOKit product; Intel needs hw.model fallback.
 const detectDarwinMachineKind = Effect.fn("detectDarwinMachineKind")(function* () {
   const ioreg = yield* runProbe({ command: "ioreg", args: ["-rd1", "-n", "product"] });
   const productName = ioreg?.match(/"product-name"\s*=\s*<"([^"]+)">/)?.[1] ?? null;

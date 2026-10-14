@@ -45,11 +45,7 @@ function RetainedWorkspaceTab(props: {
   ) : null;
 }
 
-/**
- * UIKit retains both controller trees and displays the system tab bar or sidebar for the current size class.
- * On phones, compose is UIKit's own search-role tab, detached like Photos' search button; it never
- * becomes selected and opens a new chat instead.
- */
+/** The phone's search-role tab opens compose without selection; UIKit detaches it from the workspace tabs. */
 export function WorkspaceNativeTabs(props: {
   readonly children: ReactNode;
   readonly hidden: boolean;

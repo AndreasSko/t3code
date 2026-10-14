@@ -15,7 +15,6 @@ export class PullRequestProviderRegistry extends Context.Service<
   }
 >()("t3/pullRequest/PullRequestProviderRegistry") {}
 
-/** Exported for tests, which stand a registry up from providers they supply themselves. */
 export function fromProviders(
   providers: ReadonlyArray<PullRequestProviderApi>,
 ): PullRequestProviderRegistry["Service"] {
@@ -26,12 +25,7 @@ export function fromProviders(
   };
 }
 
-/**
- * The hosts this build can read change requests from. A host with no entry here still shows up
- * in the provider list as unimplemented, so its projects are explained rather than missing.
- *
- * @public Service construction is part of the canonical Effect module API.
- */
+/** @public */
 export const make = Effect.gen(function* () {
   const drivers = yield* Effect.forEach(BuiltInDrivers.BUILT_IN_SOURCE_CONTROL_DRIVERS, (driver) =>
     driver.make.pipe(Effect.map((instance) => instance.pullRequests)),

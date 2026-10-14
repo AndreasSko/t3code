@@ -1,17 +1,5 @@
-/**
- * SourceControlHost — what a source control provider package may ask of the server it runs in.
- *
- * Providers run inside a T3 server but must not import it. The server provides this one
- * service; everything a provider needs from its environment (settings, the process runner)
- * goes through it, so a provider package depends only on `@t3tools/source-control-core` and
- * its own API and CLI code. HTTP, the filesystem, and paths come from Effect's platform
- * services directly.
- *
- * `git` is the subset of the server's git driver that checking out a change request needs; it
- * grows only when a provider needs another operation.
- *
- * @module source-control-core/server/SourceControlHost
- */
+/** Provider packages must not import the server; settings, process and git access use this port.
+ * HTTP, filesystem, and paths use Effect platform services directly. */
 import type {
   GitCommandError,
   ServerSettings,
@@ -49,7 +37,6 @@ export interface SourceControlProcessOutput {
   readonly stderr: string;
   readonly stdoutTruncated: boolean;
   readonly stderrTruncated: boolean;
-  /** Present on real process output; optional so narrow test doubles remain lightweight. */
   readonly stdoutInvalidUtf8?: boolean;
   readonly stderrInvalidUtf8?: boolean;
 }
@@ -78,7 +65,6 @@ export class SourceControlHost extends Context.Service<
       ) => Effect.Effect<SourceControlProcessOutput, VcsError>;
     };
     readonly git: {
-      /** Runs `git -C cwd …args` through the server's git driver, with its limits and metrics. */
       readonly execute: (input: {
         readonly operation: string;
         readonly cwd: string;
@@ -90,10 +76,7 @@ export class SourceControlHost extends Context.Service<
         readonly cwd: string;
         readonly revision: string;
       }) => Effect.Effect<{ readonly commitSha: string }, GitCommandError>;
-      /**
-       * Lists the remotes of the repository at `cwd`. The outer effect resolves the repository
-       * and fails when the server cannot drive one there; the inner one lists its remotes.
-       */
+      /** The outer effect resolves the repository; the inner effect lists its remotes. */
       readonly remotes: (
         cwd: string,
       ) => Effect.Effect<Effect.Effect<VcsListRemotesResult, VcsError>, VcsError>;
@@ -102,7 +85,6 @@ export class SourceControlHost extends Context.Service<
         key: string,
       ) => Effect.Effect<string | null, GitCommandError>;
       readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string, GitCommandError>;
-      /** Adds a remote for `url` unless one exists, and returns the name it is under. */
       readonly ensureRemote: (input: {
         readonly cwd: string;
         readonly preferredName: string;

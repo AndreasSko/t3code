@@ -105,11 +105,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
 
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
-    /** Short label for the tooltip and the confirmation title. */
     summary,
-    /** One line per machine, for the confirmation. */
     lines,
-    /** The servers this run restarts, which stops their running threads. */
     restarts,
     /** Behind machines the run leaves alone, with the reason. */
     skipped,

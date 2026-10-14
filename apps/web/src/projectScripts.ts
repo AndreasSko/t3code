@@ -36,10 +36,7 @@ export function buildProjectScript(id: string, input: ProjectScriptInput): Proje
   };
 }
 
-/**
- * A project runs at most one setup script and one settle script, so saving a
- * script that claims either role takes it from the script that held it.
- */
+/** Each project has at most one script per role (setup or settle); claiming a role releases its previous holder. */
 export function releaseClaimedRoles(
   script: ProjectScript,
   saved: ProjectScriptInput,

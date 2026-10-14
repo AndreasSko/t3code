@@ -11,10 +11,7 @@ export type ThreadHistoryMeta = {
   readonly error: string | null;
   /** True after at least one older page was merged; skip monolithic cache growth. */
   readonly expanded: boolean;
-  /**
-   * Max local turn ordinal known for partial progressive windows. Null when
-   * unknown (legacy cache) or when history meta is cleared for a full snapshot.
-   */
+  /** Partial-window watermark; null for unknown legacy caches or full snapshots. */
   readonly latestLocalTurnOrdinal: number | null;
 };
 
@@ -35,10 +32,7 @@ export function isActiveHistoryRequestCursor(
   return history.historyCursor === requestCursor;
 }
 
-/**
- * Clear history loading after an interrupted load-earlier only when the
- * request cursor is still active. Does not touch stream/status/error.
- */
+/** Clears interrupted loading only for the active cursor, preserving stream status and errors. */
 export function clearActiveHistoryLoading(
   requestCursor: string,
   history: ThreadHistoryMeta,
@@ -59,11 +53,7 @@ function renumberVisible(
   return rows.map((row, position) => (row.position === position ? row : { ...row, position }));
 }
 
-/**
- * Merge an older history page into the live projection. Dedupes by
- * sourceThreadId + sourceItemId, keeps chronological order (older first), and
- * preserves newer live rows already present in state.
- */
+/** Deduplicates by source thread/item ids, preserving newer live rows and older-first ordering. */
 export function mergeOlderHistoryIntoProjection(
   projection: OrchestrationV2ThreadProjection,
   olderItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
@@ -143,12 +133,10 @@ export function applyHistoryPageMeta(
     loading: false,
     error: null,
     expanded: true,
-    // Preserve the partial-timeline watermark across load-earlier pages.
     latestLocalTurnOrdinal: current.latestLocalTurnOrdinal,
   };
 }
 
-/** Whether a client timeline should render its load-earlier control. */
 export function shouldShowLoadEarlierControl(history: ThreadHistoryMeta): boolean {
   return history.hasMoreHistory || history.error !== null;
 }

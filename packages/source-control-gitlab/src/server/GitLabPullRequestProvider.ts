@@ -22,16 +22,11 @@ const CAPABILITIES: PullRequestCapabilities = {
   actions: [...definition.changeRequestActions],
   // GitLab offers all three, though a project settles on one; `mergeCapabilities` narrows it.
   mergeMethods: ["merge", "squash", "rebase"],
-  // Rebase alone: GitLab moves a stale branch onto its target by replaying it, and has nothing
-  // that merges the target back in the way GitHub's update button can. Declaring only what it
-  // does is what lets a request to merge the target in be refused instead of quietly rebasing.
+  // GitLab has no merge-target-in update, so advertise rebase alone.
   updateMethods: ["rebase"],
   search: true,
   reactions: true,
-  // GitLab keeps a reader's viewed files in one browser's local storage, where nothing outside
-  // that browser can read or write them. So the marks made here are this environment's own: they
-  // follow the reader between the clients connected to it, but they are not the ones gitlab.com
-  // shows, and the surface says so rather than implying a review can be carried on from there.
+  // GitLab viewed marks live in browser local storage; environment marks let connected clients share them.
   viewedFiles: "environment",
   review: {
     inlineComment: true,
@@ -45,11 +40,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   edit: { changeRequest: true, comment: true },
 };
 
-/**
- * The actions `user.can_merge` answers for. Rebasing writes to the source branch rather than to
- * the target, so it is not literally the same permission — but GitLab reports nothing narrower,
- * and someone it will not let land this change has no business rewriting its branch either.
- */
+/** GitLab exposes no narrower branch-write permission, so rebase uses can_merge too. */
 const MERGE_ACTIONS: ReadonlySet<string> = new Set([
   "merge",
   "update-branch",
@@ -57,26 +48,12 @@ const MERGE_ACTIONS: ReadonlySet<string> = new Set([
   "disable-auto-merge",
 ]);
 
-/**
- * What the signed-in account may do here. GitLab answers exactly one of these questions per
- * viewer, on the merge request itself: `user.can_merge`, which is why merging is the only thing
- * narrowed.
- *
- * The rest stay granted. GitLab's REST API reports the viewer's role on the project but never
- * whether they opened this merge request — and its author may close it, reopen it and move it in
- * and out of draft whatever their role, just as the author of a note may resolve the discussion
- * it started. Withholding those controls from the one person entitled to them is the worse of the
- * two mistakes, so they are offered and GitLab explains any refusal itself.
- *
- * Asking for a review is granted for the same reason: GitLab takes a reviewer set from the author
- * and from anyone with the Developer role, and states neither of those two facts here.
- */
+/** Only can_merge is reported for the viewer. Keep other controls available because authors
+ * can act with read access and GitLab does not report that authorship here. */
 export function gitLabViewerPermissions(input: {
   readonly viewerCanMerge: boolean;
 }): PullRequestViewerPermissions {
   return {
-    // Arming the merge and taking the arming back are the merge, deferred, so they answer to
-    // the same `can_merge` the merge itself does.
     actions: CAPABILITIES.actions.filter(
       (action) => !MERGE_ACTIONS.has(action) || input.viewerCanMerge,
     ),
@@ -88,7 +65,6 @@ export function gitLabViewerPermissions(input: {
   };
 }
 
-/** The CLI tags that mean the tool itself is unusable, rather than one request failing. */
 export function gitLabProviderFailure(
   error: GitLabPullRequestCli.GitLabPullRequestCliError,
 ): PullRequestProviderFailure {
@@ -132,8 +108,7 @@ export const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.mapError(fail("listChangeRequests")),
-          // GitLab is asked for its merge requests by update, newest first, whether or not it is
-          // being carried on from — so every page it answers is one a cursor can continue.
+          // GitLab's update-descending order supports continuation on every page.
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
@@ -198,9 +173,7 @@ export const make = Effect.gen(function* () {
             ...comment,
             reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
           })),
-          // GitLab reports no count of its own, so the walk's own total is the host's: the
-          // notes endpoint carries every comment on the merge request, including the ones
-          // written under a discussion, and it is read until GitLab runs out.
+          // GitLab has no count; notes include discussion replies, so use the number read.
           commentCount: notes.comments.length,
           commentsTruncated: notes.truncated || discussions.truncated,
           reviewThreads: discussions.threads.map((thread) => ({
@@ -226,9 +199,7 @@ export const make = Effect.gen(function* () {
     getDiffFileContents: (input) =>
       cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
 
-    // What each marked file is at the head, which is what tells a mark that still stands from one
-    // the branch has moved past. GitLab's own local-storage marks are keyed on the blob id too,
-    // so this stales at the same moment its web UI would.
+    // Blob ids invalidate marks after pushes, matching GitLab's own local-storage marks.
     getFileRevisions: (input) =>
       cli.getFileRevisions(input).pipe(
         Effect.mapError(fail("getFileRevisions")),

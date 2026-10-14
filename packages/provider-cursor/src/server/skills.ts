@@ -1,12 +1,6 @@
 /**
- * CursorSkills — workspace-aware discovery and native invocation for Cursor.
- *
- * Cursor discovers Agent Skills recursively from user and project roots but
- * its ACP command catalog only appears after opening a real session. Scanning
- * the same roots avoids starting an agent and its MCP servers just to populate
- * a composer menu.
- *
- * @module provider/Drivers/CursorSkills
+ * Scan Cursor's skill roots because its ACP catalog requires opening a session
+ * and booting MCP servers just to populate the composer menu.
  */
 
 import type { ServerProviderSkill } from "@t3tools/contracts";

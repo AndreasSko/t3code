@@ -1,28 +1,3 @@
-// Per-instance backend factory. Replaces the legacy singleton
-// `DesktopBackendManager` Context.Service: each call to
-// `makeBackendInstance(spec)` constructs an isolated backend lifecycle —
-// its own state Ref, mutex, restart loop, and active child process. The
-// returned `DesktopBackendInstance` exposes start/stop/snapshot/wait
-// methods that operate on that single backend.
-//
-// The pool layer (`DesktopBackendPool.ts`) calls this factory once per
-// backend it wants to run. Today that's the Windows primary; follow-up
-// commits add a second call for the WSL instance.
-//
-// Singleton couplings that the legacy service held inline are now
-// parameterized via the spec:
-//   - configResolve replaces the legacy `DesktopBackendConfiguration.resolve`
-//     so each instance can resolve its own start config — the primary wires
-//     `configuration.resolvePrimary`, the WSL orchestrator wires a
-//     `configuration.resolveWsl({ port, distro })` closure.
-//   - onReady / onShutdown drive UI side effects (window auto-open,
-//     readiness latch) only for instances that want them — the primary's
-//     spec passes the window's handleBackendReady/handleBackendNotReady,
-//     other pool instances pass nothing.
-//   - log writes go through a per-instance writer that the factory
-//     pulls from `DesktopBackendOutputLogFactory.forInstance(spec.id)`,
-//     so each instance lands in its own rotating file.
-
 import * as Brand from "effect/Brand";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -58,10 +33,8 @@ import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
-// After this many consecutive fatal preflight failures, stop the silent
-// restart loop and surface the reason via onPreflightFailed. Transient
-// failures may instead provide their own larger retryLimit when they should
-// self-heal for a while but must not leave the app connecting forever.
+// Bound fatal preflight retries; transient failures may specify a longer
+// self-healing window so startup cannot remain connecting forever.
 const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(1);
 const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
@@ -92,9 +65,7 @@ export type DesktopBackendBootstrapDelivery = "fd3" | "stdin";
 export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly args: ReadonlyArray<string>;
   readonly env: Record<string, string | undefined>;
-  // When true the spawner merges the desktop process.env on top of `env`;
-  // when false `env` is passed verbatim. WSL mode opts out so a leaking
-  // T3CODE_HOME can't pin the WSL backend to /mnt/c/...\.t3.
+  // WSL disables environment merging so T3CODE_HOME cannot pin it to the Windows database.
   readonly extendEnv: boolean;
   readonly bootstrap: DesktopBackendBootstrapValue;
   readonly bootstrapDelivery: DesktopBackendBootstrapDelivery;
@@ -104,17 +75,12 @@ export interface DesktopBackendStartConfig extends BackendProcessContext {
   // Present for a WSL run after the configured/default distro has been
   // resolved to the concrete distro passed to wsl.exe.
   readonly runningDistro?: string;
-  // Present only when this run launched from a staged WSL-local runtime.
-  // Once HTTP readiness succeeds, the manager uses it to retain this cache
-  // plus the newest previous cache and prune older versions.
+  // After HTTP readiness, retain this staged cache and the newest previous version.
   readonly wslRuntimeId?: string;
 }
 
-// A preflight failure records whether it is fatal. Transient failures (WSL
-// cold-starting, wslpath while the VM boots) keep retrying so the backend can
-// self-heal; fatal ones (no node, wrong version, missing build tools) are
-// surfaced via onPreflightFailed and stop the restart loop after
-// MAX_PREFLIGHT_FAILURE_ATTEMPTS.
+// Fatal failures use the default retry cap unless retryLimit overrides it.
+// Transient failures retry indefinitely without a retryLimit.
 export interface PreflightFailure {
   readonly reason: string;
   readonly fatal: boolean;
@@ -254,11 +220,6 @@ export interface DesktopBackendSnapshot {
   readonly restartScheduled: boolean;
 }
 
-// Opaque identifier for one backend process inside the pool. Today only
-// PRIMARY_INSTANCE_ID is registered. Follow-up commits add WSL distros
-// under ids derived from the distro name (e.g. "wsl:ubuntu"). Eventually
-// these map 1:1 with environment ids on the frontend; keeping them
-// desktop-local for now avoids leaking the contracts dependency.
 export type BackendInstanceId = string & Brand.Brand<"BackendInstanceId">;
 export const BackendInstanceId = Brand.nominal<BackendInstanceId>();
 
@@ -266,9 +227,6 @@ export const PRIMARY_INSTANCE_ID: BackendInstanceId = BackendInstanceId(
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 );
 
-// One pooled backend instance. Same lifecycle surface as the legacy
-// `DesktopBackendManagerShape`; the id and label give the pool registry
-// + UI something to route on.
 export interface DesktopBackendInstance {
   readonly id: BackendInstanceId;
   readonly label: Effect.Effect<string>;
@@ -276,31 +234,16 @@ export interface DesktopBackendInstance {
   readonly stop: (options?: { readonly timeout?: Duration.Duration }) => Effect.Effect<void>;
   readonly currentConfig: Effect.Effect<Option.Option<DesktopBackendStartConfig>>;
   readonly snapshot: Effect.Effect<DesktopBackendSnapshot>;
-  // Polls desiredRunning + the instance's own ready flag until the
-  // backend reports ready, or the timeout elapses. Returns true on
-  // ready, false on timeout. Used by the WSL backend swap to drive its
-  // rollback path.
+  // Returns false if stopped or timed out.
   readonly waitForReady: (timeout: Duration.Duration) => Effect.Effect<boolean>;
 }
 
-// Spec describing one backend instance to spawn. The configResolve
-// effect is awaited each time the instance is (re)started so live
-// settings changes are picked up on the next start cycle. onReady and
-// onShutdown let the primary instance trigger UI side effects (window
-// open, global readiness flag) without coupling the factory to those
-// concerns; other instances pass them as undefined.
+// Re-resolve config on every start so backend restarts pick up settings changes.
 export interface BackendInstanceSpec {
   readonly id: BackendInstanceId;
   readonly label: Effect.Effect<string>;
-  // configResolve can now fail with PlatformError because the
-  // bootstrap-token closure inside DesktopBackendConfiguration uses
-  // crypto.randomBytes (Effect 4 beta.73 migration).
   readonly configResolve: Effect.Effect<DesktopBackendStartConfig, PlatformError.PlatformError>;
-  // Receives the *resolved* httpBaseUrl of the run that just became
-  // ready. The window service uses this to decide what URL to load
-  // (the WSL backend reports its distro IP, the Windows backend reports
-  // 127.0.0.1). Splitting this off from configResolve avoids races
-  // between "fired onReady" and "currentConfig already advanced".
+  // Pass this run's URL directly so onReady cannot observe a newer currentConfig.
   readonly onReady?: (httpBaseUrl: URL) => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   // Fired once when a fatal or bounded preflight failure has exhausted its
@@ -609,14 +552,8 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       ).pipe(Effect.forkScoped),
     );
   }
-  // Probe readiness in a loop while the backend process is still alive
-  // instead of giving up after the first budget. A slow cold boot (the
-  // WSL bundle loading across /mnt/c, or a first launch right after an
-  // update) can exceed the initial readiness budget while the backend is
-  // about to come up moments later; a one-shot probe left the app stuck
-  // on "Connecting to WSL…" forever even though the backend kept running
-  // and became healthy. Each round gets a fresh budget, and the forked
-  // loop is torn down with the run scope once the child exits.
+  // Cold boots can exceed one readiness budget; keep probing while the child lives.
+  // The run scope cancels the probe loop when that child exits.
   const probeReadiness = Effect.fn("desktop.backendProcess.probeReadiness")(() =>
     waitForHttpReady({
       executablePath: options.executablePath,
@@ -668,11 +605,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   } satisfies BackendProcessExit;
 });
 
-// Factory for one pooled backend instance. The returned instance owns
-// its own state Ref, mutex, restart loop, and active child process;
-// nothing is shared between instances created from separate
-// makeBackendInstance calls. The instance shuts down automatically when
-// the calling scope closes (typically the application scope).
+/** Each instance owns an independent lifecycle and stops when the calling scope closes. */
 export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   spec: BackendInstanceSpec,
 ): Effect.fn.Return<
@@ -784,9 +717,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
         if (Option.isSome(preflightFailure)) {
           const { reason, fatal, retryLimit } = preflightFailure.value;
           if (!fatal && retryLimit === undefined) {
-            // Transient (WSL cold-starting, wslpath while the VM boots). Keep
-            // retrying so the backend self-heals once WSL is ready. Reset a
-            // prior bounded/fatal streak because this is a different failure.
+            // An unbounded transient failure breaks the bounded/fatal failure streak.
             yield* Ref.update(state, (latest) =>
               latest.preflightFailureAttempt === 0
                 ? latest
@@ -801,9 +732,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             return [next, { ...latest, preflightFailureAttempt: next }] as const;
           });
           if (attempt > attemptLimit) {
-            // We already surfaced and asked for the Windows fallback, yet we're
-            // still resolving the WSL primary — the fallback didn't take (e.g.
-            // the settings write failed). Stop rather than loop forever.
+            // Stop if configuration still fails after the callback requested a fallback.
             yield* logInstanceError("backend preflight still failing after fallback; stopping", {
               reason,
               attempt,
@@ -816,10 +745,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             return;
           }
           if (attempt === attemptLimit) {
-            // Fatal/bounded and out of retries. Surface the reason (onPreflightFailed,
-            // on the primary, shows a dialog and persists Windows mode), then
-            // schedule one more restart so the next resolve picks up the Windows
-            // primary and a window can open.
+            // Let the callback change configuration before deciding whether to restart.
             yield* logInstanceError(
               "backend preflight failed repeatedly; surfacing and falling back",
               { reason, attempt },
@@ -841,8 +767,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           yield* scheduleRestart(reason);
           return;
         }
-        // Clean preflight — reset the fatal counter so a later failure gets a
-        // fresh allowance.
         yield* Ref.update(state, (latest) =>
           latest.preflightFailureAttempt === 0 ? latest : { ...latest, preflightFailureAttempt: 0 },
         );
@@ -1193,8 +1117,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const waitForReady = (timeout: Duration.Duration): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       const current = yield* Ref.get(state);
-      // Return false early if an external `stop()` flipped desiredRunning off
-      // — no point polling for a backend that is being torn down.
       if (!current.desiredRunning) return { done: true, ready: false };
       return current.ready ? { done: true, ready: true } : { done: false, ready: false };
     }).pipe(

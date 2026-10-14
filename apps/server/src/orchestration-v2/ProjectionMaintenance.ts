@@ -66,13 +66,8 @@ export const layer: Layer.Layer<
     const eventStore = yield* EventStore.EventStoreV2;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
 
-    /**
-     * EventSink commits the event, its projection updates, and projection metadata in one SQL
-     * transaction. Startup verification therefore checks that transaction boundary and that every
-     * stored projection can be decoded. It intentionally does not replay domain events through a
-     * second projector: doing so creates another implementation of projection semantics that must
-     * evolve in lockstep with ProjectionStore.
-     */
+    // Verify the atomic commit boundary and decodability; replaying through a second
+    // projector would duplicate semantics that must stay in lockstep with ProjectionStore.
     const verify = Effect.gen(function* () {
       const expectedThreadRows = yield* sql<{ readonly thread_id: string }>`
         SELECT DISTINCT stream_id AS thread_id
@@ -202,10 +197,8 @@ export const layer: Layer.Layer<
           Effect.mapError((cause) => new ProjectionMaintenanceError({ operation, cause })),
         );
 
-    // Thread-state events whose payload is the complete thread: only the
-    // newest per thread can influence a replay or an afterSequence catch-up.
-    // thread.created stays out — verify derives the expected thread set from
-    // it, and it anchors replay ordering.
+    // Complete thread snapshots supersede earlier ones; retain thread.created
+    // because it defines the expected thread set and anchors replay ordering.
     const SUPERSEDABLE_THREAD_EVENT_TYPES = [
       "thread.archived",
       "thread.unarchived",
@@ -233,12 +226,8 @@ export const layer: Layer.Layer<
     // Keep subagent.updated and turn-item.updated rows: slimmed payloads reference their prompts.
     const COMPACTION_PAGE_SIZE = 500;
 
-    /**
-     * Scan newest first to retain the newest state for each entity.
-     * Page every event, including non-candidates: filtering before LIMIT could
-     * still scan the entire history when superseded events are sparse.
-     * turn-item.updated stays intact because replay assigns positions on first write.
-     */
+    // Page all events before filtering so sparse candidates cannot force a full history scan.
+    // Keep turn-item.updated because replay assigns positions on first write.
     const compactEventStore = Effect.gen(function* () {
       const bounds = yield* sql<{
         readonly event_sequence: number;

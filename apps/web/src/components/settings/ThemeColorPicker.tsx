@@ -28,11 +28,7 @@ export function getThemeRoleLabel(role: ThemeColorRole): string {
   return role.replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
 }
 
-/**
- * The picker remains an sRGB/hex adapter over the OKLCH palette engine. Alpha
- * is preserved separately and re-attached on commit so adjusting hue or
- * brightness cannot change transparency.
- */
+/** Preserve alpha separately so sRGB/hex hue and brightness edits cannot change transparency. */
 function themePickerAlphaSuffix(value: string): string {
   const normalized = themeColorToHex(value) ?? "";
   const alpha = normalized.length === 9 ? normalized.slice(7) : "";
@@ -90,9 +86,8 @@ function ThemeColorPickerPanel({
   const currentRgb = themeRgbValue(currentColor);
 
   useEffect(() => {
-    // While a text field is focused, the incoming value may be the guided
-    // editor's readability-adjusted echo of what is being typed; rewriting the
-    // draft would fight the keystrokes. The swatch still tracks via hsv.
+    // Guided readability updates can echo typed values; do not overwrite focused
+    // drafts and fight keystrokes. Swatches still follow hsv.
     if (!isEditingTextRef.current) {
       setHexDraft(normalizedValue);
       setRgbDraft(themeRgbValue(normalizedValue));
@@ -106,15 +101,12 @@ function ThemeColorPickerPanel({
     );
   }, [normalizedValue]);
 
-  // Local state updates immediately for a smooth thumb; the parent commit
-  // (which can regenerate a whole guided palette) is batched to one call per
-  // animation frame.
+  // Batch expensive guided-palette commits once per frame while updating the thumb immediately.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const pendingCommitRef = useRef<string | null>(null);
   const commitFrameRef = useRef<number | null>(null);
-  // The final drag frame must not be lost when the popover closes or the
-  // pointer lifts before the animation frame fires.
+  // Flush the final drag update even if closure or pointer release precedes its animation frame.
   const flushPendingCommit = useCallback(() => {
     if (commitFrameRef.current !== null) {
       cancelAnimationFrame(commitFrameRef.current);
@@ -161,8 +153,6 @@ function ThemeColorPickerPanel({
     if (!nextColor) return;
     setHsv(hexToHsv(nextColor));
     setHexDraft(nextColor);
-    // RGB cannot express alpha, so a commit keeps the incoming suffix just
-    // like the plane and hue controls do.
     onChange(nextColor + alphaSuffix);
   };
 

@@ -36,11 +36,7 @@ export interface ProjectThreadStartTurnSpec {
   readonly worktreeBranchName: string;
 }
 
-/**
- * Single source of the `thread.turn.start` bootstrap payload used to create a
- * thread from a project draft — shared by the immediate send path and the
- * offline outbox drain so both deliver identical commands.
- */
+/** Share the bootstrap payload so immediate sends and offline outbox delivery produce identical commands. */
 export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpec) {
   const title = deriveThreadTitleSeed({ text: spec.text, attachments: spec.uploadedAttachments });
   const isWorktree = spec.workspaceMode === "worktree";

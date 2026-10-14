@@ -6,27 +6,8 @@ function isAtLeastAsNew(candidate: string | null, kept: string | null): boolean 
   return kept === null || candidate >= kept;
 }
 
-/**
- * One row per check rather than one per run of it.
- *
- * A host's rollup is a list of runs, not a list of checks: while a workflow is being re-run — or
- * while a second run of it is already live — the same check arrives twice, and both copies reach
- * the reader as what looks like a duplicate. Nothing in a check carries an id, so the name is what
- * identifies it, qualified by the workflow it belongs to since two workflows are free to name a
- * job the same thing.
- *
- * Within a group the newest run is the one worth showing: a re-run is the answer that replaces the
- * one before it, and a run that never said when it happened loses to one that did. A tie goes to
- * whichever came last, because a host lists a re-run after the run it repeats.
- *
- * The order is the host's own, held at the place each check first appeared, so a re-run landing
- * mid-read replaces a row where it stands instead of reshuffling the list under the reader.
- *
- * Two checks that survive under the same name are then genuinely different ones, since they came
- * from different workflows — each is shown as `workflow / name`, the way GitHub writes it itself.
- * A survivor whose workflow the host did not name keeps its bare name rather than being qualified
- * with nothing.
- */
+/** Keep the newest run per workflow/name, ties going to the last occurrence.
+ * Preserve first appearance order; qualify surviving duplicate names by workflow. */
 export function dedupeChecks(
   entries: ReadonlyArray<{
     readonly check: PullRequestCheck;

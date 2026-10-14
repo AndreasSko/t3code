@@ -202,9 +202,6 @@ const RuntimeErrorType = Schema.Literal("runtime.error");
 const ProviderRuntimeEventBase = Schema.Struct({
   eventId: EventId,
   provider: ProviderDriverKind,
-  // Optional during the driver/instance migration. See providerInstance.ts
-  // for the routing-key-vs-driver-id distinction. Once every emitter
-  // populates it (post-slice-4), routing flips to instance-id-only.
   providerInstanceId: Schema.optional(ProviderInstanceId),
   threadId: ThreadId,
   createdAt: IsoDateTime,
@@ -445,9 +442,8 @@ export const ItemLifecyclePayload = Schema.Struct({
   toolSource: Schema.optional(ToolActivitySource),
   data: Schema.optional(Schema.Unknown),
   /**
-   * Owning agent when this item ran inside a subagent (resolved from the
-   * SDK's parent_tool_use_id). Clients re-home attributed items out of the
-   * main timeline and into the owning agent's Agents-surface row.
+   * Resolved from the SDK's parent_tool_use_id; clients move attributed items
+   * from the main timeline to the owning agent's row.
    */
   agentId: Schema.optional(TrimmedNonEmptyStringSchema),
   parentToolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
@@ -511,10 +507,8 @@ const UserInputResolvedPayload = Schema.Struct({
 export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 
 /**
- * Typed per-task usage rollup. Field names match the orchestration-v2 subagent
- * usage vocabulary (#4779) so the eventual migration is a rename, not a remap.
- * Claude reports per-activation deltas; Codex reports cumulative totals — the
- * merge strategy is provider-specific and lives in client-runtime.
+ * Claude reports per-activation deltas; Codex reports cumulative totals.
+ * The provider-specific merge strategy lives in client-runtime.
  */
 export const RuntimeTaskUsage = Schema.Struct({
   totalTokens: NonNegativeInt,
@@ -543,26 +537,16 @@ export const TaskRunHandles = Schema.Struct({
 export type TaskRunHandles = typeof TaskRunHandles.Type;
 
 /**
- * Optional agent-identity linkage carried on every task lifecycle payload.
- * Repeated on progress and terminal rows (not just start) so client folds can
- * reconstruct an agent even when its start row aged out of activity retention.
- * All fields optional: old emitters and old rows decode unchanged.
+ * Repeat identity linkage on progress and terminal rows so folds can reconstruct
+ * an agent after its start row expires from activity retention.
  */
 const taskAgentLinkageFields = {
   /** SDK task_type (subagent/shell/monitor/local_workflow/…), repeated on
    * every row so folds can classify without the start row. */
   taskType: Schema.optional(TrimmedNonEmptyStringSchema),
-  /**
-   * Server-stamped classification, set at ingestion.
-   * Clients trust this stamp outright; rows without it (legacy, pre-stamp)
-   * fall back to client-side heuristics.
-   */
+  /** Clients trust the server-stamped classification; unstamped rows use heuristics. */
   agentKind: Schema.optional(Schema.Literals(["agent", "background"])),
-  /**
-   * Owning agent when the task itself was launched from inside a subagent
-   * (e.g. a subagent's background shell). Clients treat such tasks as
-   * agent-internal and keep them out of the parent work log.
-   */
+  /** Tasks owned by a subagent stay out of the parent work log. */
   agentId: Schema.optional(TrimmedNonEmptyStringSchema),
   title: Schema.optional(TrimmedNonEmptyStringSchema),
   role: Schema.optional(TrimmedNonEmptyStringSchema),
@@ -617,18 +601,13 @@ const TaskProgressPayload = Schema.Struct({
   usage: Schema.optional(Schema.Unknown),
   typedUsage: Schema.optional(RuntimeTaskUsage),
   lastToolName: Schema.optional(TrimmedNonEmptyStringSchema),
-  /** Present on synthesized member/child progress rows that carry state. */
   status: Schema.optional(RuntimeTaskStatus),
   error: Schema.optional(TrimmedNonEmptyStringSchema),
   ...taskAgentLinkageFields,
 });
 export type TaskProgressPayload = typeof TaskProgressPayload.Type;
 
-/**
- * Non-terminal status patch (from the Claude SDK's task_updated, which main
- * previously dropped). killed→cancelled and paused→idle are mapped at the
- * adapter so the wire only carries the shared vocabulary.
- */
+/** Map Claude SDK task_updated statuses at the adapter: killed to cancelled, paused to idle. */
 const TaskUpdatedPayload = Schema.Struct({
   taskId: RuntimeTaskId,
   status: Schema.optional(RuntimeTaskStatus),
@@ -704,10 +683,6 @@ const AccountUpdatedPayload = Schema.Struct({
 });
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
-/**
- * Adapters normalise their native rate-limit payload at the boundary so the
- * consumer that folds it into the provider snapshot never sees driver shapes.
- */
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
   limits: ProviderUsageLimitsUpdate,
 });

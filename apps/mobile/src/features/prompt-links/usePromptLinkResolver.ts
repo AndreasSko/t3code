@@ -45,7 +45,6 @@ import {
   promptLinkSearchFromParams,
 } from "./prompt-link-model";
 
-/** What a `new` link asks for, in one shape for every destination. */
 type LinkedDraftRequest = {
   readonly prompt: LinkedPrompt | null;
   readonly provider: string | null;
@@ -53,11 +52,7 @@ type LinkedDraftRequest = {
   readonly pullRequest: PromptLinkPullRequest | null;
 };
 
-/**
- * Opens a `t3code://new?…` link. The link lands on the New Task picker with its query as route
- * params; this resolves it to a project, a thread, or a choice, then fills a draft. Nothing is
- * ever sent: the user reads the prompt and presses Send. Used by `NewTaskRouteScreen`.
- */
+/** Resolves t3code://new route params into a draft; never sends the prompt. */
 export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> | undefined) {
   const navigation = useNavigation();
   const flow = useNewTaskFlow();
@@ -82,8 +77,7 @@ export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> 
         environment.connectionState === "connecting" || environment.connectionError === null,
     );
 
-  // Writes the prompt and the requested model into a draft. Returns true when the link named a
-  // model the user cannot use, so their default stands in.
+  // Returns true when the requested model is unavailable and the default is used.
   const writeDraft = (
     draftKey: string,
     environmentId: EnvironmentId,
@@ -158,7 +152,6 @@ export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> 
 
   const openScratchDraft = async (request: LinkedDraftRequest) => {
     const environmentId = promptLinkScratchEnvironmentId(
-      // Machines by their latest thread, scratch threads included.
       latestThreadEnvironmentIds(threads),
       connectedEnvironments
         .filter(
@@ -193,9 +186,7 @@ export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> 
     await openProjectDraft(result.value, { ...request, pullRequest: null });
   };
 
-  // Clone needs a tap on the destination screen, which then opens a draft in the cloned project
-  // holding the prompt. A pull request's prompt belongs on its branch, which only exists once the
-  // clone is done, so that link, like any on an older server, has to be opened again.
+  // PR prompts require a completed clone; the user must reopen that link afterward.
   const cloneRepository = (repository: PromptLinkRepository, request: LinkedDraftRequest) => {
     const environmentId =
       flow.selectedEnvironmentId ?? connectedEnvironments[0]?.environmentId ?? null;

@@ -1,12 +1,6 @@
 /**
- * KeyedCoalescingWorker - A keyed worker that keeps only the latest value per key.
- *
- * Enqueues for an active or already-queued key are merged atomically instead of
- * creating duplicate queued items. Each batch yields to other queued keys before
- * processing newer updates. `drainKey()` resolves only when that key has no
- * queued, pending, or active work left.
- *
- * @module KeyedCoalescingWorker
+ * Enqueues for active or queued keys merge atomically. Each batch yields to other keys
+ * before processing newer updates; drainKey resolves only after all work for that key ends.
  */
 import * as Scope from "effect/Scope";
 import * as Effect from "effect/Effect";

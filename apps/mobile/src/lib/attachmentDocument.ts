@@ -18,11 +18,7 @@ const isLocalUri = (uri: string) => /^(file|content):/.test(uri);
 /** Signed asset URLs live for an hour; treat anything older than this as worth re-minting. */
 const STALE_URL_MS = 5 * 60_000;
 
-/**
- * Loads a captured attachment for viewing: a fresh signed URL for a sent or uploaded file,
- * a leased local file for a draft. Text kinds read a bounded prefix; documents hand their
- * URL to a native or web renderer. Captured bytes never resolve against the workspace.
- */
+/** Preview captured bytes from a signed asset or leased draft file, never from the workspace. */
 export function useAttachmentDocument(input: {
   readonly name: string;
   readonly mimeType: string;
@@ -55,8 +51,7 @@ export function useAttachmentDocument(input: {
     [content, delimiter],
   );
   const [error, setError] = useState<string | null>(null);
-  // Reading source is a separate failure from loading the file: a rendered HTML page can be
-  // fine while its bytes are not UTF-8, and switching back to the page must not stay stuck.
+  // Source can fail UTF-8 decoding while rendered HTML remains usable.
   const [contentError, setContentError] = useState<string | null>(null);
   const textReadUrl = useRef<{ uri: string; authorizedAt: number } | null>(null);
   const [rendered, setRendered] = useState(true);
@@ -96,8 +91,7 @@ export function useAttachmentDocument(input: {
   }, [attachment, refresh, revision]);
   useEffect(() => {
     if (!attachment) return;
-    // A new attachment must not keep the previous file behind it: `share()` would otherwise
-    // send the old bytes under the new name if this load fails.
+    // Clear stale bytes so a failed new load cannot share the previous file under the new name.
     // oxlint-disable-next-line react/set-state-in-effect -- A new attachment invalidates the last one.
     setLocalUri(null);
     setContent(null);
@@ -133,8 +127,7 @@ export function useAttachmentDocument(input: {
     const response = isLocalUri(uri)
       ? Promise.resolve().then(() => ({ ok: true, body: new File(uri).readableStream() }))
       : (async () => {
-          // A signed URL minted when the file opened may have expired by the time the user
-          // switches to source; reauthorize before fetching instead of reading a stale link.
+          // Reauthorize on source access: the URL may have expired since the file opened.
           const authorized = textReadUrl.current;
           let target = authorized?.uri ?? uri;
           if (!authorized || Date.now() - authorized.authorizedAt > STALE_URL_MS) {

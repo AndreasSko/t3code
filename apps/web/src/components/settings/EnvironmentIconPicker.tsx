@@ -20,10 +20,7 @@ import {
   MenuSubTrigger,
 } from "../ui/menu";
 
-/**
- * Why the picker is inert, in the order the user can do something about it.
- * Null means it can be changed.
- */
+/** Lock reasons are ordered by what the user can address; null permits editing. */
 export function resolveEnvironmentIconPickerLock(input: {
   readonly serverConfig: ServerConfig | null;
   readonly operateAccess: "granted" | "denied" | "pending";
@@ -40,13 +37,8 @@ export function resolveEnvironmentIconPickerLock(input: {
   return null;
 }
 
-/**
- * "Icon" submenu for an environment's row menu. Lists the machine kinds with
- * the server's own detection marked, so the user can tell whether detection
- * got it right before overriding. Picking the detected kind clears the
- * override. Locked environments show the reason as a disabled item instead of
- * hiding the submenu, so the current icon still reads.
- */
+/** Choosing the detected kind clears overrides; locked menus show their
+ * reason instead of hiding the current icon. */
 export function EnvironmentIconMenu({
   environmentId,
   serverConfig,

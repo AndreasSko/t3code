@@ -36,7 +36,6 @@ function variantGroups(token: string): { prefix: string; group: string }[] {
   return groups;
 }
 
-/** Index of the ")" closing the "(" at `open`, or the selector's length. */
 function closingParen(selector: string, open: number): number {
   let depth = 0;
   for (let index = open; index < selector.length; index++) {
@@ -77,10 +76,8 @@ function hasCompounds(selector: string): string[] {
     let compound = "";
     let depth = 0;
     let subjectEnd = closingParen(selector, index + ":has".length) + 1;
-    // Other branches of a selector list are skipped until the wrapper that holds
-    // them opens. An unbalanced "(" means the :has() sits inside :not()/:is()/
-    // :where(); the compound outside that wrapper applies only when the :has()
-    // is in the wrapper's subject position.
+    // An enclosing :not/:is/:where scopes :has() only when it is in the wrapper's subject position.
+    // Skip other comma-separated branches until their wrapper opens.
     let skippingBranch = false;
     for (let position = index - 1; position >= 0; position--) {
       const char = selector[position] ?? "";

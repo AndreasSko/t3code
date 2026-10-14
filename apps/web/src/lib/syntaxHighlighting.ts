@@ -8,10 +8,8 @@ import {
 import { resolveDiffThemeName } from "./diffRendering";
 
 /**
- * Always highlight with the Oniguruma WASM engine — the JS regex engine can
- * backtrack catastrophically and hang the tokenizing thread. The shared
- * highlighter is a first-caller-wins singleton, so every creation site must
- * pass this value.
+ * Use Oniguruma WASM to avoid JS-regex backtracking hangs; the singleton is first-caller-wins so every
+ * creation site must pass this engine.
  */
 export const PREFERRED_HIGHLIGHTER: HighlighterTypes = "shiki-wasm";
 
@@ -31,7 +29,6 @@ export function getSyntaxHighlighterPromise(language: string): Promise<DiffsHigh
       // "text" itself failed — Shiki cannot initialize at all, surface the error
       throw error;
     }
-    // Language not supported by Shiki — fall back to "text"
     return getSyntaxHighlighterPromise("text");
   });
   highlighterPromiseCache.set(language, promise);

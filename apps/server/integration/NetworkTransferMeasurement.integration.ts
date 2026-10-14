@@ -196,11 +196,7 @@ export interface MeasuredWsClient {
   readonly close: Effect.Effect<void>;
 }
 
-/**
- * Opens one WebSocket RPC client on a child of the current scope. Several
- * clients can share one test scope and still disconnect independently, which
- * a reconnect measurement needs.
- */
+/** Uses a child scope so clients can disconnect independently during reconnect measurements. */
 export const openMeasuredWsClient = Effect.fn("TransferBudget.openMeasuredWsClient")(
   function* (input: { readonly url: string; readonly cookie: string }) {
     const recorder = makeWebSocketTransferRecorder();

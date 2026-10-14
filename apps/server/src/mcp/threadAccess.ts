@@ -38,11 +38,7 @@ export const dispatchFailure = (
         })
       : unavailable();
 
-/**
- * The most a caller may hand to the threads it targets. A thread caller is
- * capped by its own thread's modes; an OAuth client by the ceiling chosen
- * when it was approved.
- */
+/** Cap threads by caller modes or the OAuth-approved ceiling. */
 export interface CallerLimits {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
@@ -67,10 +63,7 @@ export const readCaller = Effect.fn("mcp.readCaller")(function* () {
   return yield* loadCaller();
 });
 
-/**
- * The caller and its limits, whichever tools its credential grants. Tools
- * check their own capability; `McpToolAccess` uses this for every tool.
- */
+/** Load caller limits independently of capabilities; tools check their own access. */
 export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
   const scope = yield* McpInvocationContext.McpInvocationContext;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -102,10 +95,7 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
   } satisfies Caller;
 });
 
-/**
- * A caller may change another thread only if that thread runs within the
- * caller's own modes. Its own thread is always within them.
- */
+/** Other target threads must run within caller modes; the caller's own thread always does. */
 export const assertTargetWithinLimits = (
   limits: CallerLimits,
   target: { readonly runtimeMode: RuntimeMode; readonly interactionMode: ProviderInteractionMode },
@@ -117,11 +107,7 @@ export const assertTargetWithinLimits = (
     Effect.asVoid,
   );
 
-/**
- * A thread caller acts only while it owns a live run of a thread that is not
- * archived, so a provider token that outlived its session cannot act. An
- * OAuth client has no run; its session and ceiling are its authority.
- */
+/** Require a live, unarchived thread run; OAuth callers use their session and approved ceiling. */
 export function assertLiveCaller({ caller, scope }: Caller) {
   if (caller === undefined) return Effect.void;
   return caller.archivedAt !== null ||
@@ -136,11 +122,7 @@ export function assertLiveCaller({ caller, scope }: Caller) {
     : Effect.void;
 }
 
-/**
- * Actions that change the environment itself (projects, preferences) need full
- * access: a thread caller in full-access/default mode, or a client approved
- * with a full-access ceiling.
- */
+/** Environment changes require full-access/default thread modes or a full-access OAuth grant. */
 export const assertFullAccess = (context: Caller, message: string) =>
   context.limits.runtimeMode === "full-access" && context.limits.interactionMode === "default"
     ? Effect.void

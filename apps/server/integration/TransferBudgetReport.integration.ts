@@ -12,7 +12,6 @@ import {
   TRANSFER_MEASURED_TOOLS,
 } from "./fixtures/transferBudget.ts";
 
-/** Catch-up delivered to a resubscribing client, and which path the server chose. */
 export interface WebSocketCatchUpMeasurement extends WebSocketTransferTotals {
   readonly mode: "replay" | "snapshot";
 }
@@ -30,9 +29,7 @@ export interface TransferBudgetRun {
   /** The second client resubscribes after the turn from the cursor it held before it. */
   readonly reconnectThread: WebSocketCatchUpMeasurement;
   readonly reconnectShell: WebSocketCatchUpMeasurement;
-  /** SQL statement spans opened server-wide during the measured turn. */
   readonly measuredTurnSqlStatements: number;
-  /** SQL statement spans opened while serving both reconnect catch-ups. */
   readonly reconnectSqlStatements: number;
 }
 
@@ -44,10 +41,8 @@ interface ProviderTransferBudget {
   readonly measuredTurnWebSocketMessages: number;
 }
 
-// These caps leave at least 30% headroom above the client projection of the
-// deterministic 9 MB retained-result fixture. Full MCP results stay in
-// persistence, so accidentally shipping them again exceeds these caps by
-// orders of magnitude. The CI report preserves exact values for review.
+// Caps leave at least 30% headroom above the 9 MB fixture's client projection;
+// accidentally shipping retained MCP results would exceed them by orders of magnitude.
 const TRANSFER_BUDGET = {
   totalWireBytes: 7_000,
   threadSnapshotWireBytes: 5_000,
@@ -65,7 +60,6 @@ function totalWireBytes(run: TransferBudgetRun): number {
   return run.threadSnapshot.wireBytes + run.measuredTurnWebSocket.wireBytes;
 }
 
-/** Bytes the server wrote to every measured socket during the turn. */
 function serverEgressWireBytes(run: TransferBudgetRun): number {
   return (
     run.measuredTurnWebSocket.wireBytes +
@@ -132,11 +126,8 @@ function row(
   return `| ${provider} | ${phase} | ${metric} | ${format(observed)} | ${format(maximum)} | ${status} |`;
 }
 
-// Shell, second-client, reconnect, and SQL rows are reported without a cap.
-// Shell delivery coalesces on a 50 ms window, so message counts and bytes move
-// with scheduler timing between runs, and the reconnect and SQL figures follow
-// the same batches. The rows exist so CI shows the numbers next to the capped
-// thread measurement.
+// Uncapped rows follow shell delivery's 50 ms coalescing window, so their
+// message counts, bytes, and SQL figures vary with scheduler timing.
 function infoRow(
   provider: ProviderDriverKind,
   phase: string,

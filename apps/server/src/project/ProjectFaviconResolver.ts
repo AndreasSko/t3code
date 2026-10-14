@@ -1,11 +1,3 @@
-/**
- * ProjectFaviconResolver - Effect service contract for project icon discovery.
- *
- * Resolves a representative favicon or app icon file for a workspace by
- * checking common file locations and project source metadata.
- *
- * @module ProjectFaviconResolver
- */
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -22,9 +14,7 @@ import * as Schema from "effect/Schema";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
-// Resolution probes 23 well-known paths plus 7 source files, so a miss
-// costs ~30 filesystem probes. AssetAccess resolves on every project-favicon
-// asset URL, and a project's icon does not move, so the answer is cached.
+// Asset requests repeat about 30 probes per miss, so cache favicon resolution.
 const FAVICON_CACHE_CAPACITY = 512;
 const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
 const FAVICON_NEGATIVE_CACHE_TTL = Duration.minutes(1);
@@ -46,7 +36,6 @@ function parseFaviconCacheKey(key: string): {
   return faviconPath.length === 0 ? { cwd } : { cwd, faviconPath };
 }
 
-// Well-known favicon paths checked in order.
 const FAVICON_CANDIDATES = [
   "favicon.svg",
   "favicon.ico",
@@ -73,7 +62,6 @@ const FAVICON_CANDIDATES = [
   "AppIcon.icns",
 ] as const;
 
-// Files that may contain a <link rel="icon"> or icon metadata declaration.
 const ICON_SOURCE_FILES = [
   "index.html",
   "public/index.html",
@@ -84,10 +72,7 @@ const ICON_SOURCE_FILES = [
   "src/index.html",
 ] as const;
 
-// Matches <link ...> tags or object-like icon metadata where rel/href can appear in any order.
-// The tag pattern is anchored on `<link`, so it only starts at real candidates. Object metadata
-// is matched by scanning brace-free runs instead of by one combined pattern: an unanchored
-// pattern restarts at every offset and rescans forward, which is quadratic on large sources.
+// Anchor HTML at <link; scan brace-free object runs to avoid quadratic rescans on large sources.
 const LINK_ICON_HTML_RE =
   /<link\b(?=[^>]*\brel=["'](?:icon|shortcut icon)["'])(?=[^>]*\bhref=["']([^"'?]+))[^>]*>/i;
 const ICON_REL_RE = /\brel\s*:\s*["'](?:icon|shortcut icon)["']/i;
@@ -119,15 +104,10 @@ const isWorkspaceRootNotExistsError = Schema.is(WorkspacePaths.WorkspaceRootNotE
 export const isMissingWorkspaceRoot = (error: ProjectFaviconResolutionError): boolean =>
   error.operation === "normalize-workspace" && isWorkspaceRootNotExistsError(error.cause);
 
-/** Service tag for project favicon resolution. */
 export class ProjectFaviconResolver extends Context.Service<
   ProjectFaviconResolver,
   {
-    /**
-     * Resolve a favicon or icon file path for the provided workspace root.
-     *
-     * Returns `null` when no candidate icon file can be found.
-     */
+    /** Returns null when no icon file exists. */
     readonly resolvePath: (
       cwd: string,
       faviconPath?: string,
@@ -138,8 +118,6 @@ export class ProjectFaviconResolver extends Context.Service<
 function extractIconHref(source: string): string | null {
   const htmlMatch = source.match(LINK_ICON_HTML_RE);
   if (htmlMatch?.[1]) return htmlMatch[1];
-  // Icon metadata counts when `rel` and `href` share a brace-free run, so a run holding `rel`
-  // but no href falls through to the next one rather than ending the search.
   for (const run of source.split("}")) {
     if (!ICON_REL_RE.test(run)) continue;
     const hrefMatch = run.match(ICON_HREF_RE);
@@ -214,7 +192,6 @@ export const make = Effect.gen(function* () {
     return null;
   });
 
-  // Reads one source file and resolves the icon it declares, if any.
   const findIconFromSource = Effect.fn("ProjectFaviconResolver.findIconFromSource")(function* (
     projectCwd: string,
     sourceFile: string,
@@ -257,11 +234,7 @@ export const make = Effect.gen(function* () {
     return yield* findExistingFile(projectCwd, resolveIconHref(href), "workspace");
   });
 
-  // Starts every probe at once and returns the first hit in list order. A miss
-  // costs one round of filesystem latency instead of one per probe, which
-  // matters when the disk is slow. Fibers are joined in order, so a hit returns
-  // without waiting for lower-ranked probes (the scope interrupts them), and a
-  // failure surfaces only when no earlier probe found a file.
+  // Parallel probes pay one round of disk latency; joining in order preserves precedence and error ordering.
   const firstInOrder = <A>(
     items: ReadonlyArray<A>,
     probe: (item: A) => Effect.Effect<string | null, ProjectFaviconResolutionError>,
@@ -300,7 +273,6 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    // A t3.json iconPath takes precedence over the well-known locations.
     const projectFile = yield* projectFileLoader.load(projectCwd);
     if (Option.isSome(projectFile) && projectFile.value.iconPath !== undefined) {
       const existing = yield* findExistingFile(
@@ -349,9 +321,7 @@ export const make = Effect.gen(function* () {
       return null;
     }
 
-    // A hit still confirms the file with one stat rather than the ~20 probes a
-    // full walk costs, so a deleted icon falls back at once instead of after
-    // the TTL.
+    // Re-stat cached hits so deleted icons fall back immediately, without waiting for the TTL.
     const stats = yield* optionOnNotFound(fileSystem.stat(cached)).pipe(
       Effect.mapError(
         (cause) =>

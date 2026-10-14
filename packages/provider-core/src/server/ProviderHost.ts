@@ -1,13 +1,6 @@
 /**
- * ProviderHost — what a provider package may ask of the server it runs in.
- *
- * Drivers and adapters run inside a T3 server but must not import it. The
- * server provides this one service; everything a provider needs from its
- * environment (directories, server settings, background demand, attachment
- * files) goes through it, so a provider package depends only on
- * `@t3tools/provider-core` and its own protocol code.
- *
- * @module provider-core/server/host
+ * Drivers and adapters must not import the server; this service supplies
+ * host infrastructure through provider-core.
  */
 import type {
   BackgroundScope,
@@ -28,9 +21,7 @@ export interface ProviderHostPaths {
   readonly cwd: string;
   /** T3 home. */
   readonly baseDir: string;
-  /** Server-owned state directory under the T3 home. */
   readonly stateDir: string;
-  /** Scratch space for provider probes and generated helper files. */
   readonly providerStatusCacheDir: string;
   /** Where chat attachments are stored; agents that sandbox file reads must be granted it. */
   readonly attachmentsDir: string;
@@ -62,10 +53,7 @@ export class ProviderHost extends Context.Service<
     };
     /** Whether background work for `scope` should run now (client demand and host power). */
     readonly shouldRunBackgroundWork: (scope: BackgroundScope) => Effect.Effect<boolean>;
-    /**
-     * Absolute path of a stored chat attachment, or `null` when its id does not
-     * resolve inside the attachments directory.
-     */
+    /** Null means the attachment id does not resolve inside the attachments directory. */
     readonly resolveAttachmentPath: (attachment: ChatAttachment) => string | null;
     /** The credentials stored for `bindingId`, usually an instance id, under a provider-chosen namespace. */
     readonly credentials: (

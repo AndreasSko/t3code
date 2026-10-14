@@ -6,13 +6,7 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
-/**
- * Selection of a model on a configured provider instance.
- *
- * `instanceId` is the routing key. The provider driver, credentials,
- * environment, and continuation identity are resolved by the provider
- * instance registry rather than encoded into the selection itself.
- */
+// instanceId routes through the registry, which owns driver, credentials, environment, and continuation identity.
 const ModelSelectionWire = Schema.Struct({
   instanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
@@ -26,11 +20,7 @@ const ModelSelectionSource = Schema.Struct({
   options: Schema.optional(Schema.Unknown),
 });
 
-/**
- * The decoder still accepts the historical `{ provider, model }` shape while
- * V1 persistence remains readable. Runtime code only receives the canonical
- * instance-based representation.
- */
+/** Accepts legacy provider/model storage but emits canonical instance-based selections. */
 export const ModelSelection = ModelSelectionSource.pipe(
   Schema.decodeTo(
     ModelSelectionWire,

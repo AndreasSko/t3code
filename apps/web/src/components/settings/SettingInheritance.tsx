@@ -34,7 +34,6 @@ const WRITING_STYLE_LABELS: Record<string, string> = {
   custom: "Custom instructions",
 };
 
-/** Human labels for the values the chain can show; falls back to a type summary. */
 function formatValue(key: keyof ServerSettings, value: unknown): string {
   if (value === null || value === undefined) {
     return key === "pullRequestMergeMethod"
@@ -81,12 +80,8 @@ function formatValue(key: keyof ServerSettings, value: unknown): string {
   return "Custom";
 }
 
-/**
- * The layers a setting resolves through for one target, top-down: the
- * project override when the target is a project, the environment's value,
- * the checkout's t3.json for file-backed keys, and the built-in default. The
- * first layer that is set wins. Same order as `resolveProjectSettings`.
- */
+/** Resolve project, environment, t3.json, then built-in layers in the same
+ * precedence as resolveProjectSettings; the first set layer wins. */
 export function settingInheritanceLayers(
   target: ScopedSettingsTarget,
   environmentSettings: ServerSettings,
@@ -150,11 +145,6 @@ export type SettingInheritanceState =
   | "overridden"
   | "mixed";
 
-/**
- * A small indicator beside a row's title that opens a top-down view of where
- * the setting's value comes from on each selected target. It sits inline so
- * narrowing to a project does not add a caption line to every row.
- */
 export interface SettingOverridingProject extends ProjectOverrideEntry {
   readonly label: string;
   /** Jumps the breadcrumb to this project so its override can be edited. */

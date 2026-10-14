@@ -49,10 +49,7 @@ function dismissNotice() {
   }
 }
 
-/**
- * One-time Nightly toast that points to the beta mobile app. Any close (the
- * corner button, swipe, Dismiss, or the action) hides it for good on this client.
- */
+/** Any close persists dismissal for this client. */
 export function NightlyMobileBetaNotice() {
   const navigate = useNavigate();
 
@@ -87,7 +84,6 @@ export function NightlyMobileBetaNotice() {
   return null;
 }
 
-/** QR code plus a copy button for one beta link. */
 function BetaLinkQr({ url, label }: { url: string; label: string }) {
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   return (

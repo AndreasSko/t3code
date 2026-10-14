@@ -9,29 +9,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
-/**
- * Declares the server's overall authentication posture.
- *
- * This is a high-level policy label that tells clients how the environment is
- * expected to be accessed, not a transport detail and not an exhaustive list
- * of every accepted credential.
- *
- * Typical usage:
- * - rendered in auth/pairing UI so the user understands what kind of
- *   environment they are connecting to
- * - used by clients to decide whether silent desktop bootstrap is expected or
- *   whether an explicit pairing flow should be shown
- *
- * Meanings:
- * - `desktop-managed-local`: local desktop-managed environment with narrow
- *   trusted bootstrap, intended to avoid login prompts on the same machine
- * - `loopback-browser`: standalone local server intended for browser pairing on
- *   the same machine
- * - `remote-reachable`: environment intended to be reached from other devices
- *   or networks, where explicit pairing/auth is expected
- * - `unsafe-no-auth`: intentionally unauthenticated mode; this is an explicit
- *   unsafe escape hatch, not a normal deployment mode
- */
+/** Auth posture drives pairing UX; accepted credentials are declared separately. */
 export const ServerAuthPolicy = Schema.Literals([
   "desktop-managed-local",
   "loopback-browser",
@@ -40,38 +18,11 @@ export const ServerAuthPolicy = Schema.Literals([
 ]);
 export type ServerAuthPolicy = typeof ServerAuthPolicy.Type;
 
-/**
- * A credential type that can be exchanged for a real authenticated session.
- *
- * Bootstrap methods are for establishing trust at the start of a connection or
- * pairing flow. They are not the long-lived credential used for ordinary
- * authenticated HTTP / WebSocket traffic after pairing succeeds.
- *
- * Current methods:
- * - `desktop-bootstrap`: a trusted local desktop handoff, used so the desktop
- *   shell can pair the renderer without a login screen
- * - `one-time-token`: a short-lived pairing token, suitable for manual pairing
- *   flows such as `/pair?token=...`
- */
+/** Bootstrap credentials establish trust and are exchanged for sessions, not reused for normal traffic. */
 export const ServerAuthBootstrapMethod = Schema.Literals(["desktop-bootstrap", "one-time-token"]);
 export type ServerAuthBootstrapMethod = typeof ServerAuthBootstrapMethod.Type;
 
-/**
- * A credential type accepted for steady-state authenticated requests after a
- * client has already paired.
- *
- * These methods are used by the server-wide auth layer for privileged HTTP and
- * WebSocket access. They are distinct from bootstrap methods so clients can
- * reason clearly about "pair first, then use session auth".
- *
- * Current methods:
- * - `browser-session-cookie`: cookie-backed browser session, used by the web
- *   app after bootstrap/pairing
- * - `bearer-access-token`: scoped token suitable for non-cookie or
- *   non-browser clients
- * - `dpop-access-token`: scoped proof-of-possession token used by managed
- *   relay connections
- */
+/** Accepted credentials for authenticated HTTP and WebSocket traffic after pairing. */
 export const ServerAuthSessionMethod = Schema.Literals([
   "browser-session-cookie",
   "bearer-access-token",
@@ -230,26 +181,7 @@ export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_toke
 export const AuthEnvironmentBootstrapTokenType =
   "urn:t3:params:oauth:token-type:environment-bootstrap" as const;
 
-/**
- * Server-advertised auth capabilities for a specific execution environment.
- *
- * Clients should treat this as the authoritative description of how that
- * environment expects to be paired and how authenticated requests should be
- * made afterward.
- *
- * Field meanings:
- * - `policy`: high-level auth posture for the environment
- * - `bootstrapMethods`: pairing/bootstrap methods the server is currently
- *   willing to accept
- * - `sessionMethods`: authenticated request/session methods the server supports
- *   once pairing is complete
- * - `sessionCookieName`: cookie name clients should expect when
- *   `browser-session-cookie` is in use
- *
- * This descriptor is intentionally capability-oriented. It lets clients choose
- * the right UX without embedding server-specific auth logic or assuming a
- * single access method.
- */
+/** Authoritative pairing and session capabilities; clients choose UX without assuming one auth method. */
 export const ServerAuthDescriptor = Schema.Struct({
   policy: ServerAuthPolicy,
   bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
@@ -539,10 +471,7 @@ export class AuthMcpRegistrationError extends Schema.Error<AuthMcpRegistrationEr
   }
 }
 
-/**
- * An agent's authorization request, as the approval page received it in its
- * URL. Every field is checked by the server, so all are optional here.
- */
+/** URL approval fields are optional here because the server validates every one. */
 export const AuthMcpAuthorizationRequest = Schema.Struct({
   response_type: Schema.optionalKey(Schema.String),
   client_id: Schema.optionalKey(Schema.String),
@@ -554,34 +483,20 @@ export const AuthMcpAuthorizationRequest = Schema.Struct({
 });
 export type AuthMcpAuthorizationRequest = typeof AuthMcpAuthorizationRequest.Type;
 
-/**
- * What the approval page needs to show for an MCP OAuth sign-in. The server
- * has already validated the request; nothing here is trusted by the client
- * except for display.
- */
+/** Server-validated approval data is trusted only for display by the client. */
 export const AuthMcpApprovalDetails = Schema.Struct({
   /** Self-declared by the client, so shown as such. */
   clientName: Schema.String,
-  /**
-   * Where the code goes: a loopback address on the browser's machine (a CLI
-   * agent), or an https host (a hosted agent).
-   */
+  /** Code destination: loopback on the browser machine for CLI agents, HTTPS for hosted agents. */
   redirectHost: Schema.String,
   environmentHost: Schema.String,
   /** Present when this browser's session may approve without a pairing code. */
   csrfToken: Schema.optionalKey(Schema.String),
-  /**
-   * What that session may approve in one click: only access whose scopes it
-   * holds. Anything else still needs a pairing code. Absent with `csrfToken`.
-   */
+  /** One-click access is limited to session scopes; other access needs a pairing code. */
   oneClickAccess: Schema.optionalKey(Schema.Array(AuthMcpClientAccess)),
 });
 export type AuthMcpApprovalDetails = typeof AuthMcpApprovalDetails.Type;
 
-/**
- * Where the approval page sends the browser next: back to the agent with a
- * code, a denial, or a protocol error the agent should receive.
- */
 export const AuthMcpApprovalRedirect = Schema.Struct({
   redirectTo: Schema.String,
 });

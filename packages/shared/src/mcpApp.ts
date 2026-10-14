@@ -1,12 +1,8 @@
 import * as Predicate from "effect/Predicate";
 
 /**
- * MCP Apps (https://github.com/modelcontextprotocol/ext-apps, spec 2026-01-26):
- * an MCP tool can name a `ui://` HTML resource that hosts render as an
- * interactive view of its result. T3 snapshots the resource when the tool call
- * completes, stores it as a thread attachment, and records an `McpAppReference`
- * in the tool item's output; clients host it in an opaque-origin frame and
- * speak the spec's JSON-RPC bridge with it.
+ * Clients host app documents in opaque-origin frames to isolate them from the session.
+ * MCP Apps protocol: https://github.com/modelcontextprotocol/ext-apps
  */
 
 export const MCP_APP_PROTOCOL_VERSION = "2026-01-26";
@@ -20,7 +16,6 @@ export const MCP_APP_OUTPUT_KEY = "t3McpApp";
 const MCP_APP_MIN_HEIGHT = 80;
 export const MCP_APP_DEFAULT_HEIGHT = 320;
 export const MCP_APP_MAX_HEIGHT = 2000;
-/** Largest app document T3 stores. */
 export const MCP_APP_MAX_HTML_BYTES = 5 * 1024 * 1024;
 const MAX_DOMAINS = 32;
 const MAX_DOMAIN_LENGTH = 256;
@@ -45,7 +40,6 @@ export interface McpAppPermissions {
   readonly clipboardWrite?: Record<string, never>;
 }
 
-/** What a tool item's output carries so clients can host the app. */
 export interface McpAppReference {
   readonly attachmentId: string;
   /** The MCP server the tool belongs to, as the provider names it. */
@@ -75,7 +69,6 @@ function readDomains(value: unknown): ReadonlyArray<string> | undefined {
   return domains.length === 0 ? undefined : domains;
 }
 
-/** The well-formed part of a resource's declared `_meta.ui.csp`. */
 export function readMcpAppCsp(value: unknown): McpAppCsp | undefined {
   if (!Predicate.isObject(value)) return undefined;
   const csp: {

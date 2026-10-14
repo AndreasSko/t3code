@@ -16,19 +16,13 @@ import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
 import { ProjectScript, StoredProjectIcon } from "./project.ts";
 
-/**
- * Which client dispatched the command that produced this event (#7774).
- * Stamped by the orchestration engine on client-dispatched commands; absent on
- * provider/server-originated events and on commands from clients too old to
- * report it.
- */
+/** Client command origin; absent for provider/server events and clients without origin reporting. */
 export const OrchestrationClientOrigin = Schema.Struct({
   surface: Schema.optional(ClientSurface),
   appVersion: Schema.optional(TrimmedNonEmptyString),
 });
 export type OrchestrationClientOrigin = typeof OrchestrationClientOrigin.Type;
 
-/** Metadata retained by the shared application event source. */
 export const ApplicationEventMetadata = Schema.Struct({
   deferredTurn: Schema.optional(Schema.Boolean),
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
@@ -120,5 +114,4 @@ export const ApplicationProjectEvent = Schema.Union([
 ]);
 export type ApplicationProjectEvent = typeof ApplicationProjectEvent.Type;
 
-/** Events exposed by the retained application event source. */
 export type ApplicationStoredEvent = ApplicationProjectEvent | OrchestrationV2StoredEvent;

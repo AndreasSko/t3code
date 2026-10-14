@@ -1,10 +1,3 @@
-/**
- * Codex's view of its manifest catalog. Codex discovers models from its app
- * server, so the catalog only reclassifies them, moves the default, and names
- * models a newer Codex build would unlock.
- *
- * @module provider/codexModelCatalog
- */
 import type { ServerProviderUpdateRequiredModel } from "@t3tools/contracts";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
@@ -22,12 +15,7 @@ const CodexModelAdapter = Schema.Struct({
 });
 const decodeCodexModelAdapter = Schema.decodeUnknownOption(CodexModelAdapter);
 
-/**
- * Codex lists only the models its own build knows, so a model released after
- * the installed CLI never shows up. A current catalog entry with
- * `adapter.codex.minVersion` names that model, letting the picker say an update
- * unlocks it instead of leaving users to wonder where it is.
- */
+/** Older CLIs omit unknown models; minVersion lets the picker explain which update unlocks them. */
 function codexUpdateRequiredModels(
   catalog: ModelCatalog.ProviderCatalog | undefined,
   draft: ServerProviderDraft,
@@ -52,7 +40,6 @@ function codexUpdateRequiredModels(
   });
 }
 
-/** Reclassifies a Codex snapshot draft's models against its catalog. */
 export function applyCodexModelCatalog(
   draft: ServerProviderDraft,
   catalog: ModelCatalog.ProviderCatalog | undefined,

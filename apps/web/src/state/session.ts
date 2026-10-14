@@ -38,7 +38,6 @@ function sessionHasScope(
   return result._tag !== "Failure" && session !== null && sessionGrantsScope(session, scope);
 }
 
-/** Subscribe to the grants of every selected environment. */
 export function useEnvironmentsWithScope(
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
   scope: AuthEnvironmentScope,
@@ -88,11 +87,7 @@ export function readPreparedConnection(environmentId: EnvironmentId) {
   );
 }
 
-/**
- * This client's authenticated session on one environment, as reported by that
- * environment's `/api/auth/session` endpoint. `data` stays populated across
- * SWR revalidations; `isPending` is only meaningful before the first resolve.
- */
+/** Keeps cached session data during revalidation; `isPending` covers only the first resolve. */
 export function useEnvironmentSessionState(environmentId: EnvironmentId) {
   const result = useAtomValue(environmentSession.sessionStateAtom(environmentId));
   return {

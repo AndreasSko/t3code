@@ -22,10 +22,8 @@ export function isExplicitRelativePath(value: string): boolean {
 }
 
 function isRootPath(value: string): boolean {
-  // The drive separator is required: a bare `C:` is not the drive root (it
-  // means "current directory on C:"), and treating it as already-canonical
-  // would leave it as `C:` while `C:\` and `C:/` normalize to the drive root,
-  // so the same location would fail project identity/dedup comparisons.
+  // A bare `C:` is drive-relative, so it is not an already-canonical root.
+  // Let separator normalization make project comparisons match `C:\` and `C:/`.
   return value === "/" || value === "\\" || /^[a-zA-Z]:[/\\]$/.test(value);
 }
 
@@ -57,11 +55,7 @@ export function normalizeProjectPathForComparison(value: string): string {
 // Windows refuses these as file names, with or without an extension.
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 
-/**
- * Folder name for a project started from just a name ("Pinball Stats" becomes
- * "pinball-stats"). The server uses it for `projects.createNew`, and clients
- * use it to show the path before the server makes it.
- */
+/** Shared folder slug for project creation and client path previews. */
 export function newProjectFolderName(name: string): string {
   const slug = name
     .normalize("NFKD")
@@ -83,8 +77,6 @@ export function stripSlashPrefixedWindowsDrive(path: string): string {
 }
 
 export function fileBasename(path: string): string {
-  // A trailing separator is a valid way to write a directory. Trim it before
-  // taking the final segment so the label is never empty.
   const trimmed = path.replace(/[/\\]+$/, "");
   if (trimmed.length === 0) return path;
   const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));

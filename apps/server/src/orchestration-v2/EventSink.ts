@@ -34,9 +34,6 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
-/**
- * ERRORS
- */
 export class EventSinkWriteError extends Schema.TaggedError<EventSinkWriteError>()(
   "EventSinkWriteError",
   {
@@ -68,9 +65,6 @@ export class EventSinkStreamError extends Schema.TaggedError<EventSinkStreamErro
 export const EventSinkV2Error = Schema.Union([EventSinkWriteError, EventSinkStreamError]);
 export type EventSinkV2Error = typeof EventSinkV2Error.Type;
 
-/**
- * SERVICE DEFINITION
- */
 export interface EventSinkV2Shape {
   readonly write: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
@@ -99,12 +93,7 @@ export interface EventSinkV2Shape {
     },
     EventSinkV2Error
   >;
-  /**
-   * Atomically commit only when the provider thread is still owned by the
-   * expected run attempt and ordinal. Used for late post-terminal
-   * provider_thread updates so a completed or superseded attempt cannot clobber
-   * a newer attempt that already claimed the thread.
-   */
+  /** Commit late provider-thread updates only while the expected attempt still owns the thread. */
   readonly writeIfProviderThreadOwner: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
     readonly commandId?: CommandId;
@@ -163,10 +152,7 @@ export interface EventSinkV2Shape {
     readonly rejectedAt: DateTime.Utc;
     readonly error: string;
   }) => Effect.Effect<CommandReceiptStore.CommandReceiptV2, EventSinkV2Error>;
-  /**
-   * Append a project event, fold it into its row and record the receipt in one
-   * transaction. A reused command id commits nothing and returns its receipt.
-   */
+  /** Commit the project event, projection and receipt atomically; reused command ids return their receipt. */
   readonly commitProjectCommand: (input: {
     readonly commandId: CommandId;
     readonly projectId: ProjectId;
@@ -205,9 +191,6 @@ export class EventSinkV2 extends Context.Service<EventSinkV2, EventSinkV2Shape>(
   "t3/orchestration-v2/EventSink/EventSinkV2",
 ) {}
 
-/**
- * IMPLEMENTATIONS
- */
 const layerBase: Layer.Layer<
   EventSinkV2,
   never,
@@ -246,13 +229,8 @@ const layerBase: Layer.Layer<
     const publishStoredEvents = (events: ReadonlyArray<OrchestrationV2StoredEvent>) =>
       eventStore.publishCommitted(events).pipe(Effect.andThen(publishLiveEvents(events)));
 
-    // Transactions commit one at a time, but each writer publishes after its
-    // commit. If a writer is descheduled in between, a later commit reaches
-    // subscribers first, and clients drop any event at or below the newest
-    // sequence they have applied. So a writer takes this lane as the last step
-    // of its transaction and holds it until it has published. Publishing never
-    // waits, so a writer that holds the transaction while it waits for the
-    // lane is not blocked for long.
+    // Hold the publish lane from the transaction's last step through publication;
+    // out-of-order events would be dropped by clients that already applied a newer sequence.
     const publishLane = yield* Semaphore.make(1);
     const commitThenPublish = <A, E, R>(
       transaction: Effect.Effect<A, E, R>,
@@ -937,12 +915,7 @@ const layerBase: Layer.Layer<
   }),
 );
 
-/**
- * Event sink layer for application compositions that already own the
- * persistence services. Keeping the outbox instance shared with the worker is
- * important because enqueue notifications are in-memory wakeups backed by the
- * durable SQL queue.
- */
+/** Share the worker's outbox instance so post-commit in-memory wakeups reach it. */
 export const layerFromStores = layerBase;
 
 export const layer: Layer.Layer<

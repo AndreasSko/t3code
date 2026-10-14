@@ -70,18 +70,8 @@ export interface IssuedBearerSession {
   readonly expiresAt: DateTime.Utc;
 }
 
-/**
- * Sessions an MCP client (an agent T3 Code did not launch) obtains through
- * OAuth. They are accepted only by `/mcp`, where every action is capped by the
- * access the user approved; the HTTP API and WebSocket reject them so an agent
- * token cannot reach the full RPC surface around that cap.
- *
- * A read-only grant holds `orchestration:read` alone. Any other grant also
- * holds `orchestration:operate` and carries its runtime-mode ceiling. A
- * full-access client may also change environment preferences and clone
- * repositories, so it holds the scopes those need over RPC. Approving a grant
- * requires every scope it holds.
- */
+// MCP client sessions are accepted only by /mcp, keeping OAuth grants away
+// from the full RPC surface. Approval requires every scope the grant holds.
 const MCP_CLIENT_SUBJECT = "mcp-client";
 const MCP_CLIENT_SESSION_TTL = Duration.days(30);
 
@@ -570,12 +560,8 @@ export class EnvironmentAuth extends Context.Service<
       { readonly token: string; readonly expiresAt: DateTime.DateTime },
       ServerAuthInternalError
     >;
-    /**
-     * Spends a one-time pairing code as approval for an MCP client with the
-     * given access; the code must hold every scope that access grants.
-     * Proof-bound codes (T3 Connect) are refused without being spent, and
-     * desktop bootstrap grants never qualify.
-     */
+    /** Spend an approval code only when it holds all grant scopes.
+     * Refuse proof-bound codes and desktop bootstrap grants without spending them. */
     readonly consumeMcpApprovalCode: (
       code: string,
       access: AuthMcpClientAccess,
@@ -690,7 +676,6 @@ export function selectRequestCredential(
 
 type RequestCredentialSource = NonNullable<ReturnType<typeof selectRequestCredential>>["source"];
 
-/** Whether a credential came from a browser cookie rather than an Authorization header. */
 export const isBrowserCookieCredential = (source: RequestCredentialSource | "dev-cookie") =>
   source === "cookie" || source === "legacy-cookie" || source === "dev-cookie";
 
@@ -699,15 +684,9 @@ function firstHeaderValue(value: string | undefined): string | undefined {
   return first && first.length > 0 ? first : undefined;
 }
 
-/**
- * Whether a cookie-carrying request comes from a page allowed to use it.
- * Browsers send `Origin` on WebSocket upgrades, cross-origin requests, and
- * non-GET requests, so an absent header means a same-origin read or a
- * non-browser client. Otherwise the request must be same-origin by the
- * browser's own `Sec-Fetch-Site` (which survives the dev proxy rewriting
- * `Host`), come from this server's own host (directly or behind a proxy that
- * reports `X-Forwarded-Host`), or come from one of the trusted app origins.
- */
+// Missing Origin permits same-origin reads and non-browser clients; browsers
+// send it on upgrades, cross-origin requests, and writes. Sec-Fetch-Site survives
+// dev proxy Host rewrites; otherwise require this server's host or a trusted app origin.
 function isBrowserOriginAllowed(
   request: HttpServerRequest.HttpServerRequest,
   trustedOrigins: ReadonlySet<string>,
@@ -994,8 +973,7 @@ export const make = Effect.gen(function* () {
                       ttl: Duration.hours(1),
                     }
                   : {}),
-                // Desktop restarts forget the previous bearer token. Replace
-                // its session, including stale entries left by older versions.
+                // Desktop restarts forget bearer tokens, so replace the bootstrap session.
                 replaceActiveForSubjectAndMethod: grant.method === "desktop-bootstrap",
                 client: {
                   ...requestMetadata,

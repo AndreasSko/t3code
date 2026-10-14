@@ -17,11 +17,8 @@ export const isWebLink = (value: string) => {
 export const isWebPageFile = (path: string) => /\.x?html?$/i.test(path);
 
 /**
- * Web links and HTML files macOS opens with T3 Code once it is the default
- * browser, plus `t3code://` prompt and thread links on every platform. Files
- * arrive as file:// URLs. They can
- * arrive before the app is ready (the link that launched it) or while the web
- * app reloads, so they wait until the renderer says it is listening.
+ * Queue OS links until the renderer listens, including during startup and reloads.
+ * HTML files arrive as file:// URLs; t3code:// prompt and thread links work on every platform.
  */
 export class DesktopWebLinks extends Context.Service<
   DesktopWebLinks,

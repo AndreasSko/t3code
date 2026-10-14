@@ -46,19 +46,15 @@ export function createTranscriptJsonSelector(schema: { readonly ast: SchemaAST.A
 
 export class TranscriptJsonLimitError extends Error {}
 
-/**
- * Project a single JSONL record without materializing unselected string values.
- * The caller supplies a shared allocation budget for the entire transcript.
- * Budget exhaustion rejects the transcript, never a message within it.
- */
+/** Projects JSONL fields without allocating unselected strings; share `reserve` across the transcript.
+ * Budget exhaustion must reject the whole transcript. */
 export function createTranscriptJsonReader(
   reserve: (bytes: number) => void,
   selectPath: (path: JsonPath) => boolean,
   options?: { readonly maxDepth?: number },
 ) {
-  // The synchronous tokenizer is exported at runtime in 3.6.0, but omitted
-  // from its bundled types. Unlike parser(), it does not wrap tokens in an
-  // async generator; the file reader already supplies backpressure and UTF-8.
+  // The synchronous tokenizer is exported but missing from 3.6.0's types.
+  // The file reader already provides backpressure and UTF-8 decoding.
   const { jsonParser } = StreamJson as typeof StreamJson & {
     jsonParser: (
       options: ParserOptions,
@@ -97,9 +93,7 @@ export function createTranscriptJsonReader(
         assembler.consume(token);
     }
   };
-  // Forward actual selected keys instead of reconstructing them from path
-  // changes: adjacent duplicate keys have the same path but JSON.parse keeps
-  // the last value. Reconstructing paths can silently retain the first value.
+  // Preserve actual keys: adjacent duplicate keys share a path, but JSON.parse keeps the last value.
   const stack: Array<{ path: JsonPath; key: string | number | null; selected: boolean }> = [];
   let selectedValue = false;
   const startValue = () => {

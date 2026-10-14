@@ -4,11 +4,7 @@ import { useCallback, useRef } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
-/**
- * Shared persisted shelf state for the compact Home list and iPad sidebar.
- * Refs advance before persistence starts so consecutive presses always toggle
- * the latest value, even if React has not rendered the optimistic patch yet.
- */
+/** Advance refs before persistence so consecutive presses use the latest value before React renders. */
 export function useThreadListV2ShelfPreferences() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -17,7 +13,6 @@ export function useThreadListV2ShelfPreferences() {
     loaded && preferencesResult.value.threadListSnoozedShelfExpanded === true;
   const settledShelfExpanded =
     loaded && preferencesResult.value.threadListSettledShelfExpanded === true;
-  // Working section beta: off until the preference loads and is enabled.
   const workingShelfEnabled = loaded && preferencesResult.value.workingShelfEnabled === true;
   const workingShelfExpanded =
     loaded && preferencesResult.value.threadListWorkingShelfExpanded === true;

@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
-/** Native toolbar surface; hosted RN controls retain their existing menus and accessibility. */
+/** Hosts existing RN controls to preserve their menus and accessibility. */
 export function MaterialFloatingToolbar(props: { readonly children: ReactElement }) {
   const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
   return (

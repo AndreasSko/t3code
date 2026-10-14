@@ -65,12 +65,8 @@ const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
     Option.map((url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`),
   );
 
-/**
- * Agents T3 Code launched carry a registry token and must never be sent into
- * an OAuth flow when it dies: they cannot open a browser, and a sign-in
- * would mint a credential that outlives their session. Only a request that
- * does not look like a provider token is pointed at the OAuth metadata.
- */
+// Never send provider tokens to OAuth: launched agents cannot open browsers
+// and OAuth credentials would outlive their provider session.
 const unauthorized = (input: {
   readonly request: HttpServerRequest.HttpServerRequest;
   readonly presentedToken: boolean;
@@ -103,10 +99,7 @@ const unauthorized = (input: {
   );
 };
 
-/**
- * Resolves a bearer token that is not a provider-session token: an OAuth
- * client signed in from outside T3. Undefined when the token is not one.
- */
+/** Authenticate outside OAuth clients only; undefined means the token is not one. */
 export class McpClientAuthenticator extends Context.Service<
   McpClientAuthenticator,
   {
@@ -161,9 +154,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         ? yield* clients.value.authenticate(request)
         : undefined);
     if (!invocation) {
-      // Without this the only symptom of a dead credential is the agent
-      // quietly losing the whole `t3-code` toolkit for the rest of its
-      // session, with nothing on the server to explain why.
+      // Log dead credentials so a lost t3-code toolkit is diagnosable during the session.
       yield* Effect.logWarning("rejected MCP request with an unusable credential", {
         reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
       });
@@ -184,15 +175,8 @@ const layerMcpAuthMiddleware = HttpRouter.middleware<{
   provides: McpInvocationContext.McpInvocationContext;
 }>()(makeMcpAuthMiddleware).layer;
 
-/**
- * Claude Code moves an MCP result above its output limit to a file and hands
- * the agent a notice instead, so a snapshot that carries the full
- * accessibility tree and page text loses its locators too. Claude Code also
- * shows the model `structuredContent` in place of the text blocks when a
- * result has both, so both carry the same bounded snapshot. Keep it near
- * 20 KB and tell the agent what was cut. The short `omitted` notes may go a
- * little over; the provider limit is far above this.
- */
+// Claude Code files oversized results, losing locators, and prefers
+// structuredContent over text; put the same ~20 KB snapshot in both.
 export const MAX_SNAPSHOT_TEXT_BYTES = 20_000;
 const MAX_SNAPSHOT_VISIBLE_TEXT_CHARS = 8_000;
 const MAX_SNAPSHOT_ELEMENT_NAME_CHARS = 200;
@@ -205,7 +189,6 @@ const utf8Length = (text: string) => Buffer.byteLength(text, "utf8");
 const cutText = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max)}…` : text;
 
-/** Shortens every string field of a log entry; other fields pass through. */
 const cutEntryStrings = <A>(entry: A): A =>
   typeof entry === "object" && entry !== null
     ? (Object.fromEntries(
@@ -235,13 +218,8 @@ type SnapshotMetadata = {
   readonly [key: string]: unknown;
 };
 
-/**
- * Keeps server ARIA refs, drops legacy object trees, shortens page text, names, identifiers,
- * and log strings, keeps only the newest log entries, and finally sheds
- * interactive elements until the JSON fits. Returns the bounded value, its
- * text, and notes on what is missing so the agent can reach for
- * preview_evaluate.
- */
+// Bound snapshot content while retaining ARIA refs; report omissions so
+// agents can use preview_evaluate for the missing details.
 const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
   const omitted: Array<string> = [];
   const { accessibilityTree, ...withoutTree } = metadata;
@@ -285,11 +263,8 @@ const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
     actionTimeline: tail(metadata.actionTimeline, "action timeline entries"),
   };
 
-  // Per-field caps do not sum below the ceiling: three log arrays of 40 capped
-  // entries alone can pass 60 KB, and the caps count characters, not bytes.
-  // Halve one thing per round until the JSON fits: logs first, then page
-  // text, then the locators. The identifier caps bound the rest, so this
-  // terminates.
+  // Per-field character caps can still exceed the byte ceiling; shed logs,
+  // then text, then locators until the bounded identifiers fit.
   const shedOrder = [
     "actionTimeline",
     "networkEntries",
@@ -375,7 +350,6 @@ export class PreviewScreenshotSaveError extends Schema.TaggedError<PreviewScreen
 
 const MAX_SCREENSHOT_SITE_SLUG_LENGTH = 40;
 
-/** Hostname reduced to a filename-safe slug, matching the desktop's own screenshot names. */
 const screenshotSiteSlug = (rawUrl: string): string => {
   try {
     const slug = new URL(rawUrl).hostname
@@ -390,7 +364,6 @@ const screenshotSiteSlug = (rawUrl: string): string => {
   }
 };
 
-/** Writes the snapshot PNG under the browser artifacts directory and returns its path. */
 const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   pageUrl: string,
   data: Uint8Array,
@@ -579,11 +552,8 @@ interface ImageToolResult {
   readonly [key: string]: unknown;
 }
 
-/**
- * Failures surface only their tag unless the tool describes them: the remote
- * message may carry renderer or device output the agent should not see, and
- * the tag is what it can act on. A describer returns a server-built message.
- */
+// Expose server-built descriptions or failure tags; remote renderer/device
+// messages may contain output the agent should not receive.
 const imageToolFailure =
   <E>(toolName: string, operation: string, failureText: string | ((error: E) => string)) =>
   (cause: Cause.Cause<E>) => {
@@ -628,12 +598,8 @@ const imageToolFailure =
     }).pipe(Effect.as(result));
   };
 
-/**
- * `McpServer.toolkit` serializes every result as JSON text, which is the
- * wrong shape for a screenshot: the model needs image content. Tools whose
- * result carries a `screenshot` field are registered by hand so the PNG goes
- * out as an image block and the rest of the payload as JSON metadata.
- */
+// Toolkit JSON serialization cannot produce image blocks; register screenshot
+// tools directly to send PNGs as images alongside JSON metadata.
 const registerImageTool = <T extends Tool.Any, E, R>(
   tool: T,
   handle: (payload: Tool.Parameters<T>) => Effect.Effect<{ readonly encodedResult: unknown }, E, R>,
@@ -760,15 +726,8 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
   );
 });
 
-/**
- * `McpServer.toolkit` for handlers that declared their access (see
- * `McpToolAccess`). Every toolkit on `/mcp` registers through this.
- *
- * `McpServer.toolkit` asks for every service its tools declare when it
- * registers them, but the auth middleware provides `McpInvocationContext` to
- * each request instead. Registration must not get one: the services it
- * captures would replace the request's.
- */
+/** Register only access-declared handlers; never capture McpInvocationContext
+ * at registration because auth supplies it per request. */
 export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, RX>(
   toolkit: Toolkit.Toolkit<Tools>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,

@@ -1,13 +1,4 @@
-/**
- * SecretRequests - secrets an agent asks the user for.
- *
- * The user's answer goes straight to the server's secret store under a
- * one-use SecretRef; orchestration only records the request and its status.
- * A tool that needs the value takes the ref and consumes it, so the value
- * never reaches the transcript, projections, clients, or model context.
- *
- * @module SecretRequests
- */
+/** One-use refs keep secret values in the server store, outside transcripts and model context. */
 import {
   CommandId,
   SecretRef,
@@ -41,12 +32,8 @@ const REF_PATTERN = /^secret-ref:[0-9a-f]{32}$/;
 const SECRET_REF_TTL_MS = 24 * 60 * 60 * 1000;
 const STORE_NAME_PATTERN = /^(secret-request-[0-9a-f]{32})\.bin$/;
 
-/**
- * Each request has exactly one ref, derived from where it was asked. Its
- * length never depends on the thread id, so the store's file names stay
- * within filesystem limits, and the requesting tool finds it without a
- * second record. Unguessable without the server's own salt.
- */
+/** Derive one fixed-length ref per request to fit filesystem limits without a second record.
+ * The server salt makes refs unguessable. */
 const refFor = (salt: string, threadId: ThreadId, turnItemId: string) =>
   SecretRef.make(
     `${SECRET_REF_PREFIX}${NodeCrypto.createHmac("sha256", salt)
@@ -55,7 +42,6 @@ const refFor = (salt: string, threadId: ThreadId, turnItemId: string) =>
       .slice(0, 32)}`,
   );
 
-/** A ref's value, the project it was entered for, and when it was saved. */
 const StoredSecret = Schema.fromJsonString(
   Schema.Struct({ projectId: Schema.String, value: Schema.String, savedAt: Schema.Number }),
 );
@@ -65,10 +51,6 @@ const decodeStored = Schema.decodeUnknownOption(StoredSecret);
 export class SecretRequests extends Context.Service<
   SecretRequests,
   {
-    /**
-     * Answers a pending request in a thread. Saving stores the value under a
-     * new ref that the requesting tool reads from the request's status.
-     */
     readonly answer: (input: SecretRequestAnswerInput) => Effect.Effect<void, SecretRequestError>;
     /** The ref minted when this request was saved, for the tool that asked. */
     readonly savedRef: (input: {
@@ -120,10 +102,8 @@ const make = Effect.gen(function* () {
       if (run === undefined || ThreadManagementService.isTerminalRunStatus(run.status)) {
         return yield* new SecretRequestError({ reason: "agent_stopped" });
       }
-      // Store first: the card only says saved once the value is kept. Create,
-      // not set: a second answer racing this one must not replace the value.
-      // A value already there on a card still pending is an earlier save whose
-      // record failed and could not be cleaned up; recording it finishes that save.
+      // Create before recording so racing answers cannot replace the secret. An existing value
+      // with a pending card belongs to an earlier failed record; finish that save.
       if (input.answer.type === "save") {
         const encoded = yield* encodeStored({
           projectId: records.thread.projectId,
@@ -167,9 +147,7 @@ const make = Effect.gen(function* () {
           ),
         );
       if (input.answer.type !== "save") return;
-      // A request is answered once: if the agent's wait closed the card between
-      // the checks above and this record, the record changed nothing. Nobody
-      // will receive the ref, so the value is deleted rather than left to expire.
+      // If the agent closed the card during recording, nobody receives the ref; delete its value.
       const recorded = yield* threadManagement
         .getThreadRecords(input.threadId, ["turnItems"], {
           turnItemTypes: ["secret_request"],
@@ -242,10 +220,7 @@ const make = Effect.gen(function* () {
       return decoded.value.value;
     });
 
-  /**
-   * Drops values nobody used before they expired, so an agent that never
-   * consumed its ref does not leave the user's secret on disk.
-   */
+  /** Expire unused refs so abandoned requests do not leave secrets on disk. */
   const sweepExpired = Effect.gen(function* () {
     if (store.directory === undefined) return;
     const now = yield* Clock.currentTimeMillis;

@@ -2,22 +2,11 @@
 /* oxlint-disable unicorn/prefer-add-event-listener -- Each client owns its sockets and their handlers. */
 
 /**
- * Framework-free client for expo-device-hub's per-device streams, reached
- * through the T3 proxy. One class handles both platforms because the hub
- * vendors two servers with different wire formats:
- *
- * - iOS (serve-sim): video is an HTTP `stream.avcc` body of length-prefixed
- *   envelopes (`u32be length, u8 tag, payload`; tag 1 avcC description,
- *   2 keyframe, 3 delta, 4 JPEG seed) decoded with WebCodecs; input goes over
- *   `helper/ws?device=<udid>` as `[tag][json]` packets. When WebCodecs is
- *   unavailable (plain-http remote origins) the MJPEG endpoint is used as an
- *   `<img>` source instead.
- * - Android (serve-emu): one WebSocket at `ws?device=<serial>&frame-meta=1`
- *   carries H.264 access units prefixed with a 16-byte "SEMU" header
- *   (magic, version, key flag, pts) and accepts JSON gestures upstream.
- *
- * The decoder only runs while frames arrive and the viewer is attached; a
- * hidden panel calls `stop()` so an idle device costs nothing on the GPU.
+ * Hub protocols: iOS AVCC HTTP envelopes are u32be length, u8 tag, payload
+ * (1 avcC, 2 keyframe, 3 delta, 4 JPEG seed); HID uses [tag][json] on helper/ws.
+ * Android ws messages carry H.264 with a 16-byte SEMU header (magic, version,
+ * key flag, pts) and accept JSON gestures upstream.
+ * Remote plain-HTTP origins lack WebCodecs; use MJPEG when unavailable and stop hidden viewers to avoid idle GPU work.
  */
 import {
   createDuoControl,
@@ -91,11 +80,7 @@ export interface DeviceStreamEvents {
   readonly onScreen: (screen: DeviceScreenSize) => void;
   /** The proxy rejected the credential; the owner should refresh access and reconnect. */
   readonly onUnauthorized: () => void;
-  /**
-   * H.264 cannot be decoded here (no WebCodecs, or the simulator's profile is
-   * unsupported); the owner should show an `<img>` instead of the canvas
-   * and attach it with `setMjpegImage` so the client can observe real frames.
-   */
+  /** Show an img and attach it with setMjpegImage when WebCodecs or the H.264 profile is unsupported. */
   readonly onMjpegFallback: (url: string) => void;
   /** Whether touches and keys can currently reach the device. */
   readonly onInputConnected: (connected: boolean, detail?: string) => void;
@@ -266,10 +251,7 @@ export class AvccDemuxer {
 export interface DeviceStreamClient {
   readonly start: () => void;
   readonly stop: () => void;
-  /**
-   * Own the displayed MJPEG image's source and frame/error observation.
-   * `stop()` detaches it; attach a fresh image for each restart.
-   */
+  /** stop() detaches the MJPEG image; attach a fresh one on each restart. */
   readonly setMjpegImage: (image: HTMLImageElement | null) => void;
   /** Normalized 0..1 coordinates in the displayed frame. */
   readonly sendTouch: (phase: "begin" | "move" | "end", x: number, y: number) => void;
@@ -523,9 +505,7 @@ export function createDeviceStreamClient(
     decoderEpoch++;
     try {
       videoDecoder?.close();
-    } catch {
-      // Already closed.
-    }
+    } catch {}
     videoDecoder = null;
     awaitingKeyframe = true;
   };
@@ -645,7 +625,6 @@ export function createDeviceStreamClient(
     events.onUnauthorized();
   };
 
-  // iOS video: fetch the AVCC body and demux into the decoder.
   const readIosVideo = async () => {
     const lifecycle = generation;
     const feedGeneration = ++videoGeneration;
@@ -750,11 +729,7 @@ export function createDeviceStreamClient(
     }
   };
 
-  /**
-   * serve-sim's helper only accepts HID and pushes its screen config once
-   * screen capture is running, and the AVCC stream does not reliably start
-   * it. Touching the MJPEG endpoint does; one aborted request is enough.
-   */
+  // AVCC does not reliably start serve-sim capture, which HID/config need; one aborted MJPEG request does.
   const primeIosHelper = async (session: number) => {
     const controller = new AbortController();
     primeController = controller;
@@ -778,9 +753,7 @@ export function createDeviceStreamClient(
 
   const startDuoVideo = (panels: DuoPanelSinks) => {
     for (const panel of panelClients) panel.stop();
-    // Physical handoff elects a native surface. Fixed-panel encoders can keep
-    // an inactive shutdown frame after election, so this build uses one active
-    // feed instead of decoding a third stream alongside the two fixed feeds.
+    // Fixed-panel feeds can retain shutdown frames during physical handoff; use the elected active feed.
     const ids = screen?.supportsPhysicalOrientation ? ([null] as const) : ([1, 3] as const);
     panelClients = ids.map((id) => {
       const output = id === 1 ? panels.cover : panels.inner;
@@ -812,7 +785,6 @@ export function createDeviceStreamClient(
     for (const panel of panelClients) panel.start();
   };
 
-  // iOS input socket; also carries the screen config the helper pushes.
   const connectIosInput = async () => {
     if (stopped) return;
     const session = generation;
@@ -854,9 +826,7 @@ export function createDeviceStreamClient(
               rotationCursor = screen.orientation;
             panelSinks?.onScreen?.(screen);
             events.onScreen(screen);
-            // A surface election can leave an existing decoder on the former
-            // encoder description. Reopen only video to acquire the elected
-            // surface's seed and codec configuration; HID and the viewer stay.
+            // Reopen video after surface election for its seed and codec; preserve HID and the viewer.
             if (
               panelSinks &&
               screen.supportsPhysicalOrientation &&
@@ -874,9 +844,7 @@ export function createDeviceStreamClient(
             }
           }
         }
-      } catch {
-        // Ignore malformed config frames.
-      }
+      } catch {}
     };
     ws.onclose = (event) => {
       if (socket !== ws) return;
@@ -901,7 +869,6 @@ export function createDeviceStreamClient(
     ws.onerror = () => ws.close();
   };
 
-  // Android: one socket for video and input.
   const connectAndroid = () => {
     if (stopped) return;
     const ws = new WebSocket(wsUrl(`/ws?device=${device}&frame-meta=1`));

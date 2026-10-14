@@ -9,14 +9,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
-/**
- * Inline context records: the typed payload behind every composer chip.
- * A message's `text` carries position through canonical reference links
- * (`[label](t3-context://v1/<kind>/<contextId>)`, see
- * `@t3tools/shared/composerContextReferences`); these records carry the payload,
- * keyed by `contextId`. Bytes never live here: image and file records bind to a
- * `ChatAttachment` by id.
- */
+/** Canonical t3-context links locate contextId payloads; image/file records reference attachment bytes by id. */
 
 export const COMPOSER_CONTEXT_KINDS = [
   "image",
@@ -77,7 +70,6 @@ const BoundedString = (max: number) => Schema.String.check(Schema.isMaxLength(ma
 const ShortString = BoundedString(2_048);
 const NullableShortString = Schema.NullOr(ShortString);
 
-/** Snapshot used to identify and present a pull request carried by a review-context record. */
 export const PullRequestContextMetadata = Schema.Struct({
   number: PositiveInt,
   title: ShortString,
@@ -155,9 +147,7 @@ export const ElementContextRecord = Schema.Struct({
 });
 export type ElementContextRecord = typeof ElementContextRecord.Type;
 
-// Optional record fields are `optionalKey`: a record holding an explicit
-// `undefined` cannot be sent as JSON, so it fails its own check and is dropped
-// alone instead of failing the whole message.
+// optionalKey rejects explicit undefined locally so one non-JSON record cannot fail the whole message.
 export const PreviewAnnotationContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("preview-annotation"),
@@ -171,8 +161,7 @@ export const PreviewAnnotationContextRecord = Schema.Struct({
   elements: Schema.optionalKey(Schema.Array(ElementContextDetails).check(Schema.isMaxLength(50))),
   /** Original target ids and edits allow pasted annotations to retain exact style changes. */
   elementIds: Schema.optionalKey(Schema.Array(ShortString).check(Schema.isMaxLength(50))),
-  /** Region and stroke geometry is lossy on purpose, but their counts feed the target summary,
-      so a pasted annotation still says what it marked. */
+  /** Lossy geometry retains counts so pasted annotations preserve their target summary. */
   regionCount: Schema.optionalKey(NonNegativeInt),
   strokeCount: Schema.optionalKey(NonNegativeInt),
   styleChangeDetails: Schema.optionalKey(
@@ -221,10 +210,7 @@ export const SkillContextRecord = Schema.Struct({
 });
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
-/**
- * Another thread on the same server, attached so the agent can read its history through
- * `t3_thread_read`. Only identity travels; the title is a display snapshot.
- */
+/** Carries thread identity for t3_thread_read on the same server; titles are display snapshots. */
 export const ThreadContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("thread"),
@@ -236,11 +222,7 @@ export type ThreadContextRecord = typeof ThreadContextRecord.Type;
 
 const isJson = Schema.is(Schema.Json);
 
-/**
- * Catch-all for kinds this build does not know. Known discriminators are excluded so a
- * malformed known record fails its own schema instead of sliding through unchecked.
- * Mirrors `ChatUnknownAttachment`.
- */
+/** Unknown kinds preserve payloads; exclude known tags so malformed known records cannot bypass validation. */
 export const UnknownContextRecord = Schema.Struct({
   ...recordBase,
   kind: ComposerContextKind.check(Schema.isPattern(KNOWN_KIND_PATTERN)),

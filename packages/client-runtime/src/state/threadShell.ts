@@ -30,10 +30,8 @@ const EMPTY_THREAD_REFS_BY_PROJECT: ReadonlyMap<
   ReadonlyArray<ScopedThreadRef>
 > = new Map();
 
-// An async question outlives the subagent's run, but once that run ends the
-// parent is no longer waiting on the answer, so it stops counting as input.
-// The activity run stays set when a follow-up is queued behind a blocked run;
-// older servers omit it, so fall back to the latest run's status.
+// A child question counts only while its run is live; queued follow-ups must not hide blocked activity.
+// Older shells fall back to latest-run status.
 const isChildRunLive = (
   thread: Pick<OrchestrationV2ThreadShell, "activityRunStatus" | "status">,
 ) =>

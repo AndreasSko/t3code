@@ -69,12 +69,8 @@ export const retryManagedTunnelRegistration = <A, E, R>(
   );
 };
 
-// A host asks the relay for a replacement tunnel at most this often. Every
-// managed host shares one relay, so a host stuck in a bad loop must not turn
-// into a fleet-wide request storm.
+// Bound recovery requests so one broken host cannot flood the shared relay.
 export const MANAGED_TUNNEL_RECOVERY_COOLDOWN = Duration.minutes(2);
 
-// Existing hosts register on their first boot after an upgrade, and desktop
-// auto-update delivers that boot to many hosts at once. Spread the first
-// registration so the relay and Cloudflare see a ramp instead of a spike.
+// Jitter first registration to spread the fleet spike from desktop auto-updates.
 export const MANAGED_TUNNEL_FIRST_REGISTRATION_JITTER = Duration.seconds(30);

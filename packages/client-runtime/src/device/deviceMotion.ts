@@ -16,8 +16,7 @@ function fromVector(vector: Vector3) {
     : new Quaternion().setFromAxisAngle(vector.clone().divideScalar(angle), angle);
 }
 
-// Recovered from Bitrig 0.25's rotation dynamics: point gain, drag force limit,
-// velocity limits, release prediction/blend, and the 0.5 / 0.78 release spring.
+// Bitrig 0.25 rotation dynamics constants include gain, velocity limits, and release spring tuning.
 const gain = 0.006;
 const response = 0.5;
 const damping = 0.78;
@@ -154,9 +153,7 @@ export function createDeviceMotion(options: { choose: (rotation: Quaternion) => 
       speed.addScaledVector(acceleration, dt).clampLength(0, 9);
       q.premultiply(fromVector(speed.clone().multiplyScalar(dt))).normalize();
     };
-    // Fixed ticks make release independent of display refresh rate. The final
-    // partial tick interpolates the next tick without committing it. This also
-    // keeps displayed angular speed bounded between tick boundaries.
+    // Fixed ticks decouple release from refresh rate; interpolate the last partial tick without committing it.
     for (; spring.steps < steps; spring.steps++)
       integrate(spring.rotation, spring.velocity, stepSeconds);
     rotation.copy(spring.rotation);

@@ -97,7 +97,6 @@ const RESIZE_HANDLES: ReadonlyArray<{
   { direction: "southeast", className: "-bottom-2 -right-2 size-4 cursor-nwse-resize" },
 ];
 
-/** Floats the thread's browser tab or device stream over chat. */
 export function ThreadPreviewMiniPlayer({ threadRef, miniPlayer }: Props) {
   const { source } = miniPlayer;
   return source.kind === "browser" ? (
@@ -313,11 +312,7 @@ function DeviceMiniPlayer({
   );
 }
 
-/**
- * The frame, drag/resize gestures, and hover pill shared by every floating
- * source. Native clipping and the DOM frame use the same radius so their
- * separately composited edges stay aligned.
- */
+/** Native clipping and the DOM frame share a radius to align composited edges. */
 function MiniPlayerShell({
   threadRef,
   miniPlayer,

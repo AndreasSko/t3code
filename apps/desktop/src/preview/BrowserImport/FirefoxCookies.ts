@@ -1,14 +1,4 @@
-/**
- * Firefox cookie extraction.
- *
- * Firefox stores cookies unencrypted in `cookies.sqlite`, so there is no key
- * to fetch and no consent prompt — the file is readable by anything running as
- * the user. That is Mozilla's design choice, not a control being circumvented,
- * which is why this path works identically on macOS, Windows, and Linux while
- * the Chromium one needs a per-platform credential store.
- *
- * @module FirefoxCookies
- */
+/** Firefox stores plaintext cookies and needs no platform keychain consent. */
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -16,25 +6,12 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { cookieScope, snapshotCookieDatabase, type ImportedCookie } from "./CookieDatabase.ts";
 
-/**
- * Mirrors `ChromiumCookieReadError` so both engines fail with a tagged error
- * the service can tell apart, rather than one of them widening the channel to
- * an anonymous shape.
- *
- * No `reason` field: unlike Chromium there is only one way this fails — the
- * plaintext database would not open — and the tag already says which engine it
- * was. `BrowserImport` supplies the user-facing reason when it maps the union.
- */
+/** BrowserImport maps every Firefox read failure to readFailed; no separate reason field is needed. */
 export class FirefoxCookieReadError extends Schema.TaggedError<FirefoxCookieReadError>()(
   "FirefoxCookieReadError",
   {
-    /**
-     * Which database the read was for. Firefox keeps one per profile, so
-     * without it a failure cannot be traced back to the profile that caused
-     * it.
-     */
+    /** Identifies which Firefox profile failed in logs. */
     cookieDatabasePath: Schema.String,
-    /** Always present: every construction site wraps a real failure. */
     cause: Schema.Defect(),
   },
 ) {
@@ -44,26 +21,16 @@ export class FirefoxCookieReadError extends Schema.TaggedError<FirefoxCookieRead
 }
 
 /**
- * `moz_cookies.sameSite` holds nsICookie's constants: 0 = None, 1 = Lax,
- * 2 = Strict, and 256 = Unset for a cookie that carried no SameSite attribute
- * at all. Unset is not the same thing as None — None is an explicit opt-in to
- * cross-site use — so it is imported as Electron's `unspecified`, which lets
- * the target browser apply its own default exactly as Firefox did. Anything
- * unrecognised also lands there rather than on `no_restriction`, since
- * guessing "none" would widen a cookie's scope on import.
+ * Firefox SameSite: 0 None, 1 Lax, 2 Strict, 256 Unset.
+ * Unset and unknown values remain unspecified; mapping them to None would widen cross-site access.
  */
 const SAMESITE_NONE = 0;
 const SAMESITE_LAX = 1;
 const SAMESITE_STRICT = 2;
 
 /**
- * Schemas 10–14 carried a second column, `rawSameSite`: the value the cookie
- * actually declared, beside a `sameSite` that Firefox had already defaulted to
- * Lax. The schema-15 migration folded them back together with
- * `sameSite = UNSET where sameSite = LAX and rawSameSite = NONE`, i.e. a row
- * that "is Lax" only because nothing was declared. Reading such a database
- * before Firefox has migrated it must apply the same rule, or an undeclared
- * cookie is imported as an explicit Lax.
+ * Schemas 10-14: sameSite=Lax with rawSameSite=None identifies an undeclared value.
+ * Apply Firefox's schema-15 rule so those cookies remain unspecified on import.
  */
 const FIREFOX_RAW_SAMESITE_FIRST_SCHEMA = 10;
 const FIREFOX_RAW_SAMESITE_LAST_SCHEMA = 14;
@@ -86,8 +53,7 @@ const CookieRow = Schema.Struct({
   name: Schema.String,
   value: Schema.String,
   path: Schema.String,
-  // UNIX-epoch based, unlike Chromium's 1601-based microseconds — but the
-  // unit depends on the schema version; see `expiryToSeconds`.
+  // UNIX epoch; schema version determines seconds or milliseconds (see expiryToSeconds).
   expiry: Schema.Number,
   isSecure: Schema.Number,
   isHttpOnly: Schema.Number,
@@ -98,11 +64,8 @@ const CookieRow = Schema.Struct({
 const decodeCookieRows = Schema.decodeUnknownEffect(Schema.Array(CookieRow));
 
 /**
- * Firefox schema 16 (Firefox 129) moved `expiry` from seconds to milliseconds
- * — the migration is `UPDATE moz_cookies SET expiry = expiry * 1000`. Electron
- * wants seconds, so the unit is decided by `PRAGMA user_version` rather than
- * assumed: importing a pre-16 profile as milliseconds would expire every cookie
- * at once, and a post-16 one as seconds would keep them for ~1000× too long.
+ * Firefox schema 16+ stores expiry in milliseconds; older schemas use seconds.
+ * Use PRAGMA user_version so import preserves the actual expiration date.
  */
 const FIREFOX_EXPIRY_MILLISECONDS_SCHEMA = 16;
 
@@ -125,11 +88,7 @@ export const readFirefoxCookies = Effect.fn("FirefoxCookies.readFirefoxCookies")
       const hasRawSameSite =
         schemaVersion >= FIREFOX_RAW_SAMESITE_FIRST_SCHEMA &&
         schemaVersion <= FIREFOX_RAW_SAMESITE_LAST_SCHEMA;
-      // Only the default container. Firefox isolates cookies per container and
-      // per private window via `originAttributes` (`^userContextId=2`,
-      // `^privateBrowsingId=1`); Electron has no equivalent, so importing them
-      // all would collapse several identities onto one host/name/path and hand
-      // the profile an arbitrary container's session.
+      // Electron cannot represent Firefox containers or private-window identities; import only empty originAttributes.
       const raw = hasRawSameSite
         ? yield* sql`
           select host, name, value, path, expiry, isSecure, isHttpOnly, sameSite, rawSameSite

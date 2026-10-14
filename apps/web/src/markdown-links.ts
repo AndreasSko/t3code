@@ -38,10 +38,8 @@ export function rewriteMarkdownFileUriHref(href: string | undefined): string | n
 }
 
 /**
- * Inline code spans mostly hold identifiers, commands, and refs (`node.meta`,
- * `origin/main`) rather than deliberate link destinations, so auto-linking
- * them demands stronger path evidence than an explicit markdown link does:
- * an unambiguous path prefix, a file extension, or a :line suffix.
+ * Inline code mostly contains identifiers and refs; require a path prefix, extension, or :line before
+ * autolinking.
  */
 export function resolveInlineCodeFileLinkMeta(
   codeText: string,
@@ -59,9 +57,8 @@ export function resolveInlineCodeFileLinkMeta(
 }
 
 /**
- * Prose in a workspace file names other files from the repo root (`docs/ai/design.md`),
- * unlike an explicit link. Single-segment names (`design.md:12`) and `./`, `../`
- * paths still read as siblings, and files outside the workspace keep their own base.
+ * Repo-root prose paths resolve from the workspace; ./, ../, and single filenames still resolve as
+ * siblings.
  */
 function inlineCodePathNamesFromWorkspaceRoot(
   candidate: string,

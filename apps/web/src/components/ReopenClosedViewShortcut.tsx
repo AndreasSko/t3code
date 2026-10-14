@@ -43,7 +43,6 @@ import {
 } from "../threadRoutes";
 import { toastManager } from "./ui/toast";
 
-/** Layout commands a focused desktop browser page hands back to the app. */
 const PREVIEW_FORWARDED_LAYOUT_COMMANDS = [
   "sidebar.toggle",
   "rightPanel.toggle",
@@ -194,9 +193,7 @@ export function ReopenClosedViewShortcut() {
         isWeb: false,
       },
     };
-    // A focused browser page is a separate process, so these chords never reach
-    // the app's keydown listeners. The desktop claims them in the guest and
-    // sends each command back as a menu action.
+    // Browser guests run separately; the desktop forwards chords their keydown listeners cannot send to the app.
     const commands = [
       ...(hasHistory ? (["view.reopenClosed"] as const) : []),
       ...PREVIEW_FORWARDED_LAYOUT_COMMANDS,

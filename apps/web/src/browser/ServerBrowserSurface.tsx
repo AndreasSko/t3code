@@ -369,7 +369,6 @@ export function ServerBrowserSurface(props: {
       // A pending measure reads the latest size when it fires, so a drag resizes
       // the page at most every RESIZE_THROTTLE_MS and still ends on the final size.
       if (timer !== null) return;
-      // The first size connects right away.
       timer = setTimeout(measure, sizeRef.current === null ? 0 : RESIZE_THROTTLE_MS);
     });
     return () => {

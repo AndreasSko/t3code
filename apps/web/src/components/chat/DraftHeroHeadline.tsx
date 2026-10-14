@@ -42,8 +42,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
-// Picker value for the "Add project" row; real entries are keyed by logical
-// project key.
 const ADD_PROJECT_VALUE = "add-project";
 
 interface PickerItem {
@@ -108,9 +106,7 @@ export function DraftHeroHeadline({
       threads,
     ],
   );
-  // Same-named projects on two machines are only told apart by where they
-  // live, so rows on another machine carry its icon once the catalog spans
-  // more than one environment; a single-machine catalog stays as it was.
+  // Environment icons distinguish same-named projects across machines.
   const showProjectEnvironments = useMemo(
     () => projectGroupsSpanEnvironments(projectGroups),
     [projectGroups],
@@ -178,9 +174,7 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
 
-  // {value, label} items let Base UI drive the combobox selection while the
-  // popup search filters the same collection. "Add project" is an action, not
-  // a project, so it only trails the unfiltered list.
+  // Add project is an action, so offer it only after the unfiltered project list.
   const pickerItems = useMemo<readonly PickerItem[]>(
     () => [
       ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
@@ -208,11 +202,7 @@ export function DraftHeroHeadline({
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
   }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);
-  // With a prompt typed, project selection changes the target of the open
-  // draft in place, so the prompt stays in the same composer session. An empty
-  // draft instead opens the chosen project's own draft, like starting a new
-  // thread there: moving it would replace that draft and strand whatever it
-  // holds, such as the browser tabs of the no-project draft.
+  // Retarget typed drafts in place; empty drafts open the destination's draft to preserve its invested state and tabs.
   const selectProject = (project: (typeof projects)[number], logicalProjectKey: string) => {
     if (!draftId) {
       return;
@@ -297,10 +287,7 @@ export function DraftHeroHeadline({
       <Tooltip>
         <TooltipTrigger
           render={
-            // The trigger's accessible name comes from its visible text (the
-            // project title) so the hero sentence reads naturally: an
-            // aria-label here would replace the title with an action phrase
-            // mid-sentence and baffle screen-reader users.
+            // An aria-label would replace the project title with an action phrase in the hero sentence.
             <ComboboxTrigger
               render={<InlineButton tone="picker" />}
               data-draft-project-trigger=""
@@ -363,10 +350,7 @@ export function DraftHeroHeadline({
     </button>
   );
 
-  // The composer hero is a sentence, so the heading's accessible name must be
-  // a complete sentence too. The project picker is a control rendered inline
-  // in the h1; without an explicit label its widget state bleeds into the
-  // announced phrase.
+  // Explicit sentence labels keep inline picker widget state out of the heading's accessible name.
   const headingLabel = isScratchDraft
     ? "What should we work on?"
     : hasResolvedProject
@@ -375,8 +359,6 @@ export function DraftHeroHeadline({
         ? `${activeProjectDisplayName ?? "Choose a project"} to start`
         : "Add a project to start";
 
-  // One click out of the project, phrased as the alternative to the question
-  // above it. Focus moves to the project picker once this line has gone.
   const noProjectShortcut = shortcutLabelForCommand(keybindings, "chat.newWithoutProject");
   const orStartWithoutProject =
     scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (

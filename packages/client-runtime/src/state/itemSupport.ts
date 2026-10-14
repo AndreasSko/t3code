@@ -32,11 +32,7 @@ export const EMPTY_V2_ITEM_SUPPORT: V2ItemSupport = Object.freeze({
   contextTransfer: null,
 });
 
-/**
- * Resolves the relational V2 entities that enrich one projected item. The
- * caller supplies the item's source-thread projection, including for inherited
- * rows, so every returned entity retains its original projection identity.
- */
+/** Supply the source-thread projection for inherited rows to preserve entity identities. */
 export function resolveV2ItemSupport(projection: Projection, itemId: TurnItemId): V2ItemSupport {
   const item =
     projection.turnItems.find((candidate) => candidate.id === itemId) ??

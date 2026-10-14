@@ -255,13 +255,7 @@ export const clearCache = DesktopIpc.makeIpcMethod({
   }),
 });
 
-/**
- * Partition scope for an (environment, profile) pair.
- *
- * The default profile keeps the bare environment id it used before profiles
- * existed, so upgrading does not strand anyone's existing logins in an
- * orphaned partition. Incognito derives a non-persistent partition.
- */
+/** Preserve the default profile's bare environment scope so existing logins remain reachable; incognito is nonpersistent. */
 export function resolvePartitionScope(
   environmentId: string,
   profileId: string | undefined,
@@ -283,11 +277,7 @@ export function resolvePartitionScope(
   };
 }
 
-/**
- * Clearing without a profile keeps the historical "everything" behaviour for
- * an explicit all-profiles action; naming a profile confines it to that
- * profile's partition so one profile's sign-out cannot reach the others.
- */
+/** Omitting a profile clears all partitions; naming one confines sign-out to that profile. */
 const resolveClearPartitions = Effect.fn("desktop.ipc.preview.resolveClearPartitions")(function* (
   manager: PreviewManager.PreviewManager["Service"],
   environmentId: string,
@@ -295,10 +285,8 @@ const resolveClearPartitions = Effect.fn("desktop.ipc.preview.resolveClearPartit
 ) {
   if (profileId === undefined) return undefined;
   const { scope, persistent, namespace } = resolvePartitionScope(environmentId, profileId);
-  // Loading the session is what puts the partition in the map the clear walks.
-  // Deriving the partition string alone leaves nothing to match, so clearing a
-  // profile with no tab open this run — after a restart, or when deleting a
-  // profile — would report success and delete nothing.
+  // Register the session before clearing; an unopened profile otherwise has no
+  // partition in the map and clearing would silently do nothing.
   yield* manager.getBrowserSession(scope, persistent, namespace);
   return [yield* manager.getBrowserPartition(scope, persistent, namespace)];
 });
@@ -310,9 +298,7 @@ export const getPreviewConfig = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.preview.getConfig")(function* ({ environmentId, profileId }) {
     const manager = yield* PreviewManager.PreviewManager;
     const { scope, persistent, namespace } = resolvePartitionScope(environmentId, profileId);
-    // Creating the session first is what installs the UA rewrite and permission
-    // handlers; a guest that attached to an untouched partition would run with
-    // Electron's default UA and Chromium's default permission behaviour.
+    // Initialize session permissions before a guest attaches to this partition.
     yield* manager.getBrowserSession(scope, persistent, namespace);
     return {
       partition: yield* manager.getBrowserPartition(scope, persistent, namespace),
@@ -322,11 +308,7 @@ export const getPreviewConfig = DesktopIpc.makeIpcMethod({
   }),
 });
 
-/**
- * Registered separately from `methods`: these carry `BrowserImport` in their
- * context and their own failure type, so they do not unify with the
- * manager-backed handlers the shared loop iterates.
- */
+/** BrowserImport handlers have distinct contexts and error types, so they cannot share the manager loop. */
 export const listBrowserImportSources = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_IMPORT_SOURCES_CHANNEL,
   payload: Schema.Void,
@@ -346,8 +328,7 @@ export const importBrowserCookies = DesktopIpc.makeIpcMethod({
     ...importInput
   }) {
     const browserImport = yield* BrowserImport.BrowserImport;
-    // Derived in main from the same helper the webview config uses, so cookies
-    // land in exactly the partition the profile's tabs attach to.
+    // Use the webview's partition helper so imported cookies reach that profile's tabs.
     const { scope, persistent, namespace } = resolvePartitionScope(
       environmentId,
       importInput.targetProfileId,

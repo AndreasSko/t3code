@@ -1,24 +1,5 @@
-/**
- * Renders a webhook task's prompt from the request that triggered it. The
- * rendered prompt is the only thing the agent receives, so a user who wants
- * the whole request writes `{{request}}` or `{{body}}` themselves.
- *
- * The syntax is deliberately just `{{path}}` lookups — no conditionals,
- * defaults, filters or escaping — so it never grows into a template language:
- *
- * - `{{body.a.b.0}}`   a field of a JSON or form-encoded body
- * - `{{headers.name}}` a request header (case-insensitive)
- * - `{{query.name}}`   a URL query parameter
- * - `{{body}}`         the raw body text
- * - `{{request}}`      method, path, query, headers and body
- *
- * Strings and numbers render as text, objects and arrays as JSON. A path with
- * no value renders empty and is reported in `missing`.
- *
- * Credential-looking headers and query parameters are redacted wherever the
- * whole set renders (`{{request}}`, `{{headers}}`, `{{query}}`), as in the
- * delivery log. Naming one (`{{headers.authorization}}`) gives its raw value.
- */
+/** Only the rendered {{path}} prompt reaches the agent; use {{request}} to include the whole request.
+ * Aggregate headers/query redact credentials; individual lookups return raw values. Missing paths render empty. */
 
 export interface WebhookRequest {
   readonly method: string;

@@ -482,7 +482,6 @@ function scenarios(): ReadonlyArray<ReplayScenario> {
           name: "spawn-v2-subagent-needing-approval",
           description:
             "The child inherits the root's approval policy, so its write asks the client for approval on the child's native thread and turn.",
-          // The adapter's approval-required turn defaults.
           turnDefaults: {
             approvalPolicy: "untrusted",
             sandboxPolicy: { type: "readOnly" },
@@ -1244,7 +1243,6 @@ function installReplayHandlers({
   readonly completeTurn: (turnId: string) => Effect.Effect<void>;
   readonly startCommandExecution: (turnId: string) => Effect.Effect<void>;
   readonly beforeApprovalResponse: () => Effect.Effect<void>;
-  /** Turn id -> command item id -> process id, for commands still running. */
   readonly runningCommandProcessIds: Map<string, Map<string, string>>;
 }) {
   return Effect.all(
@@ -1350,7 +1348,6 @@ function runReplaySession({
     const beforeApprovalResponse = () =>
       approvalGate ? Deferred.await(approvalGate) : Effect.void;
     const model = scenarioModel(scenario);
-    // Same runtime params the adapter sends on thread/start, thread/resume and thread/fork.
     const threadRuntimeParams = { cwd: process.cwd(), model, config: CODEX_THREAD_CONFIG };
     const lastTurnIdByThread = new Map<string, string>();
     const runningCommandProcessIds = new Map<string, Map<string, string>>();
@@ -1432,7 +1429,6 @@ function runReplaySession({
             threadId,
             turnId,
           });
-          // Like the adapter, stop commands the interrupt left running.
           for (const processId of runningCommandProcessIds.get(turnId)?.values() ?? []) {
             yield* client.raw.request("thread/backgroundTerminals/terminate", {
               threadId,
@@ -1531,8 +1527,7 @@ function runReplaySession({
       yield* Effect.gen(function* () {
         const client = yield* initializeClient;
         const resumeParams = { threadId, excludeTurns: true, ...threadRuntimeParams };
-        // Like the adapter: the fresh app-server reports the thread notLoaded,
-        // so it is resumed before thread/revert, and the next turn resumes it again.
+        // A fresh app-server reports notLoaded, requiring resume before revert.
         yield* client.request("thread/read", { threadId, includeTurns: false });
         yield* client.request("thread/resume", resumeParams);
         yield* revertCodexThread(client, threadId, rollback.numTurns);
@@ -1564,7 +1559,6 @@ function runReplaySession({
           if (sourceThreadId === undefined) {
             throw new Error(`Unknown replay thread alias '${step.from}'.`);
           }
-          // The adapter forks at the source's latest native turn.
           const lastTurnId = lastTurnIdByThread.get(sourceThreadId);
           const forked = yield* client.request("thread/fork", {
             threadId: sourceThreadId,

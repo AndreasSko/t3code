@@ -36,10 +36,7 @@ export function canCreateProjectInEnvironment(
   return connectionPhase === "connected";
 }
 
-/**
- * The Scratch folder an environment offers threads without a project right
- * now, or null while it is not connected or has none.
- */
+/** Null when disconnected or the environment has no scratch workspace. */
 export function availableScratchWorkspaceRoot(
   connectionPhase: EnvironmentConnectionPhase | null | undefined,
   serverConfig: Pick<ServerConfig, "scratchWorkspaceRoot"> | null | undefined,
@@ -74,7 +71,6 @@ export type AddProjectCloneFlow =
       readonly remoteUrl: string;
     };
 
-/** The hosts the clone picker offers, in the order the built-in definitions list them. */
 const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<SourceControlProviderKind> =
   sourceControlClients.definitions.map((definition) => definition.kind);
 
@@ -171,20 +167,11 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
   return trimmed.length === 0 ? "~/" : ensureBrowseDirectoryPath(trimmed);
 }
 
-/**
- * Folder name `git clone` would pick, from either a looked-up repository or a
- * pasted clone URL. Providers report `owner/repo`, Azure DevOps reports
- * `org/project/repo`, and a URL can arrive in any form: `https://host/owner/
- * repo.git`, `ssh://git@host:22/owner/repo`, `git@host:owner/repo.git`, with
- * or without a query, a fragment or a trailing slash. The repository is always
- * the last segment, minus the `.git` suffix.
- */
+/** Uses the final path segment without .git for host repo ids and HTTPS/SSH clone URLs. */
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
   const withoutQuery = (repositoryOrRemoteUrl ?? "").split(/[?#]/)[0]?.trim() ?? "";
   const schemeIndex = withoutQuery.indexOf("://");
-  // A remote URL carries a host before the repository path. The host is never
-  // the repository, so a link that stops at the host, or at a port, names
-  // nothing and the destination falls back to the browsed folder.
+  // A URL ending at its host or port has no repository name; use the browsed folder.
   const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
   const segments = pathPart.split(/[/\\:]+/).filter((segment) => segment.trim().length > 0);
@@ -193,20 +180,14 @@ export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | und
   }
 
   const lastSegment = segments.at(-1)?.trim() ?? "";
-  // A port can only sit directly behind the authority, so it is a port only
-  // when nothing follows it. Deeper segments are path, even when numeric: the
-  // repository in `https://host/acme/123` really is named `123`.
+  // Only the segment directly after authority can be a port; numeric deeper paths are repository names.
   if (hasHost && segments.length === 2 && /^\d+$/.test(lastSegment)) {
     return "";
   }
   return lastSegment.endsWith(".git") ? lastSegment.slice(0, -".git".length) : lastSegment;
 }
 
-/**
- * Clone destination proposed for a directory: the directory the user picked
- * plus the repository folder inside it. Without a name the directory is the
- * destination, which is what the raw clone URL flow keeps doing.
- */
+/** Adds the repository folder to the picked directory; without a name uses the picked directory itself. */
 export function getCloneDestinationPath(
   directoryPath: string,
   directoryName: string | null | undefined,
@@ -218,26 +199,18 @@ export function getCloneDestinationPath(
   return `${ensureBrowseDirectoryPath(directoryPath)}${name}`;
 }
 
-/**
- * Where `projects.createNew` will put a project named `name`. The server adds
- * `-2`, `-3`, ... when that folder is taken, so this is a preview.
- */
+/** Preview only: the server adds -2, -3, etc. if the folder is taken. */
 export function getNewProjectPathPreview(newProjectsRoot: string, name: string): string {
   return getCloneDestinationPath(newProjectsRoot, newProjectFolderName(name));
 }
 
-/** A host a new project can be published to, and who the repository goes under there. */
 export interface NewProjectPublishTarget {
   readonly definition: SourceControlClientDefinition;
   /** Null lets the host's CLI place it under the signed-in user. */
   readonly owner: string | null;
 }
 
-/**
- * The hosts a new project can be published to on that environment, in definition order so
- * GitHub leads. A host is offered when it is ready and its account names where the repository
- * goes.
- */
+/** Offers ready hosts with known account names in definition order, with GitHub first. */
 export function getNewProjectPublishTargets(
   discovery: SourceControlDiscoveryResult | null,
 ): ReadonlyArray<NewProjectPublishTarget> {
@@ -254,7 +227,6 @@ export function getNewProjectPublishTargets(
   });
 }
 
-/** The chosen host's target, or the first one when the choice is not on offer. */
 export function getNewProjectPublishTarget(
   targets: ReadonlyArray<NewProjectPublishTarget>,
   kind: SourceControlProviderKind | null,
@@ -271,11 +243,7 @@ export function getNewProjectRepository(
   return target.owner ? `${target.owner}/${folderName}` : folderName;
 }
 
-/**
- * Destination query after choosing a directory while the clone folder is
- * pinned in the path input. Selecting an existing directory with the pinned
- * name uses that directory directly instead of producing `repo/repo`.
- */
+/** Browsing an existing directory with the pinned clone name must not produce repo/repo. */
 export function getCloneDestinationBrowsePath(input: {
   readonly browseDirectoryPath: string;
   readonly selectedDirectoryName: string;

@@ -249,7 +249,6 @@ export function renderGhosttySnapshot(options: {
     const top = originY + snapshot.cursorY * metrics.height;
     context.fillStyle = cssColor(snapshot.cursor);
     if (!focused) {
-      // An unfocused terminal draws a hollow cursor so the active pane is obvious.
       context.strokeStyle = cssColor(snapshot.cursor);
       context.strokeRect(left + 0.5, top + 0.5, metrics.width - 1, metrics.height - 1);
     } else if (snapshot.cursorStyle === 0) {

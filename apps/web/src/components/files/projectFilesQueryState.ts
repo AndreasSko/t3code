@@ -212,14 +212,8 @@ export function useProjectEntriesQuery(
   };
 }
 
-/**
- * Backing query for the project file picker: a debounced, bounded, file-only
- * server search. An empty query is a valid request — the index answers it
- * with frecency-ordered files, so the picker's initial view is recent files
- * without transferring the full workspace listing. `matchedQuery` is the
- * query the returned entries were computed for, so the caller can highlight
- * against results instead of half-typed input.
- */
+/** Empty queries return frecency-ranked files without a full workspace listing.
+ * Highlight with matchedQuery rather than the user's current partially typed query. */
 export function useProjectFilePickerQuery(
   environmentId: EnvironmentId,
   cwd: string,

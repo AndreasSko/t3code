@@ -21,9 +21,8 @@ export const GENERIC_MIME_TYPES = new Set([
 ]);
 
 /**
- * Recognizes pictures even when the picker omitted their MIME type. A picture chosen through
- * the document picker arrives typed as a plain file, so what it *is* has to come from its own
- * name and type rather than from which picker produced it.
+ * Document pickers may label images as plain files, so infer type from the attachment itself.
+ * Fall back to its extension only when its MIME type is absent or generic.
  */
 export function imageMimeType(attachment: {
   readonly name: string;

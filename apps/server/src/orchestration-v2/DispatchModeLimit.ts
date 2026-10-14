@@ -7,21 +7,14 @@ export interface DispatchModes {
   readonly interactionMode: ProviderInteractionMode;
 }
 
-/** A thread the orchestrator refused to touch because it ran above the limit. */
 export interface DispatchModeRefusal extends DispatchModes {
   readonly threadId: ThreadId;
   readonly mode: "runtime" | "interaction";
 }
 
 /**
- * The broadest modes a command may touch, for commands an MCP caller sends.
- * A caller checks its target's modes before dispatching, but the target's
- * user can raise them meanwhile; the orchestrator re-checks this limit inside
- * the thread's command lock, where nothing else can change them. Unset for
- * the user's own commands, which have no limit.
- *
- * The orchestrator also records its refusal in `refused`, so the sender can
- * report it however the code in between wrapped the dispatch error.
+ * MCP callers constrain dispatch under the thread lock to prevent concurrent mode escalation.
+ * User commands omit the limit; refused records the refusal even when errors are wrapped.
  */
 export interface DispatchModeLimitValue extends DispatchModes {
   readonly refused?: Ref.Ref<DispatchModeRefusal | undefined>;

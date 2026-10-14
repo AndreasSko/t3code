@@ -193,11 +193,7 @@ export class VcsStatusBroadcaster extends Context.Service<
       cwd: string,
     ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
     readonly refreshStatus: (cwd: string) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
-    /**
-     * Refresh a loaded cwd after a turn if background policy allows it.
-     * GitManager retries missing PRs for the current branch and keeps known
-     * PRs and failed lookup backoff cached. This does not fetch Git remotes.
-     */
+    /** Refresh loaded PR status under background policy, retrying missing PRs without fetching remotes. */
     readonly refreshPullRequestStatus: (
       cwd: string,
     ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
@@ -218,7 +214,7 @@ const normalizeCwd = (cwd: string) =>
     Effect.orElseSucceed(() => cwd),
   );
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const autoPullPolicy = yield* VcsAutoPullPolicy;
   const workflow = yield* GitWorkflowService.GitWorkflowService;
@@ -232,9 +228,7 @@ export const make = Effect.gen(function* () {
     Scope.close(scope, Exit.void),
   );
   const cacheRef = yield* Ref.make(new Map<string, CachedVcsStatus>());
-  // One permit per cwd for remote reads that write the cache. Without it a
-  // periodic poll that started before `gh pr create` can finish after the
-  // turn-end refresh and overwrite the fresh PR with its stale `pr: null`.
+  // Serialize remote cache writes per cwd so an earlier poll cannot overwrite a newly created PR with null.
   const remoteWriteLocks = yield* KeyedLock.make<string>();
   const withRemoteWriteLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
     remoteWriteLocks.withLock(cwd, effect);
@@ -461,9 +455,7 @@ export const make = Effect.gen(function* () {
         const remote = yield* workflow.remoteStatus({ cwd }, options);
         const pulled = yield* maybeAutoPull(cwd, remote, options?.policyCwds ?? [cwd]);
         if (pulled !== null) return pulled.remote;
-        // Local status holds the Changes totals, which compare against remote refs. A fetch can
-        // move them with no local trigger (a push from a terminal, a PR merged on the host), so
-        // re-read local status on the first fetch and whenever divergence moves.
+        // Fetches move remote refs without local triggers; refresh Changes totals when divergence moves.
         if (
           remote &&
           (!previousRemote ||
@@ -482,8 +474,7 @@ export const make = Effect.gen(function* () {
     "VcsStatusBroadcaster.refreshStatus",
   )(function* (rawCwd) {
     const cwd = yield* withFileSystem(normalizeCwd(rawCwd));
-    // invalidateStatus (not the two partial invalidations) so an explicit
-    // refresh also bypasses GitManager's slow PR-lookup cache.
+    // Full invalidation also bypasses GitManager's slow PR-lookup cache.
     return yield* withRemoteWriteLock(
       cwd,
       Effect.gen(function* () {
@@ -515,8 +506,7 @@ export const make = Effect.gen(function* () {
             { concurrency: "unbounded" },
           )).some(Boolean);
           if (!shouldRefresh) return null;
-          // Resolve the checked-out branch again. A cached PR can belong to
-          // the previous branch after an agent checks out another branch.
+          // Re-resolve the branch so a checkout cannot retain the previous branch's cached PR.
           const remote = yield* workflow.remoteStatus(
             { cwd },
             { refreshUpstream: false, refreshMissingPullRequest: true },

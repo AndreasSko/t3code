@@ -95,17 +95,13 @@ export function getThemeCardDefinition(theme: ThemeDefinition): ThemeCardDefinit
   };
 }
 
-// Interpolating in oklab keeps the glow falloff perceptually even (no gray
-// mid-tones or banding rings), and premultiplied alpha keeps the fade to
-// transparent clean.
+// Oklab keeps the glow perceptually even; premultiplied alpha avoids artifacts when fading to transparent.
 function getThemePreviewStyle(
   colors: ThemeCardPreviewColors,
   mode: ThemeAppearance,
 ): CSSProperties {
   const spec = THEME_PREVIEW_RENDER_SPECS[mode];
-  // The canvas carries the ball's light/dark identity, so it stays dominant:
-  // a near-true base with a contained accent glow, instead of an accent wash
-  // that makes both modes read alike.
+  // Keep the canvas dominant so light and dark previews remain distinguishable.
   const modeBase = `color-mix(in oklab, ${colors.canvas} ${spec.baseWeight * 100}%, ${spec.baseTarget})`;
   const accentPosition = `${spec.accent.center[0] * 100}% ${spec.accent.center[1] * 100}%`;
   const actionPosition = `${spec.action.center[0] * 100}% ${spec.action.center[1] * 100}%`;
@@ -158,11 +154,6 @@ export function ThemePreviewCircle({
   );
 }
 
-/**
- * A theme card's light and dark balls. Clicking a ball assigns that theme to
- * that half of the appearance mix; assigned balls carry a ring and a sun or
- * moon badge.
- */
 export function ThemePreviewCircles({
   label,
   activeModes,

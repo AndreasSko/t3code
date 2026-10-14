@@ -21,11 +21,7 @@ export interface McpAppModelContextEntry {
   readonly text: string;
 }
 
-/**
- * What each MCP App told the agent through `ui/update-model-context`. The spec
- * replaces an app's context on every update, so there is one entry per app (its
- * tool call); the thread's next turn carries the entries to the provider.
- */
+/** MCP replaces context per app tool call; carry the latest value into the thread's next turn. */
 export class McpAppModelContext extends Context.Service<
   McpAppModelContext,
   {
@@ -72,11 +68,8 @@ export const layer = Layer.effect(
     });
 
     const forThread = Effect.fn("McpAppModelContext.forThread")(function* (threadId: ThreadId) {
-      // Only apps still in the thread's history count: an app whose item is
-      // gone, or whose run this thread rolled back, stops informing the agent.
-      // The item can live in a thread this one was forked from, so it is
-      // matched by id alone; that thread rolling the run back later leaves the
-      // fork's copy in place.
+      // Count only apps visible in this thread's retained lineage; match by item id
+      // so a later source rollback cannot remove an existing fork's context.
       return yield* sql<McpAppModelContextEntry>`
         SELECT context.item_id AS "itemId", context.server, context.tool, context.text
         FROM mcp_app_model_context AS context

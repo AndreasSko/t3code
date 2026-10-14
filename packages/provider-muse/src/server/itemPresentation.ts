@@ -48,7 +48,6 @@ export function museItemStatus(item: MuseItem): OrchestrationV2TurnItemStatus {
   return "failed";
 }
 
-/** Converts native tool details into the shared timeline fields used by every client. */
 export function museToolPresentation(
   item: MuseItem,
   status = museItemStatus(item),
@@ -117,7 +116,6 @@ export function museToolPresentation(
   if (item.kind === "toolCall" && /web|browse|fetch/i.test(toolName)) {
     const query = stringArg("query", "url", "pattern")?.trim();
     const pageUrl = stringArg("url")?.trim();
-    // A search lists its hits; a page fetch (or a failure) shows its text under the page's link.
     const hits =
       item.tool === "web_search" && !detail
         ? Option.getOrUndefined(decodeWebSearchOutput(text))?.results.map(

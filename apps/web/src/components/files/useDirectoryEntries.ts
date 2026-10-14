@@ -123,7 +123,6 @@ export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
   );
 
   const refresh = useCallback(() => {
-    // Refresh folders already visited, preserving the current expansion state.
     const paths = [...requested.current].filter((path) => reachableDirectories.has(path));
     let next = 0;
     const worker = async () => {

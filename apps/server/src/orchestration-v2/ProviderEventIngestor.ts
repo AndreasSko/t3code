@@ -200,19 +200,14 @@ function withPlanStepDurations(
   };
 }
 
-/** Settled runs that carried conversation to the provider. */
 const CONVERSATION_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
   "completed",
   "interrupted",
   "failed",
 ]);
 
-/**
- * Settled runs on a provider thread that a native rewind left off the active
- * branch. A run whose provider turn has a strong native ref is judged by that
- * ref. A run without one cannot be located, so it falls with everything after
- * the last run still on the branch.
- */
+// Locate rewound runs by strong native refs; unlocatable runs fall off with
+// everything after the last run still on the active branch.
 function runsOffNativeBranch(input: {
   readonly projection: Pick<OrchestrationV2ThreadProjection, "runs" | "attempts" | "providerTurns">;
   readonly providerThreadId: ProviderThreadId;
@@ -269,19 +264,13 @@ export interface ProviderEventIngestorV2Shape {
   ) => Effect.Effect<ReadonlyArray<OrchestrationV2DomainEvent>, ProviderEventIngestorV2Error>;
   readonly ingestNormalized: (
     input: ProviderEventIngestInput & {
-      /**
-       * Atomically reject mutable provider state emitted by an attempt that
-       * lost ownership while the adapter event was in flight.
-       */
+      /** Reject mutable provider state atomically when its attempt has lost ownership. */
       readonly writeIfRunCurrent?: {
         readonly runId: RunId;
         readonly activeAttemptId: RunAttemptId;
         readonly expectedStatus: OrchestrationV2Run["status"];
       };
-      /**
-       * Atomically reject provider-thread snapshots from an attempt that no
-       * longer owns the run or from a run that no longer owns the thread.
-       */
+      /** Reject snapshots atomically when the attempt lost its run or the run lost its thread. */
       readonly writeIfProviderThreadOwner?: {
         readonly providerThreadId: ProviderThreadId;
         readonly runId: RunId;
@@ -400,15 +389,8 @@ export const layer: Layer.Layer<
       },
     );
 
-    /**
-     * A native subagent's thread starts on the parent's model when the
-     * provider names the real one later (a Claude agent file's model arrives
-     * with the subagent's first reply). Clients read the thread's model and
-     * effort, so move the thread to the reported selection, or to the reported
-     * model alone when the provider reports no selection. Thread commands
-     * rewrite the whole thread row under the thread's lock, so this read and
-     * write take it too.
-     */
+    // Native subagents can report their real model after starting on the parent's.
+    // Sync clients' thread selection under the same lock as full-row thread commands.
     const syncSubagentThreadModel = Effect.fn("ProviderEventIngestor.syncSubagentThreadModel")(
       function* (input: ProviderEventIngestInput, subagent: OrchestrationV2Subagent) {
         const { childThreadId, model } = subagent;
@@ -455,12 +437,7 @@ export const layer: Layer.Layer<
       },
     );
 
-    /**
-     * The provider rewound its conversation outside T3. Retire the runs that
-     * fell off its active branch with the same run, root-node, and checkpoint
-     * updates CheckpointRollbackService writes for a T3 revert. The run
-     * reporting the rewind performed it and stays, so it keeps lastRunOrdinal.
-     */
+    // Retire runs removed by a native rewind; retain the reporting run and its lastRunOrdinal.
     const rollBackRewoundRuns = Effect.fn("ProviderEventIngestor.rollBackRewoundRuns")(function* (
       input: ProviderEventIngestInput,
       rewind: {

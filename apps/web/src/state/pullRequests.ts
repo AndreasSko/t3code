@@ -53,9 +53,8 @@ const observedPullRequestSummaryAtom = Atom.family((key: string) =>
 );
 
 /**
- * Positive when `incoming` is the newer snapshot. Merged is final. Then the host's own update
- * time, then the server's read-start time, which survives its caches; a snapshot without one
- * never beats a stamped read. Zero when neither side carries a read time.
+ * Positive means incoming is newer: merged first, then host update time, then server read-start time.
+ * When merge status and host time tie, unstamped snapshots lose to stamped reads; two unstamped reads tie.
  */
 function compareSummaries(current: PullRequestSummary, incoming: PullRequestSummary): number {
   const merged = Number(incoming.state === "merged") - Number(current.state === "merged");
@@ -260,12 +259,8 @@ interface MergedEnvironmentQueryView<A> {
 }
 
 /**
- * The same per-environment query read across several environments at once. React cannot subscribe
- * to a list of atoms whose length changes, so the fan-out happens inside one derived atom keyed by
- * the targets — the same shape the cross-environment thread search uses.
- *
- * An environment that fails contributes nothing rather than blanking the page: the pull request
- * list is a union, and one unreachable machine should not hide the others' rows.
+ * Fan out inside one derived atom because React cannot subscribe to a changing atom count; one
+ * environment's failure must not blank the other environments' rows.
  */
 function createMergedEnvironmentQuery<Input, A>(
   label: string,
@@ -354,7 +349,6 @@ export interface MergedPullRequestListView {
   readonly refresh: (targets?: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>>) => void;
 }
 
-/** One listing per environment, merged into the single list the page renders. */
 export function usePullRequestList(
   targets: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>>,
 ): MergedPullRequestListView {
@@ -380,7 +374,6 @@ export function usePullRequestList(
   return { data, error: query.error, isPending: query.isPending, refresh: query.refresh };
 }
 
-/** The line counts for the rows on screen, asked of each environment for its own rows. */
 export function usePullRequestListStats(
   targets: ReadonlyArray<EnvironmentQueryTarget<PullRequestListStatsInput>>,
 ): {

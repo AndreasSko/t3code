@@ -19,11 +19,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-/**
- * The thread on screen when its browser panel is showing, so a link opens as
- * another tab there, the way a browser window takes new links. HTML files are
- * served by this machine's environment, so only its threads can take them.
- */
+/** HTML files must open in threads on this machine because its environment serves them. */
 function threadShowingBrowser(
   routeParams: Record<string, string | undefined>,
   fileEnvironmentId: EnvironmentId | null,
@@ -45,13 +41,8 @@ function threadShowingBrowser(
   return surface?.kind === "preview" ? threadRef : null;
 }
 
-/**
- * Opens each link the OS hands T3 Code. Prompt and thread links, by `t3code://`
- * or as hosted-app pages, open in the app. Other web links and HTML files arrive
- * because T3 Code is the default browser (macOS): with a browser panel on screen
- * the page opens as a new tab there; otherwise it starts a thread without a
- * project, its browser panel maximized.
- */
+/** OS web links open a tab in the visible browser panel, or start a scratch
+ * thread with a maximized browser; prompt and thread links open in the app. */
 export function DesktopWebLinkCoordinator() {
   const router = useRouter();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -109,7 +100,6 @@ export function DesktopWebLinkCoordinator() {
         isFile ? (primaryEnvironment?.environmentId ?? null) : null,
       ) ?? (await startThread(url));
     if (threadRef === null) return;
-    // An HTML file is served from the environment, which runs on this machine.
     const result = isFile
       ? httpBaseUrl === null
         ? null
@@ -135,7 +125,6 @@ export function DesktopWebLinkCoordinator() {
   useEffect(() => {
     if (!ready || webLinks === undefined) return;
     let subscribed = true;
-    // Links open one at a time, in the order they came.
     const unsubscribe = webLinks.onOpen((url) => {
       queueRef.current = queueRef.current.then(() => openLink(url)).catch(() => undefined);
     });

@@ -11,10 +11,8 @@ import * as AttachmentClaims from "./AttachmentClaims.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 
-// These dispatcher failures occur in receipt validation or planning, before
-// commitCommand. Generic dispatch errors can follow a commit and remain uncertain.
-// A disabled-instance refusal comes from ThreadManagementService.dispatch's
-// own enablement check, which also runs before any commit is attempted.
+// Planning and enablement failures precede commit; generic dispatch failures
+// can follow acceptance and cannot prove attachments are safe to release.
 function dispatchWasNotAccepted(
   error: Orchestrator.OrchestratorV2Error | ThreadManagement.ThreadManagementError,
 ) {
@@ -97,12 +95,8 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
       })
       .pipe(
         Effect.tap((result) => {
-          // A replayed receipt reports the first attempt's answer, so this
-          // attempt's copies go unreferenced and are released. The resolved
-          // turn item proves the respond was applied; questionAnswer is only
-          // recorded when the accepted command carried attachments, so its
-          // absence means the accepted answer referenced no copies. With no
-          // resolved item at all the outcome is ambiguous and everything stays.
+          // Resolved answer events identify the accepted attachments, including on receipt replay.
+          // Missing questionAnswer means no accepted attachments; no resolved item means keep copies.
           const answeredItems = result.storedEvents.flatMap(({ event }) =>
             event.type === "turn-item.updated" &&
             event.payload.type === "user_input_request" &&
@@ -228,11 +222,8 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
         if (error._tag === "ThreadManagementProviderInstanceDisabledError") {
           return AttachmentClaims.releaseClaimedAttachments(claimed.claimedPaths);
         }
-        // Project/receipt reads precede message dispatch. The create-thread error
-        // also wraps post-message projection reads, so its tag alone is not proof.
-        // The initial message's own dispatch can still find the instance newly
-        // disabled, which wraps the same tag handled above instead of surfacing
-        // it directly, so the guard below also recognizes it.
+        // Create-thread errors can wrap post-commit reads or pre-commit instance refusal;
+        // inspect the cause rather than treating the operation tag as proof of rejection.
         const notAccepted =
           error.operation === "resolve-project" ||
           error.operation === "read-receipt" ||

@@ -10,12 +10,7 @@ interface Props {
   zoomFactor: number;
 }
 
-/**
- * Floating "X%" pill that surfaces in the top-right of the webview area
- * whenever the zoom factor changes, then fades out after a short pause.
- *
- * Suppressed for the first render's value so we don't flash 100% on mount.
- */
+/** Suppress the initial zoom value; after changes, keep the indicator visible for 1,500 ms. */
 export function ZoomIndicator({ zoomFactor }: Props) {
   const [visible, setVisible] = useState(false);
   const lastFactorRef = useRef(zoomFactor);

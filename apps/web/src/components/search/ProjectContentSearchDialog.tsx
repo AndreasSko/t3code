@@ -21,12 +21,8 @@ interface ProjectContentSearchDialogProps {
   readonly onOpenChange: (open: boolean) => void;
 }
 
-/**
- * Result rows are syntax highlighted, so mounting all 500 possible rows at
- * once stalls the UI. Rows render in windows that grow as the sentinel at the
- * bottom of the list scrolls into view (or keyboard navigation moves past
- * the rendered window).
- */
+/** Window syntax-highlighted results because mounting all 500 rows stalls
+ * the UI; scroll and keyboard navigation extend the rendered window. */
 const VISIBLE_MATCH_WINDOW = 100;
 
 interface MatchGroup {
@@ -212,9 +208,7 @@ function OpenContentSearchDialog(props: {
             event.preventDefault();
             setSelectedIndex((current) => (current - 1 + matches.length) % matches.length);
           } else if (event.key === "Enter") {
-            // While a newer query is debouncing or in flight, the visible
-            // matches belong to the previous query; opening one would jump
-            // to a result the user did not ask for.
+            // Opening stale matches while a newer query is pending would navigate to an unrequested result.
             if (!canOpenMatches) {
               event.preventDefault();
               return;

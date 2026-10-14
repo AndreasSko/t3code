@@ -120,9 +120,7 @@ export class ManagedRelayRequestTimeoutError extends Schema.TaggedError<ManagedR
   {
     activity: ManagedRelayRequestActivity,
     timeoutMs: Schema.Number,
-    // The CLIENT span's trace id. A timed-out request has no server response
-    // to take an id from, but the client span was exported, so carrying its id
-    // makes the failure searchable instead of logging `traceId: null`.
+    // Timeouts lack server trace ids; carry the exported client span id so failures remain searchable.
     traceId: Schema.NullOr(Schema.String),
   },
 ) {
@@ -444,7 +442,6 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
   });
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("ManagedRelayClient.make")(function* (
   options: ManagedRelayClientLayerOptions,
 ) {

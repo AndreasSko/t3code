@@ -397,11 +397,7 @@ export function inspectThemeRoleFromUtilitiesAtElement(
   return null;
 }
 
-/**
- * Finds actual dependency on a theme token instead of comparing final colors.
- * A token is synchronously replaced with a sentinel, computed paint is read,
- * and the original value is restored before the browser can render a frame.
- */
+/** Probe token dependencies with a sentinel and restore synchronously before the browser can paint. */
 export function highlightThemeRoleUsage(roles: ReadonlyArray<ThemeColorRole>): number {
   const startedAt = performance.now();
   clearThemeInspectorAttribute(THEME_INSPECTOR_MATCH_ATTRIBUTE);
@@ -449,16 +445,12 @@ export function highlightThemeRoleUsage(roles: ReadonlyArray<ThemeColorRole>): n
   return highlightedElements.size;
 }
 
-/** Resolves the nearest painted token at a touched element. */
 export function inspectThemeRoleAtElement(initialElement: Element): ThemeElementInspection | null {
   if (initialElement.closest("[data-theme-editor-panel]")) return null;
 
   const candidates = themeInspectionCandidates(initialElement);
 
-  // Most app paint comes from Tailwind's semantic color utilities. Those class
-  // names express the token dependency directly and avoid dozens of forced
-  // style recalculations on every pointer-down. Custom CSS still falls through
-  // to the exact computed-style probe.
+  // Semantic utility classes avoid forced style recalculations; custom CSS uses the computed-style probe.
   const utilityInspection = inspectThemeRoleFromUtilitiesAtElement(initialElement);
   if (utilityInspection) return utilityInspection;
 

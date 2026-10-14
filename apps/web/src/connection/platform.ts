@@ -94,11 +94,8 @@ interface NetworkInformationLike extends EventTarget {
 }
 
 /**
- * Wakes connections when the browser reports a different network type, such
- * as a laptop moving from Wi-Fi to a phone hotspot. `change` also fires for
- * bandwidth and latency estimates on the same network, so only a type change
- * counts. Browsers without `navigator.connection.type` rely on the periodic
- * route check instead.
+ * Only network-type changes wake connections; bandwidth/latency changes do not. Browsers without type use
+ * the periodic route check.
  */
 const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(
@@ -360,9 +357,8 @@ const loadPrimaryConnectionRegistration = Effect.fn(
   });
 });
 
-// A desktop-local secondary backend (e.g. a parallel WSL backend) lives on its
-// own loopback origin, so — unlike the same-origin primary — it authenticates
-// with a bearer token minted from the bootstrap credential the desktop issues.
+// Secondary desktop backends use separate loopback origins and therefore bearer auth, not the primary
+// cookie.
 const loadSecondaryConnectionRegistration = Effect.fn(
   "web.connectionPlatform.loadSecondaryConnectionRegistration",
 )(function* (entry: DesktopEnvironmentBootstrap) {
@@ -390,14 +386,10 @@ const loadSecondaryConnectionRegistration = Effect.fn(
     scopes: AuthStandardClientScopes,
     clientMetadata: clientMetadata(),
   }).pipe(Effect.mapError(mapRemoteEnvironmentError));
-  // Keep the desktop pool's stable backend id in the connection id. The
-  // descriptor environment id still scopes projects and RPC state, while the
-  // backend id lets desktop-only operations (notably the WSL folder picker)
-  // route back to the instance that owns the environment.
+  // Keep the stable backend id for desktop operations; the descriptor environment id scopes projects and RPC
+  // state.
   const connectionId = desktopLocalConnectionId(entry.id);
-  // Prefer the desktop's bootstrap label (it identifies the backend and distro,
-  // e.g. "WSL: Ubuntu") over the generic descriptor label, so consumers can show
-  // a meaningful name without recovering it from the bootstrap list later.
+  // Prefer the bootstrap's backend/distro label over the generic descriptor label.
   const label = entry.label || descriptor.label;
   return {
     registration: new BearerConnectionRegistration({
@@ -420,9 +412,7 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   };
 });
 
-// Poll cadence for the desktop bootstrap topology. There is no change event on
-// the bridge, so the renderer polls; successful registrations are cached by a
-// signature of their endpoint until bearer credentials approach expiry.
+// The bridge has no topology change event; poll and reuse registrations until bearer expiry approaches.
 const PLATFORM_POLL_INTERVAL = "3 seconds";
 const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
 
@@ -506,7 +496,6 @@ export function canRetainCachedPlatformRegistrationAfterRefreshFailure(
 const REJECTED_BOOTSTRAP_RETRY_INITIAL_MS = 60_000;
 const REJECTED_BOOTSTRAP_RETRY_MAX_MS = 30 * 60_000;
 
-/** A bootstrap token a backend rejected, and when the poll may try it again. */
 export interface RejectedSecondaryBootstrap {
   readonly signature: string;
   readonly retryAtEpochMs: number;
@@ -514,12 +503,8 @@ export interface RejectedSecondaryBootstrap {
 }
 
 /**
- * A backend that rejected a bootstrap token will usually keep rejecting it, so
- * the poll backs off on that exact signature instead of re-presenting a dead
- * credential every few seconds. It still retries on a capped backoff: a
- * backend that restarts on the same port seeds a fresh grant for the same
- * token, and nothing in the topology says it restarted. A new token or
- * endpoint retries at once.
+ * Back off on rejected token/endpoint signatures, but retry with capped delay for restarts on the same
+ * port. A new token or endpoint retries immediately.
  */
 export function isRejectedSecondaryBootstrap(
   rejected: RejectedSecondaryBootstrap | undefined,
@@ -575,10 +560,6 @@ const layerPlatformConnectionSource = Layer.effect(
     const cacheRef = yield* Ref.make(new Map<string, CachedPlatformRegistration>());
     const rejectedRef = yield* Ref.make(new Map<string, RejectedSecondaryBootstrap>());
 
-    // Resolve the full set of platform-managed environments the host currently
-    // reports: the primary (same-origin cookie auth) plus any desktop-local
-    // backends running alongside it (bearer auth). Reused registrations come
-    // from the cache; a failed entry is skipped and retried on the next poll.
     const buildPlatformRegistrations = Effect.gen(function* () {
       const previous = yield* Ref.get(cacheRef);
       const nowEpochMs = yield* Clock.currentTimeMillis;
@@ -642,10 +623,7 @@ const layerPlatformConnectionSource = Layer.effect(
         const rejected = yield* Ref.get(rejectedRef);
         const nextRejected = new Map<string, RejectedSecondaryBootstrap>();
         for (const bootstrap of topologyRead.bootstraps) {
-          // The cached bearer belongs to the endpoint, not to the bootstrap
-          // token it was exchanged for: a new token must not drop a live
-          // session (its removal also clears the environment's drafts). The
-          // token only decides whether a rejected exchange is retried.
+          // Keep cached bearer sessions registered across bootstrap-token changes; removing them also clears drafts.
           const endpointSignature = `${bootstrap.httpBaseUrl}|${bootstrap.wsBaseUrl}`;
           const signature = `${endpointSignature}|${bootstrap.bootstrapToken ?? ""}`;
           const cached = previous.get(bootstrap.id);

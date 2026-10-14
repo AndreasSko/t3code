@@ -23,11 +23,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   instanceId: ProviderInstanceId;
   /** Driver kind of the instance — used for the provider icon glyph. */
   driverKind: ProviderDriverKind;
-  /**
-   * Display name to show in the secondary line (provider footer). Usually
-   * the instance's configured `displayName` so custom instances like
-   * "Codex Personal" render with their user-authored label.
-   */
+  /** Secondary provider label, usually the configured instance display name. */
   providerDisplayName: string;
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;

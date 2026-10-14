@@ -3,18 +3,8 @@ import { Argument, Command } from "effect/cli";
 
 import { runAcpMcpCliFastPath } from "../mcp/AcpMcpStdioBridge.ts";
 
-/**
- * `t3 acp-mcp-bridge` — internal stdio MCP server that ACP agents spawn.
- *
- * The T3 server injects this command (with per-session endpoint and
- * credential environment variables) into `session/new` so every ACP agent
- * reaches the t3-code toolkit through ACP's required stdio MCP transport.
- * The credential stays in the environment, never on the command line.
- *
- * Real invocations dispatch through the bin.ts fast path before the CLI
- * graph loads; these definitions keep the commands wired for help and for
- * anything that drives the full CLI programmatically.
- */
+/** ACP credentials stay in environment variables; real calls use bin.ts's fast path.
+ * Keep these definitions for CLI help and programmatic invocation. */
 export const acpMcpBridgeCommand = Command.make("acp-mcp-bridge").pipe(
   Command.withDescription("Bridge T3 Code's MCP endpoint to stdio for ACP agents."),
   Command.unlisted,

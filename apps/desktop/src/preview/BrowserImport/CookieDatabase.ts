@@ -1,9 +1,3 @@
-/**
- * Shared pieces of cookie extraction: the shape both engines produce, and the
- * snapshot every reader takes before touching a live database.
- *
- * @module CookieDatabase
- */
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -16,13 +10,7 @@ export interface ImportedCookie {
   readonly url: string;
   readonly name: string;
   readonly value: string;
-  /**
-   * Set only for domain cookies, which the sources mark with a leading dot.
-   * A host-only cookie leaves this undefined: Electron treats any `domain` it
-   * is given as marking a domain cookie and re-adds the dot, which would widen
-   * the cookie to every subdomain of the host it was scoped to, and rejects
-   * `__Host-` cookies, which require it to be absent.
-   */
+  /** Undefined for host-only cookies: any domain value makes Electron widen scope and reject __Host- cookies. */
   readonly domain: string | undefined;
   readonly path: string;
   readonly secure: boolean;
@@ -32,28 +20,13 @@ export interface ImportedCookie {
   readonly sameSite: "unspecified" | "no_restriction" | "lax" | "strict";
 }
 
-/**
- * Cookies recovered from one database and rows that could not be decrypted.
- * The skipped count reaches the user instead of disappearing from a partial
- * import result.
- */
 export interface CookieReadResult {
   readonly cookies: ReadonlyArray<ImportedCookie>;
   readonly undecryptable: number;
-  /** Distinct hosts of the rows that could not be decrypted. */
   readonly undecryptableHosts: ReadonlyArray<string>;
 }
 
-/**
- * The URL and domain Electron should register a stored row under.
- *
- * Both engines mark a domain cookie with a leading dot on the host. Electron
- * matches on a URL, so the dot comes off for that; `domain` is passed through
- * only for domain cookies, because supplying it at all makes Electron treat
- * the cookie as one and re-add the dot — widening a host-only cookie to every
- * subdomain of the host it was scoped to, and rejecting `__Host-` cookies,
- * which require it to be absent.
- */
+/** Pass domain only for leading-dot cookies; Electron otherwise widens host-only scope and rejects __Host- cookies. */
 export const cookieScope = (
   host: string,
   path: string,
@@ -75,14 +48,8 @@ export const cookieScope = (
 export const bareHost = (host: string): string => (host.startsWith(".") ? host.slice(1) : host);
 
 /**
- * Creates a transactionally consistent snapshot of a cookie database in a
- * temporary directory and returns the snapshot's path.
- *
- * Both engines keep the file open with WAL while the browser runs, so reading
- * in place can observe a torn write. Copying also guarantees we never open the
- * browser's own file for writing.
- *
- * Scoped: the temporary directory goes away when the caller's scope closes.
+ * Returns a transactionally consistent SQLite snapshot whose temp directory lives for the caller's scope.
+ * VACUUM includes live WAL state without opening the source for writing.
  */
 export const snapshotCookieDatabase = Effect.fn("CookieDatabase.snapshotCookieDatabase")(function* (
   cookiePath: string,

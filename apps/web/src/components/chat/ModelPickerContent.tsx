@@ -321,11 +321,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return new Set(favorites.map((fav) => providerModelKey(fav.provider, fav.model)));
   }, [favorites]);
 
-  /**
-   * Lookup table keyed by `instanceId`. Used for display name + driver
-   * kind enrichment and for `ready`/enabled filtering before flattening
-   * models into the search list.
-   */
   const entryByInstanceId = useMemo(
     () => new Map(instanceEntries.map((entry) => [entry.instanceId, entry])),
     [instanceEntries],
@@ -363,10 +358,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     props.onOpenProviderSetup,
   ]);
 
-  // Flatten models into a searchable array. One pass over the
-  // instance-keyed map; each model carries its instance id + driver kind
-  // so the list row can render the right icon and display name without
-  // another lookup.
   const flatModels = useMemo(() => {
     const out: ModelPickerItem[] = [];
     for (const [instanceId, models] of modelOptionsByInstance) {
@@ -446,11 +437,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     [instanceEntries],
   );
 
-  // Filter models based on search query and selected instance
   const filteredModels = useMemo(() => {
     let result = flatModels;
 
-    // Apply tokenized fuzzy search across the combined provider/model search fields.
     if (searchQuery.trim()) {
       const rankedMatches = result
         .map((model) => ({
@@ -843,7 +832,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         style={isSearching ? { height: searchHeight } : undefined}
         data-model-picker-content="true"
       >
-        {/* Sidebar */}
         {showSidebar && (
           <ModelPickerSidebar
             selectedInstanceId={selectedInstanceId}
@@ -862,7 +850,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           />
         )}
 
-        {/* Main content area */}
         <Combobox<string, boolean>
           inline
           items={allItemKeys}
@@ -971,7 +958,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onTouchStart={(e) => e.stopPropagation()}
             />
 
-            {/* Model list */}
             <div
               className="relative min-h-0 overflow-hidden pr-px"
               style={{ height: modelListHeight }}

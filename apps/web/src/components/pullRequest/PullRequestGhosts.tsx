@@ -1,12 +1,4 @@
-/**
- * Loading states specific to the pull request surface — the first list, a search under way,
- * and a detail panel opening — use bars in the geometry of the content they stand for, pulsing
- * on one composited layer. Diff loading uses the shared diff-panel skeleton instead.
- *
- * The bars share the app-wide `Skeleton` tone (`muted-foreground` at low alpha, which reads on
- * both themes) and the single `animate-skeleton` pulse, applied once on the container so any
- * number of bars costs one opacity animation.
- */
+/** Apply one container opacity pulse so many skeleton bars cost one animation. */
 import type { PullRequestListEntry, PullRequestSummary } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,
@@ -54,15 +46,7 @@ const DEFAULT_DETAIL_TABS = [
   { value: "code", label: "Code" },
 ] as const;
 
-/** Rows in the list's own grid — glyph, title over meta, time over diffstat. */
-export function PullRequestListGhost({
-  rows = 7,
-  caption,
-}: {
-  rows?: number;
-  /** Said where the group headers speak, for the states with something to say — a search. */
-  caption?: string;
-}) {
+export function PullRequestListGhost({ rows = 7, caption }: { rows?: number; caption?: string }) {
   return (
     <div
       role="status"
@@ -92,11 +76,7 @@ export function PullRequestListGhost({
   );
 }
 
-/**
- * The detail panel's current expanded shape. Keeping the chrome, summary facts, and description
- * boundaries in the ghost prevents the loaded pull request from replacing one layout with
- * another a moment later.
- */
+/** Match expanded detail geometry so arriving content cannot replace the layout. */
 export function PullRequestDetailGhost({
   seed: entry,
   summary,
@@ -382,7 +362,6 @@ export function PullRequestDetailGhost({
   );
 }
 
-/** People-shaped: an avatar and a name, in the reviewer picker's own row height. */
 export function PullRequestPeopleGhost({ rows = 4 }: { rows?: number }) {
   return (
     <div
@@ -400,7 +379,6 @@ export function PullRequestPeopleGhost({ rows = 4 }: { rows?: number }) {
   );
 }
 
-/** The timeline's own shape: dots on the rail, a line and a date to each. */
 export function PullRequestTimelineGhost({ rows = 6 }: { rows?: number }) {
   return (
     <div
@@ -421,7 +399,6 @@ export function PullRequestTimelineGhost({ rows = 6 }: { rows?: number }) {
   );
 }
 
-/** A compact placeholder for the conversation while the core detail is already readable. */
 export function PullRequestConversationGhost({ rows = 3 }: { rows?: number }) {
   return (
     <div

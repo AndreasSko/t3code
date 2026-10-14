@@ -35,21 +35,12 @@ export interface McpClientCaller {
   readonly access: AuthMcpClientAccess;
 }
 
-/**
- * The runtime mode a client caller's writes are capped at. A read-only client
- * never reaches a write (`McpToolAccess` refuses it first), so it maps to the
- * lowest mode rather than to nothing.
- */
+/** Read-only clients are refused before writes, so map their unused ceiling to the lowest mode. */
 export const clientRuntimeModeCeiling = (client: McpClientCaller | undefined): RuntimeMode =>
   client === undefined || client.access === "read-only" ? "approval-required" : client.access;
 
-/**
- * Who is calling and what they may do. Tool parameters choose the target
- * (thread, project); the caller sets the limits. A thread caller's omitted
- * target falls back to its own thread; a client caller has no own thread, so
- * tools that act as the caller (delegate_task, preview, worktree handoff)
- * need `thread`.
- */
+/** Parameters choose targets; caller scope limits access. Outside clients
+ * have no calling thread and cannot use tools that act as the calling thread. */
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
   readonly capabilities: ReadonlySet<McpCapability>;
@@ -101,11 +92,7 @@ export const requireMcpCapability = <const C extends McpCapability>(
     Effect.withSpan("mcp.requireCapability"),
   );
 
-/**
- * Preview tabs and device sessions belong to the calling thread, so their
- * capabilities are only ever granted to thread callers. A scope that carries
- * one without a thread is refused the same way as a missing capability.
- */
+/** Preview/device capabilities require a thread caller because their resources are thread-owned. */
 export const requireThreadMcpCapability = <const C extends "preview" | "device">(
   capability: C,
 ): Effect.Effect<McpThreadInvocationScope, McpCapabilityError<C>, McpInvocationContext> =>

@@ -57,11 +57,7 @@ export interface PreviewAutomationInvokeInput {
 }
 
 export interface PreviewAutomationConnectOptions {
-  /**
-   * New agent work goes to a preferred host before any desktop. The server's
-   * own headless browser registers this way so a standalone environment keeps
-   * browsing when every desktop disconnects.
-   */
+  /** Prefer the environment's own browser host so browsing survives desktop disconnects. */
   readonly preferred?: boolean;
 }
 
@@ -100,14 +96,8 @@ interface PendingRequest {
   readonly context: PreviewAutomationRequestErrorContext;
 }
 
-/**
- * A lease pinning one provider session to one desktop runtime. It lives exactly
- * as long as the connection it names: `connectionId`/`queue` identity is what
- * makes a lease valid, so a disconnected or replaced host is dropped on the next
- * lookup. The lease deliberately has no clock of its own — it used to inherit
- * the MCP credential's expiry, which coupled host stickiness to an unrelated
- * auth deadline and could migrate a live session to another runtime mid-flow.
- */
+// Lease validity follows connection/queue identity, not credential expiry,
+// so live sessions cannot migrate between browser states on an unrelated auth deadline.
 interface HostAssignment {
   readonly clientId: ClientConnection["clientId"];
   readonly connectionId: ClientConnection["connectionId"];
@@ -523,12 +513,8 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       const assigned = assignments.get(assignmentKey);
       const assignedConnection = assigned ? current.clients.get(assigned.clientId) : undefined;
       const hasLiveAssignment = assignedConnection?.environmentId === input.scope.environmentId;
-      // Keep one provider session on one physical desktop runtime so a
-      // multi-step browser interaction cannot jump between independent
-      // Electron cookie/DOM state. A live assignment that predates an
-      // operation is not silently moved to a newer client: the caller gets a
-      // capability failure and can deliberately start a fresh provider
-      // session. A dead lease is pruned above and may fail over.
+      // Keep multi-step work on one runtime's cookie/DOM state; fail capability
+      // checks rather than move live leases, but allow failover after a lease dies.
       const ownsTargetTab = (host: ClientConnection, visibleOnly = false) =>
         host.liveTabs.some(
           (tab) =>
@@ -661,10 +647,8 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       return yield* Option.match(result, {
         onNone: () =>
           Effect.gen(function* () {
-            // An unanswered request invalidates this connection. Do not replay
-            // actions: the client may have applied them before becoming unreachable.
-            // A background metadata read has a short budget and changes nothing,
-            // so a slow one must not cut the host off from the agent's next call.
+            // Never replay unanswered actions: they may already have run. Background
+            // metadata reads change nothing and must not evict a merely slow host.
             if (input.updateCurrentTab !== false) {
               yield* disconnect(connection.clientId, connection.queue, true);
             }

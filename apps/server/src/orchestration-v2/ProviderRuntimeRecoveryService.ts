@@ -98,10 +98,7 @@ function isNonterminalNodeStatus(status: string): boolean {
   return status === "pending" || status === "running" || status === "waiting";
 }
 
-/**
- * A delegate_task child. Its own thread is reconciled and continued on its own
- * and reports back through the app, so it is not provider background work.
- */
+// App-owned children reconcile and continue independently, then report through the app.
 function isAppOwnedDelegation(task: {
   readonly origin: OrchestrationV2Subagent["origin"];
   readonly childThreadId: ThreadId | null;
@@ -121,12 +118,6 @@ function providerThreadHasPendingBackgroundTasks(
   return (providerThread.pendingBackgroundTasks?.length ?? 0) > 0;
 }
 
-/**
- * Resolve providerInstanceId for a stale background-capable turn item whose
- * run is missing/null (or not found). Prefer an existing run, then a subagent
- * item's own instance id, then the item's provider thread, then a last-resort
- * first provider thread, then the thread's selected provider.
- */
 function resolveStaleBackgroundItemProviderInstanceId(
   item: OrchestrationV2ThreadProjection["turnItems"][number],
   projection: ProjectionStore.ProjectionRuntimeRecoveryState,
@@ -151,7 +142,7 @@ function resolveStaleBackgroundItemProviderInstanceId(
   return projection.providerThreads[0]?.providerInstanceId ?? projection.thread.providerInstanceId;
 }
 
-/** An open item closed by recovery. A secret card also closes its form, so it takes no answer. */
+// Cancelling a secret card also closes its form, preventing later answers.
 const cancelledItem = (
   item: OrchestrationV2ThreadProjection["turnItems"][number],
   now: DateTime.Utc,
@@ -160,11 +151,8 @@ const cancelledItem = (
     ? { ...item, status: "cancelled", secretStatus: "cancelled", completedAt: now, updatedAt: now }
     : { ...item, status: "cancelled", completedAt: now, updatedAt: now };
 
-/**
- * A provider thread's latest started run: the last turn that provider saw.
- * Restart recovery records the thread's cancelled background work on it, and
- * the next run on the same provider thread delivers it with its input.
- */
+// Record lost background work on the provider's latest started run so
+// the next turn on that provider thread can report it.
 function latestStartedRun(
   projection: ProjectionStore.ProjectionRuntimeRecoveryState,
   providerThreadId: ProviderThreadId,
@@ -253,10 +241,8 @@ export const make = Effect.gen(function* () {
           ),
         );
       const events: Array<OrchestrationV2DomainEvent> = [];
-      // Background work that outlived its settled turn. The provider transcript
-      // cannot record its death, so the next provider turn is told instead.
-      // Shutdown records it too: a graceful restart cancels it there first.
-      // Keyed by the provider thread that lost the work: only its turns are told.
+      // The native transcript cannot record lost background work; tell only its
+      // provider thread's next turn. Graceful shutdown records it before cancellation too.
       const cancelledBackgroundWork = new Map<
         ProviderThreadId,
         Array<OrchestrationV2RestartCancelledBackgroundWork>
@@ -546,8 +532,7 @@ export const make = Effect.gen(function* () {
           allocateEventId,
         })),
       );
-      // All provider processes are gone on startup/shutdown: clear any
-      // persisted Waiting roster (including idle threads from settled roots)
+      // No provider survives startup/shutdown; clear persisted Waiting rosters
       // and idle active threads without resurrecting active status.
       for (const providerThread of projection.providerThreads ?? []) {
         const needsIdle = providerThread.status === "active";

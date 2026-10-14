@@ -105,7 +105,6 @@ export interface GhosttyRow {
   readonly cells: readonly GhosttyCell[];
   readonly text: string;
   readonly isWrapContinuation: boolean;
-  /** Whether this row soft-wraps onto the next row. */
   readonly wrapsToNext: boolean;
 }
 
@@ -181,13 +180,7 @@ function sameColor(left: GhosttyColor, right: GhosttyColor): boolean {
   return left.r === right.r && left.g === right.g && left.b === right.b;
 }
 
-/**
- * A terminal program can print one base character followed by a huge run of
- * combining marks, packing hundreds of thousands of codepoints into a single
- * cell that still fits the scrollback buffer. Engines cap spread-call
- * arguments far below that, so convert in bounded chunks instead of spreading
- * every codepoint into String.fromCodePoint at once.
- */
+/** Combining marks can pack huge graphemes into one cell; bounded chunks avoid engine argument limits. */
 export function ghosttyCellText(codepointView: DataView, graphemeLength: number): string {
   if (graphemeLength === 1) return String.fromCodePoint(codepointView.getUint32(0, true));
   const CHUNK_SIZE = 4_096;
@@ -391,13 +384,7 @@ export class GhosttyTerminalCore {
     );
   }
 
-  /**
-   * Ghostty's built-in default cursor is steady, while the xterm.js renderer
-   * this replaced ran with `cursorBlink: true`. Option 23 is the embedder's
-   * default blink, which is the state a session starts in and returns to on
-   * DECSCUSR reset (CSI 0 q), so programs that ask for a specific cursor
-   * through DECSCUSR or DEC mode 12 still win.
-   */
+  /** Option 23 sets default blink for session start and DECSCUSR reset; explicit cursor modes still win. */
   private applyDefaultCursorBlink(): void {
     const blink = this.runtime.alloc(1);
     this.runtime.bytes(blink, 1)[0] = 1;

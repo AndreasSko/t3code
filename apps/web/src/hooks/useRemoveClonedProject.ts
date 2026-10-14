@@ -11,12 +11,7 @@ import { projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 
-/**
- * Removes a project whose clone never landed. The server clears the empty
- * folder along with the clone, so there is nothing to confirm: no threads
- * exist yet and the draft is the only thing lost, which the user is looking
- * at when they click.
- */
+/** Unfinished clones have no threads; removal intentionally discards their drafts without confirmation. */
 export function useRemoveClonedProject() {
   const router = useRouter();
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });

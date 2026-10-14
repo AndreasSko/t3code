@@ -96,7 +96,6 @@ export function collectComposerContextReferences(
 export const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
 
-/** Whether `text` is image references and nothing else, which is how an image-only prompt reads. */
 export function isImageReferencesOnly(text: string): boolean {
   const references = collectComposerContextReferences(text);
   return (
@@ -118,10 +117,6 @@ export function replaceComposerContextReferences(
   }
   return result + text.slice(cursor);
 }
-
-// ---------------------------------------------------------------------------
-// Provider projection
-// ---------------------------------------------------------------------------
 
 const CONTEXT_ENVELOPE_TAG = "t3_context";
 const CONTEXT_ENTRY_TAG = "context";
@@ -192,7 +187,6 @@ function formatElementDetails(element: ElementContextDetails): string[] {
   return lines;
 }
 
-/** Body lines for one payload, including authoritative paths and names behind display labels. */
 function formatComposerContextProviderPayload(record: KnownComposerContextRecord): string {
   switch (record.kind) {
     case "image":

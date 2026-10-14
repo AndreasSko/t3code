@@ -30,8 +30,6 @@ export const SAFE_IMAGE_FILE_EXTENSIONS = new Set([
   ".webp",
 ]);
 
-// Whether `code` is a character the base64 payload may contain, aside from
-// the whitespace handled separately below.
 function isBase64Char(code: number): boolean {
   return (
     (code >= 0x61 && code <= 0x7a) || // a-z
@@ -47,10 +45,8 @@ function isBase64Whitespace(code: number): boolean {
   return code === 0x0d || code === 0x0a || code === 0x20; // \r \n space
 }
 
-// Data URLs carry the full image payload, so this parser must never run a
-// regex across the payload: V8's regex engine borrows the JS call stack, and
-// matching a multi-megabyte string from a deep call stack (e.g. inside fiber
-// execution) throws "Maximum call stack size exceeded".
+// Avoid payload-wide regexes: V8 borrows the JS call stack and can overflow
+// on multi-megabyte data URLs parsed inside deep Effect fiber stacks.
 export function parseBase64DataUrl(
   dataUrl: string,
 ): { readonly mimeType: string; readonly base64: string } | null {

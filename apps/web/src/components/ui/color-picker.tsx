@@ -14,7 +14,6 @@ function clamp(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-/** Keep pointer capture and drag completion consistent across color controls. */
 function useColorDrag(
   update: (event: PointerEvent<HTMLDivElement>) => void,
   onInteractionEnd?: () => void,

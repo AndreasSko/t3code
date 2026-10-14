@@ -66,11 +66,7 @@ export class ProviderAdapterRegistryV2 extends Context.Service<
   ProviderAdapterRegistryV2Shape
 >()("t3/orchestration-v2/ProviderAdapterRegistry/ProviderAdapterRegistryV2") {}
 
-/**
- * Production facade over the canonical provider-instance registry. Adapter
- * lookup stays dynamic so instance hot reloads and removals are visible
- * without maintaining a second settings watcher or instance map.
- */
+/** Resolve adapters dynamically so hot reloads and removals need no second instance map or watcher. */
 export const layerFromProviderInstanceRegistry: Layer.Layer<
   ProviderAdapterRegistryV2,
   never,

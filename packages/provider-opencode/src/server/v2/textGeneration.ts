@@ -1,10 +1,6 @@
 /**
- * Text generation on an OpenCode 2 server. Both of its `generate` endpoints
- * answer 403 on OpenCode's free tier ("free tier can only be used from within
- * OpenCode"), so each request runs as a prompt in a temporary session, as 1.x
- * does, and the session is removed afterwards.
- *
- * @module textGeneration/OpenCode2TextGeneration
+ * OpenCode's free tier rejects both generate endpoints with 403.
+ * Run prompts in temporary sessions instead, then remove them.
  */
 import { AbsolutePath, Location, Model, Provider, Session } from "@opencode/client/effect";
 import { TextGenerationError } from "@t3tools/contracts";
@@ -181,7 +177,6 @@ const runOnServer = (
     return result.text;
   }).pipe(Effect.scoped);
 
-/** Text generation for an instance whose server is OpenCode 2. */
 export const make = Effect.fn("OpenCode2TextGeneration.make")(function* () {
   const server = yield* OpenCode2Server.OpenCode2Server;
   const host = yield* ProviderHost.ProviderHost;

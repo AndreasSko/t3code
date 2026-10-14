@@ -30,9 +30,7 @@ import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-// The wire "installing" stage is a sub-second launcher handoff, so the UI
-// folds it into the download phase; everything after the handoff is the
-// restart the user is actually waiting through.
+// Installing is a sub-second launcher handoff; group it with download before the visible restart wait.
 const UPDATE_STAGE_LABELS: Record<ServerUpdateStage, string> = {
   downloading: "Downloading…",
   installing: "Downloading…",
@@ -127,7 +125,6 @@ export function useServerUpdate() {
   };
 }
 
-/** Updates eligible machines independently; manual paths remain in the machine list. */
 export function ServerUpdatesAction({
   targets,
   label = "Update all",
@@ -217,11 +214,7 @@ export function ServerUpdateProgress({
   );
 }
 
-/**
- * Offers the update path advertised by a version-skewed server. Self-updates
- * delegate their full lifecycle to client-runtime so this component can
- * unmount during reconnect without losing operation state.
- */
+/** Delegate lifecycle to client-runtime so reconnect unmounts cannot lose update state. */
 export function ServerUpdateAction({
   environmentId,
   serverLabel,
@@ -274,9 +267,7 @@ export function ServerUpdateAction({
       return;
     }
     if (isDesktopAppUpdate) {
-      // No themed host mounted (undefined) means proceed: the click itself
-      // was the request. This is the only confirmation in the flow; the
-      // remote machine installs without asking anyone there.
+      // Without a themed host, undefined means proceed with the requested update.
       const confirmed =
         (await requestConfirmDialog(
           `Update the T3 Code desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
@@ -353,10 +344,7 @@ export function ServerUpdateAction({
   );
 }
 
-/**
- * Updates a host too old for this client to connect to. Its version comes
- * from the host descriptor because the host never delivers a server config.
- */
+/** Read the host descriptor version: incompatible hosts never deliver server config. */
 export function OutdatedServerUpdateAction({
   environmentId,
   serverLabel,

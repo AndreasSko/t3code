@@ -12,11 +12,8 @@ function isLocalTimelineRow(
 }
 
 /**
- * Server half of the opt-in compact bounded snapshot. Bounded `turnItems` start
- * with the items of the window's local visible rows, so those entries can be
- * dropped and rebuilt by `restoreLocalVisibleTurnItems`. Returns null when the
- * projection does not have that exact shape, or when nothing would be omitted;
- * callers then send the unchanged projection without a marker.
+ * Only omit an identical visible-local prefix that restoreLocalVisibleTurnItems can reconstruct.
+ * Return null to send the unchanged projection without a compact-snapshot marker.
  */
 export function omitLocalVisibleTurnItems(
   projection: OrchestrationV2ThreadProjection,

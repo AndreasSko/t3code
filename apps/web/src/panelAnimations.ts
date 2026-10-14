@@ -8,10 +8,7 @@ const PanelAnimationSuppressionContext = createContext(false);
 
 export const PanelAnimationSuppressionProvider = PanelAnimationSuppressionContext.Provider;
 
-/**
- * Suppresses panel motion for the first painted frame of an initial route or navigation.
- * State restored by a route must be visible immediately; later user actions can animate.
- */
+/** Restored panel state must paint immediately; animate only later user actions. */
 export function usePanelNavigationSuppression(navigationKey: string): boolean {
   const [paintedNavigationKey, setPaintedNavigationKey] = useState<string | null>(null);
   const suppressed = paintedNavigationKey !== navigationKey;

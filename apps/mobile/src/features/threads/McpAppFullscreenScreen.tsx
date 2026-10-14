@@ -23,11 +23,7 @@ type McpAppFullscreenScreenProps = StaticScreenProps<{
   readonly revision?: string;
 }>;
 
-/**
- * The thread an app's messages go to. A link only names it, so it counts only
- * when it is the app's own thread or a fork of it; anything else falls back to
- * the app's thread.
- */
+/** Route links may send messages only to the app's thread or its forks. */
 function useConversationThreadId(
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -43,7 +39,6 @@ function useConversationThreadId(
   );
 }
 
-/** True when `threadId` is `ancestorId` or one of its forks, at any depth. */
 function descendsFrom(
   shells: ReadonlyArray<EnvironmentThreadShell>,
   environmentId: EnvironmentId,
@@ -65,19 +60,11 @@ function descendsFrom(
   return false;
 }
 
-/**
- * An MCP App full screen (`ui/request-display-mode`), in a modal over the
- * thread. It is its own view of the app; closing it returns to the row. The
- * app is read from its stored tool call, never from the route, so a link can
- * only open an app that call really produced.
- */
+/** Reads apps from stored tool calls so route links cannot supply arbitrary app content. */
 export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  // A plain goBack pops whatever is on top, so it only runs while this modal
-  // is: an exit that lands while another screen covers it (after a teardown
-  // wait) waits for the modal to be on top again, rather than popping that
-  // screen or being lost.
+  // A delayed exit must wait for this modal to regain focus so goBack cannot pop another screen.
   const focused = useIsFocused();
   const [exitRequested, setExitRequested] = useState(false);
   const onClose = useCallback(() => {
@@ -105,8 +92,7 @@ export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
     }),
   );
   const item = detail.data?.item;
-  // One reference per app: the item is a new object on every refetch (a
-  // reconnect, for one), and a new reference would rebuild the app's host.
+  // Preserve app identity across refetches so the document's host is not rebuilt.
   const derived = item?.type === "dynamic_tool" ? mcpAppFromToolItem(item) : undefined;
   const [app, setApp] = useState(derived);
   if (derived?.attachmentId !== app?.attachmentId) setApp(derived);

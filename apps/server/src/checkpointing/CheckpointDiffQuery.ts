@@ -1,11 +1,3 @@
-/**
- * CheckpointDiffQuery - Query interface for computed checkpoint diffs.
- *
- * Provides read-only diff operations across checkpoint snapshots used by
- * orchestration APIs.
- *
- * @module CheckpointDiffQuery
- */
 import {
   OrchestrationGetTurnDiffResult,
   type OrchestrationGetFullThreadDiffInput,
@@ -36,7 +28,7 @@ import { isGitImport, parseTurnDiffFilesFromNumstat, type TurnDiffFileSummary } 
 // Windows limits a command line to 32,767 characters. Leave room for the rest of git's arguments.
 const MAX_PATHSPEC_CHARS = 24_000;
 
-/** Splits files into pathspec lists that each fit on one git command line. Renames keep both paths together. */
+/** Keep rename pairs in the same command-line-sized pathspec batch. */
 function batchFilePaths(files: ReadonlyArray<TurnDiffFileSummary>) {
   const batches: string[][] = [];
   let batch: string[] = [];
@@ -57,24 +49,15 @@ function batchFilePaths(files: ReadonlyArray<TurnDiffFileSummary>) {
   return batches;
 }
 
-/** Service tag for checkpoint diff queries. */
 export class CheckpointDiffQuery extends Context.Service<
   CheckpointDiffQuery,
   {
-    /**
-     * Read the patch diff for a single turn checkpoint transition.
-     *
-     * Verifies checkpoint availability in both projection state and filesystem.
-     */
+    /** Verify checkpoint availability in both projection state and filesystem. */
     readonly getTurnDiff: (
       input: OrchestrationGetTurnDiffInput,
     ) => Effect.Effect<OrchestrationGetTurnDiffResultType, CheckpointServiceError>;
 
-    /**
-     * Read the full patch diff across a thread range of checkpoints.
-     *
-     * Uses turn-diff semantics with `fromTurnCount = 0`.
-     */
+    /** Uses turn-diff semantics with fromTurnCount = 0. */
     readonly getFullThreadDiff: (
       input: OrchestrationGetFullThreadDiffInput,
     ) => Effect.Effect<OrchestrationGetFullThreadDiffResult, CheckpointServiceError>;

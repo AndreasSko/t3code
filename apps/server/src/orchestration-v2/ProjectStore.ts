@@ -28,7 +28,6 @@ export class ProjectStoreV2Error extends Schema.TaggedError<ProjectStoreV2Error>
   }
 }
 
-/** One row of `projection_projects`, the durable project read model. */
 export const ProjectRow = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
@@ -53,7 +52,6 @@ const ProjectDbRow = Schema.Struct({
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
 });
 
-/** Shell fields without workspace-derived enrichment such as repository identity. */
 function toShell(row: ProjectRow): OrchestrationProjectShell {
   return {
     id: row.projectId,

@@ -8,20 +8,14 @@ import { languageOfInfoString } from "~/composer-code-languages";
 import { getSyntaxHighlighterPromise } from "~/lib/syntaxHighlighting";
 
 interface HighlightedBlock {
-  /** Guards against repainting a block whose text and language are unchanged. */
   readonly signature: string;
   readonly decorations: ReadonlyArray<{ from: number; to: number; color: string }>;
 }
 
 const composerCodeBlockHighlightKey = new PluginKey<DecorationSet>("composerCodeBlockHighlight");
 
-/**
- * Past this many characters a fence is left plain. Any edit changes a block's
- * signature, so each keystroke re-tokenizes the whole block synchronously on
- * the main thread: a few milliseconds for a couple of hundred lines, but ~80ms
- * at a thousand, which stalls typing. 20k characters is roughly 400–500 lines
- * of ordinary code; a fence that shrinks back under it is highlighted again.
- */
+/** Retokenizing each keystroke blocks the main thread (~80ms at 1,000 lines).
+ * Cap highlights at 20k characters, roughly 400-500 lines. */
 export const MAX_HIGHLIGHTED_CODE_BLOCK_LENGTH = 20_000;
 
 export function shouldHighlightCodeBlock(code: string): boolean {
@@ -32,11 +26,7 @@ function blockSignature(node: ProseMirrorNode, theme: DiffThemeName): string {
   return [theme, String(node.attrs.language ?? ""), node.textContent].join("\u0000");
 }
 
-/**
- * The composer's code blocks, which are always top-level: list items and
- * quotes cannot hold one. Scanning only the top level keeps a keystroke in a
- * long draft from walking every node in it.
- */
+/** Code blocks can only be top-level; avoid walking the whole draft on each keystroke. */
 function collectCodeBlocks(state: EditorState): Array<{ node: ProseMirrorNode; pos: number }> {
   const blocks: Array<{ node: ProseMirrorNode; pos: number }> = [];
   state.doc.forEach((node, pos) => {
@@ -45,14 +35,8 @@ function collectCodeBlocks(state: EditorState): Array<{ node: ProseMirrorNode; p
   return blocks;
 }
 
-/**
- * Highlights composer code blocks with the same Shiki instance the chat view
- * uses, painted as inline decorations so the text nodes stay editable.
- *
- * Highlighting is asynchronous and per block: a keystroke re-tokenizes only the
- * block that changed, and only after its highlighter has resolved. Blocks whose
- * text and language are unchanged reuse their previous decorations.
- */
+/** Inline decorations keep code editable; reuse cached highlights per block
+ * so a keystroke only retokenizes the block that changed. */
 export function composerCodeBlockHighlight(options: {
   resolveTheme: () => DiffThemeName;
 }): Extension {
@@ -60,9 +44,7 @@ export function composerCodeBlockHighlight(options: {
     name: "composerCodeBlockHighlight",
 
     addProseMirrorPlugins() {
-      // Every keystroke in a code block mints a new signature, so each scan
-      // drops the signatures the document no longer holds. The cache is then
-      // bounded by the document itself, and no block it holds is ever evicted.
+      // Bound the cache to signatures still present in the document.
       const cache = new Map<string, HighlightedBlock>();
       // The latest scan's signatures, so a tokenize that resolves after its
       // block was edited away does not put it back.
@@ -93,11 +75,7 @@ export function composerCodeBlockHighlight(options: {
             let paintedTheme = options.resolveTheme();
             let scannedDoc: ProseMirrorNode | null = null;
 
-            /**
-             * Tokenizes any block missing from the cache, then repaints once.
-             * Returning early when nothing is pending is what stops the
-             * dispatch below from re-triggering this on its own update.
-             */
+            /** Return when nothing is pending so repaint dispatch cannot trigger an update loop. */
             const refresh = () => {
               const theme = options.resolveTheme();
               const themeChanged = theme !== paintedTheme;
@@ -117,8 +95,7 @@ export function composerCodeBlockHighlight(options: {
                   !cache.has(blockSignature(node, theme)),
               );
               if (pending.length === 0) {
-                // A theme switch keeps every signature but changes which one
-                // applies, so the painted decorations still have to be rebuilt.
+                // A theme switch must repaint even when no blocks need tokenizing.
                 if (themeChanged) {
                   view.dispatch(view.state.tr.setMeta(composerCodeBlockHighlightKey, true));
                 }
@@ -212,10 +189,8 @@ function buildDecorations(
     if (!shouldHighlightCodeBlock(node.textContent)) continue;
     const highlighted = cache.get(blockSignature(node, theme));
     if (!highlighted) continue;
-    // Token offsets index the block's text, which lines up with document
-    // positions only because `codeBlock` is `text*` with no marks — one
-    // unmarked text node, so `content.size === textContent.length`. Allowing
-    // marks or hard breaks in the code block would desync these silently.
+    // Offsets require an unmarked text-only code block: marks or hard breaks
+    // would desynchronize document positions from text offsets.
     if (node.content.size !== node.textContent.length) continue;
     // +1 steps past the code block's opening token into its text.
     const start = pos + 1;

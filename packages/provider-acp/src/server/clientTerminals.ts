@@ -13,13 +13,8 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodeBuffer from "node:buffer";
 
 /**
- * Client-side implementation of the ACP `terminal` capability.
- *
- * Agents create terminals to run commands through the client
- * (`terminal/create`), poll buffered output, await exit, kill, and release
- * them. Terminals also appear as embedded tool-call content, which
- * {@link resolveEmbeddedTerminalContent} rewrites into plain text so the
- * existing tool-call projection renders live command output.
+ * Rewrite embedded terminal content through resolveEmbeddedTerminalContent
+ * so provider-neutral tool projection shows live command output.
  */
 
 const MAX_LIVE_TERMINALS = 16;
@@ -237,8 +232,7 @@ export const makeAcpClientTerminals = Effect.fn("makeAcpClientTerminals")(functi
             (request.env?.length ?? 0) === 0
               ? undefined
               : { ...options.environment, ...sessionEnvironment, ...requestEnvironment };
-          // Each terminal owns a scope so the spawned process is reliably reaped:
-          // closing the scope kills a still-running command and frees the handle.
+          // Per-terminal scopes reap running commands and free their handles on close.
           const terminalScope = yield* Scope.make();
           const child = yield* restore(
             spawner
@@ -417,10 +411,7 @@ export const makeAcpClientTerminals = Effect.fn("makeAcpClientTerminals")(functi
   };
 });
 
-/**
- * Rewrites embedded `terminal` tool-call content into plain text content so
- * the provider-neutral tool-call projection can display live command output.
- */
+/** Rewrites embedded terminal content so provider-neutral projection can show live output. */
 export function resolveEmbeddedTerminalContent(
   notification: EffectAcpSchema.SessionNotification,
   readOutputSnapshot: AcpClientTerminals["readOutputSnapshot"],

@@ -26,13 +26,7 @@ export function needsCursorKeychainAccess(
   );
 }
 
-/**
- * Environments to offer the Cursor Keychain prompt in the usage summary.
- *
- * Any environment reading a Cursor account already reports that account's
- * history from every machine, so the prompt only adds duplicates there. A
- * different account on another machine stays reachable from provider settings.
- */
+/** Cursor accounts already report cross-machine history, so offering more prompts would duplicate usage. */
 export function cursorKeychainAccessEnvironments<
   E extends { readonly summary: UsageSummary | null; readonly needsCursorKeychainAccess: boolean },
 >(environments: readonly E[]): readonly E[] {

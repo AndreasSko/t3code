@@ -56,7 +56,6 @@ const unauthorized = (error: { readonly message: string }) =>
 const conflict = (error: { readonly message: string }) =>
   Effect.fail(new EnvironmentHttpConflictError({ message: error.message }));
 
-/** How a connect route answers each CloudLink failure. Messages carry through unchanged. */
 const connectErrorCases = {
   CloudLinkRelayConfigInvalidError: badRequest,
   CloudLinkOriginInvalidError: badRequest,

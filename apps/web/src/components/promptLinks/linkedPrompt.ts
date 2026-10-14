@@ -4,7 +4,6 @@ import { type ComposerThreadTarget, useComposerDraftStore } from "~/composerDraf
 
 import { toastManager } from "../ui/toast";
 
-/** A warning that stays until dismissed when the link's prompt hid characters from the reader. */
 export function warnAboutHiddenCharacters(prompt: LinkedPrompt): void {
   if (prompt.hiddenCharacters === 0) return;
   toastManager.add({
@@ -15,11 +14,7 @@ export function warnAboutHiddenCharacters(prompt: LinkedPrompt): void {
   });
 }
 
-/**
- * Puts a linked prompt in a composer for the user to read and send. Text the user already typed
- * there is never replaced without asking: a toast offers to swap it for the linked prompt.
- * `notes` carry anything the link asked for and did not get, such as a model.
- */
+/** Ask before replacing user text. notes report unmet link requests, such as a model. */
 export function placeLinkedPrompt(
   target: ComposerThreadTarget,
   prompt: LinkedPrompt,

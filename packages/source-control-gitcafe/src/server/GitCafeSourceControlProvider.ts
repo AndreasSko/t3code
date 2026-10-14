@@ -96,10 +96,8 @@ const cliDiscovery = {
   installHint: `Install the GitCafe CLI with \`bun install -g @gitcafe/cli\`, then run \`cafe auth login --host https://${AUTH_HOST}/api\`, save a token in Settings, or set CAFE_TOKEN on the server.`,
 } satisfies SourceControlCliDiscoverySpec;
 
-/** `cafe auth status`'s reading, exposed for tests. */
 export const parseAuth = cliDiscovery.parseAuth;
 
-/** Probes `cafe` as the CLI spec does, with a token saved in Settings handed to it. */
 export const makeDiscovery = Effect.gen(function* () {
   const { process } = yield* SourceControlHost.SourceControlHost;
   const credentials = yield* GitCafeCredentials.GitCafeCredentials;
@@ -168,7 +166,6 @@ const cloneUrls = (target: Target) => ({
   sshUrl: `ssh@${target.host}:${target.repository}.git`,
 });
 
-/** An scp-like `user@host:path` or `ssh://` remote; HTTPS remotes may carry userinfo too. */
 const isSshRemote = (remoteUrl: string | undefined) =>
   remoteUrl !== undefined && (/^ssh:\/\//iu.test(remoteUrl) || /^[^/:]+@[^/:]+:/u.test(remoteUrl));
 
@@ -230,7 +227,6 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  /** The repository a call names, falling back to the checkout's own GitCafe remote. */
   const resolveTarget = Effect.fn("GitCafeSourceControlProvider.resolveTarget")(function* (
     operation: string,
     input: {
@@ -263,7 +259,6 @@ export const make = Effect.gen(function* () {
       if (remote) return remote;
       return yield* error(operation, input.cwd, "No GitCafe repository remote was found.");
     }
-    // A bare owner/name lives on the checkout's own GitCafe host.
     const repository = GitCafeHosts.gitCafeRepositoryPath(input.repository);
     if (repository !== null)
       return { host: remote?.host ?? AUTH_HOST, repository } satisfies Target;
@@ -429,8 +424,7 @@ export const make = Effect.gen(function* () {
           error("createRepository", input.cwd, "GitCafe returned an unreadable response.", cause),
         ),
       );
-      // GitCafe admits a repository asynchronously: `cafe repo create` answers while admission is
-      // still running, so wait for it to settle the way `cafe repo create --clone` does.
+      // Repository admission is asynchronous; wait until complete or blocked before returning it.
       const settled = (state: string) => state === "complete" || state === "blocked";
       const pending = created.data.resource;
       const resource = settled(pending.state)
@@ -451,7 +445,6 @@ export const make = Effect.gen(function* () {
             Effect.timeoutOption(ADMISSION_TIMEOUT),
             Effect.map(Option.getOrElse(() => pending)),
           );
-      // Anything short of complete is not yet usable.
       if (resource.state !== "complete")
         return yield* error(
           "createRepository",
@@ -495,7 +488,6 @@ export const make = Effect.gen(function* () {
               : yield* git.ensureRemote({
                   cwd: input.cwd,
                   preferredName: "gitcafe",
-                  // SSH only when the checkout already reaches GitCafe over SSH; HTTPS otherwise.
                   url: isSshRemote(input.context?.remoteUrl)
                     ? `ssh@${pullHost}:${sourceRepository}.git`
                     : `https://${pullHost}/${sourceRepository}.git`,

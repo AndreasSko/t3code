@@ -26,11 +26,7 @@ function joinWorkspacePath(workspaceRoot: string, relativePath: string): string 
   return `${root}${separator}${path}`;
 }
 
-/**
- * Classifies a markdown image or video source by where its bytes must be loaded from.
- * Filesystem paths belong to the environment host and must never reach a
- * browser or native image component without first becoming a signed asset URL.
- */
+/** Host filesystem paths must become signed asset URLs before reaching browser or native image components. */
 export function classifyMarkdownImageSource(
   value: string | null | undefined,
   workspaceRoot?: string | null,

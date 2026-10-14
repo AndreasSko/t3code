@@ -1,9 +1,4 @@
-/**
- * OpenCode instance settings. Shared by the server driver and the client
- * settings form, so it holds only browser-safe schema code.
- *
- * @module provider-opencode/settings
- */
+/** Shared with client settings forms; keep this schema browser-safe. */
 import {
   CustomModelSetting,
   makeBinaryPathSetting,

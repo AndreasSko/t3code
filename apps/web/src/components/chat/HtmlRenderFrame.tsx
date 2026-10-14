@@ -20,12 +20,7 @@ import { observeResize } from "~/lib/observeResize";
 // A frame may load its URL a little after mounting.
 const MIN_URL_LIFE_MS = 5 * 60_000;
 
-/**
- * An agent's HTML render inline in the thread: the page itself on the thread's
- * own background, at the server's measured height for this width until the
- * page reports its own. Loading and failure hold the same box so nothing below
- * it moves.
- */
+/** Hold the measured box across loading/failure so later timeline rows do not move. */
 export function HtmlRenderFrame(props: {
   readonly environmentId: EnvironmentId;
   readonly htmlRender: HtmlRenderReference;
@@ -33,8 +28,6 @@ export function HtmlRenderFrame(props: {
   readonly onFullscreenChange?: (fullscreen: boolean) => void;
 }) {
   const { attachmentId, title } = props.htmlRender;
-  // The frame takes the page's measured height at its own width, read before
-  // first paint so the reserved box is already the right size.
   const boxRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(HTML_RENDER_COLUMN_WIDTH);
   useLayoutEffect(() => {
@@ -60,9 +53,7 @@ export function HtmlRenderFrame(props: {
     }),
     [attachmentId, fileName],
   );
-  // A cached URL with life left is reused, so the browser's cache serves the
-  // page again; one near expiry is minted afresh, since a frame cannot report a
-  // failed load. The page keeps its first URL for its lifetime.
+  // Iframes cannot report load failure; mint near-expiry URLs before loading and retain them for the mount.
   const [src, setSrc] = useState<string | null>(null);
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
   const { onFullscreenChange } = props;

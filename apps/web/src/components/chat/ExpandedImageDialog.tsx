@@ -107,9 +107,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     setImageOffset((current) => current + direction);
   }, []);
 
-  // The element that opened the preview gets focus back on close. Without
-  // this a close button click leaves focus on the unmounted dialog, and the
-  // composer that owned the opener reads that as a blur and rests.
+  // Restore opener focus so the composer cannot treat a disappearing dialog's close-button focus as blur.
   const openerRef = useRef<Element | null>(null);
   useEffect(() => {
     openerRef.current = document.activeElement;

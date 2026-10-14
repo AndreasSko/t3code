@@ -1,11 +1,6 @@
 // MCP responses carry opaque JSON-RPC that callers relay verbatim.
 // @effect-diagnostics preferSchemaOverJson:off
-/**
- * Reads the JSON-RPC payloads of a response from an MCP streamable-HTTP
- * endpoint. Used on the ACP bridge fast path, so it imports only effect core.
- *
- * @module mcpResponsePayloads
- */
+// The ACP bridge fast path imports only Effect core.
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 

@@ -42,12 +42,7 @@ const ROUTE_ICONS: Record<ConnectionRouteKind, AppSymbolName> = {
   ssh: "terminal",
 };
 
-/**
- * The ways this device reaches an environment, preferred first. The first
- * route that answers is used, and the connection moves back up the list when
- * a better route is reachable again. Edit shows drag handles and remove
- * buttons; Add route pairs this machine over another address.
- */
+/** Preferred routes first; reconnects return to a reachable higher-priority route. */
 export function EnvironmentRoutesSection({
   environmentId,
   connected,
@@ -80,9 +75,8 @@ export function EnvironmentRoutesSection({
   );
   // Rows size to their content, so a drag measures how far it has moved past each one.
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  // Each drop remounts the rows so the new order and the cleared drag offsets
-  // land in one frame. Kept rows would show their old offsets in their new
-  // slots until the animated style catches up, and the card flashes empty.
+  // Remount after a drop so reordered rows and cleared transforms land together.
+  // Reusing rows can briefly apply stale offsets and flash the card empty.
   const [drops, setDrops] = useState(0);
   if (entry === undefined) return null;
 
@@ -184,7 +178,6 @@ export function EnvironmentRoutesSection({
       ) : null}
       {routes.map((route, index) => {
         const id = connectionRouteId(route.target);
-        // Rows between the lifted row and its drop slot shift to make room.
         const lifted = drag === null ? 0 : (heights.get(drag.id) ?? 0);
         const shift =
           dragFrom === -1 || index === dragFrom
@@ -293,7 +286,6 @@ function RouteRow(props: {
         ]
           .filter((part) => part !== null)
           .join(", ")}
-        // Matches the padding of the settings rows around it.
         className={cn(
           "min-w-0 flex-1 flex-row items-center gap-4 py-4 android:py-3",
           address !== null ? "android:min-h-18" : "android:min-h-14",

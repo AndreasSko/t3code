@@ -146,12 +146,7 @@ export function fallbackTextGenerationModelSelection(
   };
 }
 
-/**
- * `projectId` has no default: a caller that forgets it would otherwise fall
- * back to the machine's own writer choice, silently ignoring a project that
- * turned the writer's instance off. Pass `null` explicitly outside a
- * project's scope.
- */
+/** Pass null explicitly outside project scope, so callers cannot accidentally ignore a project override. */
 export function resolveSourceControlWriterModelSelection(
   settings: ServerSettings,
   providers: ReadonlyArray<ServerProvider> | undefined,
@@ -280,15 +275,7 @@ function mergeSettingsEntries<Value>(
   return Object.fromEntries(next);
 }
 
-/**
- * `projectSettingsOverrides` entries otherwise replace whole (see the field's
- * doc comment in contracts), but `providerInstances` was added after clients
- * already round-trip a project's entry on every edit. A client built before
- * that addition sends an entry that never mentions the key, and a whole
- * replace would silently wipe it. When an incoming entry omits the key, keep
- * what is stored; a client that means to clear every provider override for
- * the project says so explicitly with `providerInstances: {}`.
- */
+/** Preserve omitted providerInstances for older clients; an explicit {} clears the overrides. */
 function mergeProjectSettingsOverridesPatch(
   current: Readonly<Record<string, ProjectSettingsOverrides>>,
   patch: Readonly<Record<string, ProjectSettingsOverrides | null>>,

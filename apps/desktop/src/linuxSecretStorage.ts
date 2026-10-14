@@ -8,9 +8,8 @@ export type LinuxPasswordStoreSwitch = Exclude<LinuxPasswordStorePreference, "au
 
 export const DEFAULT_LINUX_PASSWORD_STORE: LinuxPasswordStorePreference = "auto";
 
-// Chromium matches XDG_CURRENT_DESKTOP values case-sensitively and returns on the first value it
-// recognizes, so these stay exact literals and are scanned in order. Omitting a real desktop fails
-// safe: we force gnome-libsecret, which is the backend Chromium selects for all of these anyway.
+// Chromium desktop names are case-sensitive and first-recognized wins; keep exact literals.
+// A missed libsecret desktop can safely fall back to forcing the same backend.
 const ELECTRON_LIBSECRET_DESKTOPS = new Set([
   "Deepin",
   "GNOME",
@@ -36,11 +35,8 @@ export function normalizeLinuxPasswordStorePreference(
     : DEFAULT_LINUX_PASSWORD_STORE;
 }
 
-// Auto mode asks one question: will Electron select a real keyring on its own? If so, stay out of
-// the way, which is how canonical KDE sessions keep the KWallet generation Chromium picks for them.
-// Otherwise force gnome-libsecret, because the alternative is basic text, which is barely
-// encryption at all. Forcing never guesses a KWallet generation; a KDE session that needs a
-// specific one sets linuxPasswordStore explicitly.
+// Let Chromium choose the backend for protected desktop names, including KDE's KWallet generation;
+// otherwise force libsecret to avoid basic-text storage. Explicit preferences override auto.
 export function resolveLinuxPasswordStoreSwitch(input: {
   readonly preference: LinuxPasswordStorePreference;
   readonly env: NodeJS.ProcessEnv;
@@ -52,11 +48,8 @@ export function resolveLinuxPasswordStoreSwitch(input: {
   return electronSelectsProtectedBackend(input.env) ? null : "gnome-libsecret";
 }
 
-// Only an exact XDG_CURRENT_DESKTOP literal proves Electron will protect the session. Chromium can
-// also reach a real backend through DESKTOP_SESSION and the legacy KDE markers, but those are the
-// variables a previous session leaves behind, and trusting them is what let stale hints suppress
-// the forced backend before. Forcing where Chromium would have chosen libsecret is harmless, since
-// it lands on the same backend.
+// Trust exact XDG_CURRENT_DESKTOP names; other session hints can be stale.
+// Forcing libsecret when Chromium would already choose it is harmless.
 function electronSelectsProtectedBackend(env: NodeJS.ProcessEnv): boolean {
   for (const name of splitDesktopNameList(env.XDG_CURRENT_DESKTOP)) {
     const trimmed = name.trim();

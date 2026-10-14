@@ -298,19 +298,11 @@ interface CachedDatabase {
   readonly candidates: readonly UsageCandidate[];
 }
 
-/**
- * Parsed databases keyed by canonical path. An entry is reused only while both
- * the database and its `-wal` sidecar keep the same size, mtime and ctime: new
- * rows land in the WAL without touching the main file until a checkpoint, and
- * ctime moves on any content write even when mtime is restored.
- */
+/** Fingerprint the database and WAL: rows can land only in the sidecar, and ctime
+ * catches content writes even when mtime is restored. */
 export const makeAntigravityUsageCache = () => new Map<string, CachedDatabase>();
 
-/**
- * Reads and merges aliases across every configured Antigravity store before date
- * filtering. With a cache, databases unchanged since the previous read are not
- * decoded again.
- */
+/** Merge aliases across configured stores before date filtering; unchanged cached databases skip decoding. */
 export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* (
   conversationsDirectories: string | readonly string[],
   sinceMs: number,

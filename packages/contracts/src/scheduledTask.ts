@@ -123,8 +123,8 @@ const ScheduledTaskUpsertWebhookSchedule = Schema.Struct({
 });
 
 /**
- * Read model for persisted schedules. Keep accepting legacy sub-minute rows so
- * users can list, disable, edit, or delete them after the write minimum changes.
+ * Accept stored sub-minute intervals so users can still disable, edit or delete them
+ * after write validation raises the minimum.
  */
 export const ScheduledTaskSchedule = Schema.Union([
   ScheduledTaskIntervalSchedule,
@@ -160,7 +160,6 @@ export type ScheduledTaskUpsertSchedule = typeof ScheduledTaskUpsertSchedule.Typ
 export const ScheduledTaskRunStatus = Schema.Literals(["never", "running", "succeeded", "failed"]);
 export type ScheduledTaskRunStatus = typeof ScheduledTaskRunStatus.Type;
 
-/** Where a webhook task receives requests. Present only on webhook tasks. */
 export const ScheduledTaskWebhookEndpoint = Schema.Struct({
   /** Environment-relative path including the secret token; works on any origin that reaches the environment. */
   path: TrimmedNonEmptyString,
@@ -226,7 +225,6 @@ export const ScheduledTaskUpsertInput = Schema.Struct({
 });
 export type ScheduledTaskUpsertInput = typeof ScheduledTaskUpsertInput.Type;
 
-/** Partial update that flips only the enabled flag — never overwrites other fields. */
 export const ScheduledTaskSetEnabledInput = Schema.Struct({
   id: ScheduledTaskId,
   enabled: Schema.Boolean,

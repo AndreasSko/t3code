@@ -21,16 +21,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
-/**
- * Tracks the live stages of a bootstrap worktree setup per thread so clients
- * can render a progress card while the first turn is still being prepared.
- *
- * State is memory only. It exists from the first `begin` until the turn starts
- * or the setup fails, plus a short grace window so a client that subscribes
- * late still sees the final state. Nothing here is persisted or event-sourced:
- * the durable record of a setup is the thread's worktree path and the setup
- * script activities, both of which already exist.
- */
+/** Tracks bootstrap progress in memory through completion plus a grace window for late subscribers. */
 export class WorktreeSetupTracker extends Context.Service<
   WorktreeSetupTracker,
   {
@@ -69,16 +60,9 @@ export class WorktreeSetupTracker extends Context.Service<
       phase: "done" | "failed" | "cancelled",
       error?: string | null,
     ) => Effect.Effect<WorktreeSetupSnapshot | null>;
-    /**
-     * Drops the cancel handle. Called right before the turn is dispatched so a
-     * late cancel cannot roll back a thread whose agent has already started.
-     */
+    /** Call before turn dispatch so late cancellation cannot roll back a thread whose agent has started. */
     readonly markUncancellable: (threadId: ThreadId) => Effect.Effect<void>;
-    /**
-     * Interrupts the running bootstrap and waits for it to unwind, so the
-     * caller's dispatch has already failed and rolled back when this returns.
-     * Returns false when nothing is running or the setup is past cancellation.
-     */
+    /** Waits for bootstrap rollback; returns false if setup is absent or past cancellation. */
     readonly cancel: (threadId: ThreadId) => Effect.Effect<boolean>;
     readonly get: (threadId: ThreadId) => Effect.Effect<WorktreeSetupSnapshot | null>;
     /** Emits the current snapshot (or null) first, then every change until unsubscribed. */
@@ -88,7 +72,6 @@ export class WorktreeSetupTracker extends Context.Service<
 
 const TAIL_LINE_LIMIT = 4;
 
-/** Keeps free text inside the contract limit, ending in an ellipsis when cut. */
 function clampText(text: string, maxLength: number): string {
   return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}\u2026`;
 }
@@ -319,11 +302,7 @@ export const make = Effect.gen(function* () {
   const get: WorktreeSetupTracker["Service"]["get"] = (threadId) =>
     Ref.get(setups).pipe(Effect.map((current) => current.get(threadId)?.snapshot ?? null));
 
-  /**
-   * Each subscriber gets a one-slot sliding mailbox: a slow WebSocket only
-   * ever holds the newest snapshot, so a chatty setup script cannot grow the
-   * server heap. Snapshots are whole states, so skipping intermediates is safe.
-   */
+  /** Whole-state snapshots allow a one-slot sliding mailbox to bound memory for slow clients. */
   const stream: WorktreeSetupTracker["Service"]["stream"] = (threadId) =>
     Stream.callback<WorktreeSetupSnapshot | null>(
       (mailbox) =>

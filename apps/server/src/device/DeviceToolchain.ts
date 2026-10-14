@@ -1,19 +1,6 @@
 import type { DeviceToolVersions } from "@t3tools/contracts";
-/**
- * Pinned installs of the two external tools device support is built on.
- *
- * `expo-device-hub` streams simulator and emulator screens and `agent-device`
- * drives them. Each is npm-installed separately after its matching consent
- * step into `<baseDir>/tools/<name>/<version>` and executed from there with the
- * resolved Node runtime, never `npx`: an ephemeral
- * npx cache would make every first `device_open` after a reboot depend on the
- * registry, and the pinned versions are part of the contract the injected
- * agent instructions describe.
- *
- * Install follows the pinned-runtime recipe: stage into a temp sibling, write a
- * sentinel only after npm exits 0, then rename into place. npm extracts files
- * before it finishes, so an entry file alone does not prove a usable tree.
- */
+// Pin tools to match agent instructions and avoid registry dependence on each
+// first use; mark installs complete only after npm succeeds, not when files appear.
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -36,7 +23,6 @@ const installLock = Semaphore.makeUnsafe(1);
 
 export interface DeviceToolPaths {
   readonly installDir: string;
-  /** Absolute path of the tool's entry script, run with a resolved Node runtime. */
   readonly entryPath: string;
   readonly sentinelPath: string;
 }

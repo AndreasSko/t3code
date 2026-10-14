@@ -23,7 +23,6 @@ export interface DeviceShapeProfile {
   };
 }
 
-/** Original family silhouettes, rather than claims to reproduce individual hardware models. */
 export const IOS_PHONE_SHAPE: DeviceShapeProfile = {
   id: "ios-phone",
   bezel: 0.055,

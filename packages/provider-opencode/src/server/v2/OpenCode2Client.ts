@@ -81,7 +81,6 @@ export interface OpenCode2Api {
   >;
 }
 
-/** Builds clients for OpenCode 2 servers, one per base URL and password. */
 export class OpenCode2Client extends Context.Service<
   OpenCode2Client,
   {
@@ -138,7 +137,6 @@ const undecodable = (data: string) =>
     return Result.failVoid;
   });
 
-/** Subscribes to `/api/event`, then streams every frame this build can route. */
 const readEvents = HttpClient.get("/api/event", {
   headers: { accept: "text/event-stream" },
 }).pipe(

@@ -243,10 +243,7 @@ function parseCodexModelListResponse(
   }));
 }
 
-/**
- * Prefer our own default-model ranking when one of the preferred slugs is in
- * the live catalog; otherwise keep whatever Codex itself flagged as default.
- */
+/** Uses the preferred ranking when available; otherwise preserves Codex's advertised default. */
 export function applyPreferredCodexDefaultModel(
   models: ReadonlyArray<ServerProviderModel>,
 ): ReadonlyArray<ServerProviderModel> {
@@ -268,11 +265,7 @@ export function applyPreferredCodexDefaultModel(
   });
 }
 
-/**
- * Codex has no static default capability set, so a bare custom slug borrows
- * the first built-in's descriptors; an entry with its own capabilities keeps
- * them.
- */
+/** Bare custom slugs borrow built-in descriptors because Codex has no static default capability set. */
 function appendCustomCodexModels(
   models: ReadonlyArray<ServerProviderModel>,
   customModels: ReadonlyArray<CustomModelSetting>,
@@ -354,18 +347,9 @@ const readCodexModelsCacheFetchedAt = Effect.fn("readCodexModelsCacheFetchedAt")
   );
 });
 
-/**
- * Lists the ChatGPT model catalog as fetched for T3 Code.
- *
- * `model/list` serves `CODEX_HOME/models_cache.json` while it is under five
- * minutes old. Every Codex client on the machine shares that file, and the
- * backend tailors the catalog to each client's originator: the plain CLI does
- * not get Sol Ultrafast. So the first answer can be another client's catalog.
- * App-server refreshes the catalog online at startup, so wait until a write
- * newer than this process's spawn lands, then list again. If no refresh
- * lands in time, keep the first answer. Another client writing in the same
- * few hundred milliseconds can still win; the next probe corrects it.
- */
+/** model/list can reuse another originator's five-minute shared cache, losing client-specific tiers.
+ * Retry after a post-spawn cache write; retain the first answer if refresh times out.
+ * Another client can still win the write race; the next probe corrects it. */
 const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(function* (input: {
   readonly client: CodexClient.CodexAppServerClient["Service"];
   readonly codexHome: string;
@@ -388,16 +372,8 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
   return yield* requestAllCodexModels(input.client);
 });
 
-/**
- * Environment for every `codex app-server` T3 Code spawns.
- *
- * Codex sends its client name as the `originator` header, and the backend
- * tailors the model catalog to it. App-server starts its catalog refresh
- * before `initialize` names the client, so that first fetch goes out as the
- * plain CLI, misses tiers like Sol Ultrafast, and overwrites the shared
- * `models_cache.json`. Naming the originator at spawn closes that race.
- * A value the user already set wins.
- */
+/** Startup refresh precedes initialize, so set originator at spawn for the right model catalog.
+ * Explicit user environment values still win. */
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv => ({
@@ -418,12 +394,7 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   };
 }
 
-/**
- * Spawns a short-lived `codex app-server`, runs the initialize handshake, and
- * hands the caller a connected client. Scoped: the process is killed when
- * the caller's scope closes. Shared by the status probe, the skills probe,
- * and account-level requests such as reset-credit redemption.
- */
+/** Returns an initialized app-server client whose process dies when the caller's scope closes. */
 export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string | undefined;
@@ -431,10 +402,7 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   readonly cwd: string;
   readonly environment?: NodeJS.ProcessEnv | undefined;
 }) {
-  // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
-  // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
-  // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
-  // Expand here for parity with `CodexTextGeneration`.
+  // Spawned env vars do not shell-expand ~; expand configured CODEX_HOME like CodexTextGeneration.
   const resolvedHomePath = input.homePath
     ? expandHomePath(input.homePath, yield* HostProcess.HomeDirectory)
     : undefined;
@@ -488,7 +456,6 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const spawnedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
   const { client, initialize } = yield* withCodexAppServerClient(input);
 
-  // Extract the version string after the first '/' in userAgent, up to the next space or the end
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
   const version = versionMatch ? versionMatch[1] : undefined;
 
@@ -785,11 +752,4 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   });
 });
 
-// NOTE: the singleton `CodexProviderLive` Layer has been removed as part of
-// the per-instance-driver refactor. `CodexDriver.create()` builds a managed
-// snapshot per instance (each with its own `CodexSettings`) and hands the
-// resulting `ManagedServerProvider` back as `ProviderInstance.snapshot`.
-//
-// The `makePendingCodexProvider` and `checkCodexProviderStatus` helpers are
-// re-exported for use by `CodexDriver`.
 export { makePendingCodexProvider };

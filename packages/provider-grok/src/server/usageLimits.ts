@@ -44,14 +44,8 @@ export function grokUsageResponseToLimits(
 ) {
   const usedPercent = response.config?.creditUsagePercent;
   if (usedPercent === undefined || !Number.isFinite(usedPercent)) {
-    // A billing read that succeeded but carries no percentage is an account
-    // with nothing metered yet, not one that can never report: xAI omits the
-    // field entirely (rather than sending 0) until usage registers, then fills
-    // it in. Calling that `unsupported` would strand the account — the Limits
-    // view drops unsupported entries and deliberately mutes their notice, so a
-    // freshly signed-in Grok account would vanish with no explanation until it
-    // happened to be used, and `applyUsageLimitsUpdate` would refuse the
-    // mid-turn windows that could have recovered it.
+    // xAI omits percentage until first usage. Treating that as unsupported would hide the account
+    // and block runtime updates that could recover its limits.
     return makeUsageLimits({ checkedAt, windows: [] });
   }
   const period = response.config?.currentPeriod;

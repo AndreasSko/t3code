@@ -39,9 +39,7 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
   const navigation = useNavigation();
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
 
-  // Keyed on the params object so a fresh navigation to this (already
-  // mounted) screen produces a new reference, letting the draft screen
-  // re-apply the requested project.
+  // Fresh navigation to a mounted screen must reapply its project request.
   const initialProjectRef = useMemo(
     () => ({
       environmentId: Array.isArray(params.environmentId)
@@ -144,7 +142,6 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
         : initialProjectRef,
     [initialProjectRef, result],
   );
-  // Send/queue remain unavailable on failure while the unlocked route closes.
   const preparingBranch = checkoutPending || (needsPreparation && result?._tag !== "Success");
 
   return (

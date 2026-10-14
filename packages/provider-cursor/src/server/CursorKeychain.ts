@@ -1,13 +1,6 @@
 /**
- * CursorKeychain - the Cursor CLI's macOS Keychain login, shared by usage
- * history and usage limits in one server process.
- *
- * macOS shows the access prompt on the server's own screen, which a remote
- * client cannot answer, so a read gives up after a timeout. The Keychain read
- * stays in flight: the next read joins it instead of stacking a second prompt,
- * and picks up the token once someone allows access.
- *
- * @module provider-cursor/server/CursorKeychain
+ * Remote clients cannot answer the server's macOS Keychain prompt, so reads time out.
+ * Keep the read in flight so retries join one prompt and pick up an eventual grant.
  */
 import * as NodeModule from "node:module";
 
@@ -25,7 +18,6 @@ const DEFAULT_TIMEOUT = Duration.seconds(30);
 
 const requireForKeyring = NodeModule.createRequire(import.meta.url);
 
-/** Nobody answered the macOS Keychain prompt in time. */
 export class CursorKeychainTimeoutError extends Schema.TaggedError<CursorKeychainTimeoutError>()(
   "CursorKeychainTimeoutError",
   {},
@@ -37,7 +29,6 @@ export class CursorKeychainTimeoutError extends Schema.TaggedError<CursorKeychai
 
 export const isCursorKeychainTimeoutError = Schema.is(CursorKeychainTimeoutError);
 
-/** The Keychain could not be read. */
 export class CursorKeychainReadError extends Schema.TaggedError<CursorKeychainReadError>()(
   "CursorKeychainReadError",
   { cause: Schema.Defect() },
@@ -69,7 +60,6 @@ const readKeychainEntry = Effect.tryPromise({
   catch: (cause) => new CursorKeychainReadError({ cause }),
 });
 
-/** A Keychain backed by `read`, which tests replace. */
 export const make = (
   read: Effect.Effect<string | null, CursorKeychainReadError> = readKeychainEntry,
   timeout: Duration.Input = DEFAULT_TIMEOUT,

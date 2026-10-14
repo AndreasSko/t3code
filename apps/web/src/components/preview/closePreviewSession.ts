@@ -19,10 +19,7 @@ interface ClosePreviewSessionInput<E> {
   readonly threadRef: ScopedThreadRef;
 }
 
-/**
- * Optimistically closes a preview while suppressing stale list responses for
- * the same tab. A failed close restores the last known snapshot.
- */
+/** Suppress stale tab lists during optimistic close; restore the snapshot on failure. */
 export async function closePreviewSession<E>(
   input: ClosePreviewSessionInput<E>,
 ): Promise<AtomCommandResult<void, E>> {

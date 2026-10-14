@@ -60,11 +60,8 @@ function summarize(
   };
 }
 
-/**
- * On app.t3.codes a prompt link first asks where to open: the installed desktop or mobile app
- * (through `t3code://`), this browser when it is connected to a machine, or the download page.
- * Returns that page, or null when the link should open in this browser as usual.
- */
+/** Hosted links choose an app, connected browser, or download page; null
+ * means the link should open in this browser normally. */
 export function useHostedPromptLinkLanding(enabled: boolean): ReactNode | null {
   const href = useLocation({ select: (location) => location.href });
   const { environments, isReady } = useEnvironments();

@@ -11,9 +11,7 @@ import * as Option from "effect/Option";
 
 import * as Electron from "electron";
 
-// Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
-// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) must
-// reach the OS handler; every other non-web scheme stays blocked.
+// Allow remote-editor deep links through the OS; block other non-web schemes.
 const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {

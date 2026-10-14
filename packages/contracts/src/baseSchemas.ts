@@ -13,12 +13,8 @@ export const TrimmedString = Schema.String.pipe(
     }),
   ),
 );
-/**
- * Non-empty once trimmed. A `TrimmedString` only trims when decoding or
- * encoding, so `make` and encode see the untrimmed value: a plain
- * `isNonEmpty` would accept `" "` there and encode it to `""`, which no
- * longer decodes.
- */
+// TrimmedString.make/encode sees raw values; reject blanks that would encode
+// to empty strings and fail to decode.
 const isNonBlank = Schema.makeFilter((value: string) => value.trim().length > 0, {
   expected: "a non-blank string",
   toJsonSchema: () => [{ minLength: 1 }, true],
@@ -30,10 +26,7 @@ export const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }));
 
-/**
- * Safe categories for a failed DPoP proof. These describe the class of failure
- * without exposing proof contents or server-side authentication details.
- */
+/** Safe DPoP failure categories without proof contents or authentication internals. */
 export const DpopFailureReason = Schema.Literals([
   "time_window",
   "key_mismatch",
@@ -47,11 +40,7 @@ export type DpopFailureReason = typeof DpopFailureReason.Type;
 export const IsoDateTime = Schema.String;
 export type IsoDateTime = typeof IsoDateTime.Type;
 
-/**
- * Same idea for one optional value whose literal set grows over time: a
- * member this build does not know decodes as absent rather than failing the
- * enclosing struct. Encoding is the plain encoding.
- */
+/** Unknown literals decode as absent instead of failing the enclosing struct; encoding is unchanged. */
 export const ForwardCompatibleOptional = <Value extends Schema.Top>(value: Value) => {
   const decodeValue = Schema.decodeUnknownOption(value as never);
   return Schema.optionalKey(
@@ -68,11 +57,7 @@ export const ForwardCompatibleOptional = <Value extends Schema.Top>(value: Value
   );
 };
 
-/**
- * The nullable form, for a persisted setting whose literal set grows over
- * time: a member this build does not know (or a missing key) decodes as null
- * rather than failing the enclosing struct. Encoding is the plain encoding.
- */
+/** Unknown or missing literals decode as null for persisted settings; encoding is unchanged. */
 export const ForwardCompatibleNullable = <Value extends Schema.Top>(value: Value) => {
   const decodeValue = Schema.decodeUnknownOption(value as never);
   return Schema.Unknown.pipe(
@@ -86,12 +71,7 @@ export const ForwardCompatibleNullable = <Value extends Schema.Top>(value: Value
   );
 };
 
-/**
- * A nullable setting whose null is "unset" and never crosses the wire: it
- * decodes from a missing or unknown key and encodes back to a missing key.
- * For a field that older clients decode as a required literal, so a null
- * on the wire would fail their whole settings snapshot.
- */
+/** Unknown/missing values become null locally and missing on the wire so older required-literal clients decode them. */
 export const OmittedWhenNull = <Value extends Schema.Top>(value: Value) => {
   const decodeValue = Schema.decodeUnknownOption(value as never);
   return Schema.optionalKey(Schema.Unknown).pipe(
@@ -111,20 +91,8 @@ export const OmittedWhenNull = <Value extends Schema.Top>(value: Value) => {
   );
 };
 
-/**
- * Wire codec for a server→client value whose shape grows over time: a union
- * a newer server may add members to, or an array of such values. Clients keep
- * decoding payloads from servers newer than themselves instead of failing the
- * connection over data they could not act on anyway.
- *
- * Decoding runs each value through its own schema, so transformations (dates,
- * trimming, decoding defaults) apply as usual. Only values that schema
- * rejects are dropped, on either side.
- *
- * For a tagged union, prefer {@link ForwardCompatibleUnion}: it drops only
- * values whose tag this build does not know, so a known member with a broken
- * payload still fails loudly.
- */
+/** Drops only rejected array elements after their transforms. For tagged unions prefer
+ * {@link ForwardCompatibleUnion}, which preserves failures for malformed known members. */
 export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Element) =>
   Schema.Array(
     Schema.UndefinedOr(element).pipe(
@@ -141,9 +109,7 @@ export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Elem
           Schema.catchEncoding(() => Effect.succeedSome(undefined)),
         ),
       ).check(
-        // The holes above are an encoding detail: a decoded value has none, so
-        // `Schema.is` and `make` still reject an array that does. Aborts, so a
-        // later check on the array never sees a hole.
+        // Holes are wire-only; reject them in Schema.is/make and abort before later array checks.
         Schema.makeFilter(
           (values) => {
             // Every index, not `every`, which skips the holes of a sparse array.
@@ -161,9 +127,7 @@ export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Elem
         ReadonlyArray<Element["Type"] | undefined>
       >({
         decode: (values) => values.filter((value) => value !== undefined),
-        // An element that fails its own checks is dropped before the wire, so
-        // a wrapper that reads the encoded array as JSON values never meets
-        // the hole it left.
+        // Drop failed encoded elements before JSON wrappers can observe their holes.
         encode: (values) => values.filter((value) => value !== undefined),
       }),
     ),
@@ -175,11 +139,7 @@ export type ForwardCompatibleArray<Element extends Schema.Top> = Schema.Codec<
   Element["EncodingServices"]
 >;
 
-/**
- * A member of a {@link ForwardCompatibleUnion} whose tag this build does not
- * know. A class, so only the codec can make one: no decoded payload, however
- * it is shaped, is ever mistaken for it.
- */
+/** Class identity prevents undecoded payloads from impersonating unknown union members. */
 export class UnknownUnionMember<Tag extends string = string> {
   readonly tag: Tag;
   readonly value: string;
@@ -189,15 +149,8 @@ export class UnknownUnionMember<Tag extends string = string> {
   }
 }
 
-/**
- * Wire codec for a server→client tagged union a newer server may add members
- * to. A value whose `tag` field holds a value this build does not know decodes
- * to {@link UnknownUnionMember} instead of failing; a known member decodes
- * through its own schema, so a broken known payload still fails. Callers
- * decide what an unknown member means: skip it, or show a fallback.
- *
- * Unknown members are decode-only; encoding one fails.
- */
+/** Unknown tags become {@link UnknownUnionMember}; known malformed members still fail.
+ * Unknown members cannot be encoded. */
 export const ForwardCompatibleUnion = <
   const Members extends ReadonlyArray<Schema.Top & { readonly fields: object }>,
   const Tag extends string,
@@ -235,11 +188,7 @@ export type ForwardCompatibleUnion<
   Members[number]["EncodingServices"]
 >;
 
-/**
- * Whether a raw, undecoded value carries a `tag` this build does not know
- * among `members`. For checks outside a {@link ForwardCompatibleUnion}, such
- * as an envelope that must skip a payload of an unknown kind.
- */
+/** Checks raw envelopes for unknown tags outside a {@link ForwardCompatibleUnion}. */
 export const hasUnknownUnionTag = (
   members: ReadonlyArray<Schema.Top & { readonly fields: object }>,
   tag: string,
@@ -257,11 +206,7 @@ export const isUnknownUnionMember = <A>(
   value: A,
 ): value is Extract<A, UnknownUnionMember<string>> => value instanceof UnknownUnionMember;
 
-/**
- * An array of a growing tagged union that drops members this build does not
- * know. Known members decode through their own schema and still fail when
- * broken. Encoding is the plain array encoding.
- */
+/** Drops unknown tagged members; known malformed members still fail. Encoding uses the plain array. */
 export const ForwardCompatibleUnionArray = <
   const Members extends ReadonlyArray<Schema.Top & { readonly fields: object }>,
   const Tag extends string,
@@ -304,9 +249,6 @@ const knownTags = (
   return tags;
 };
 
-/**
- * Construct a branded identifier. Enforces non-empty trimmed strings
- */
 const makeEntityId = <Brand extends string>(brand: Parameters<typeof Schema.brand<Brand>>[0]) => {
   return TrimmedNonEmptyString.pipe(Schema.brand<Brand>(brand));
 };
@@ -336,12 +278,7 @@ export type AuthSessionId = typeof AuthSessionId.Type;
 export const RpcClientId = NonNegativeInt.pipe(Schema.brand("RpcClientId"));
 export type RpcClientId = typeof RpcClientId.Type;
 
-/**
- * Which client surface a connection or command comes from. Unlike
- * `AuthClientMetadataDeviceType` (a UA-style device class where web and
- * desktop are both "desktop"), this names the actual product surface.
- * Optional everywhere it appears: old clients never send it.
- */
+/** Product surface, distinct from UA device class where desktop and web may both be "desktop". */
 export const ClientSurface = Schema.Literals(["web", "desktop", "mobile", "cli"]);
 export type ClientSurface = typeof ClientSurface.Type;
 

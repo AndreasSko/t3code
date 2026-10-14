@@ -279,11 +279,7 @@ export function extractCommandOutputText(dataValue: unknown): string | null {
   return null;
 }
 
-/**
- * Ingestion caps tool details at 180 chars and appends "...", so a long command
- * echo no longer equals the command it repeats. Treat a truncated prefix of the
- * command as the same echo.
- */
+// Ingestion truncates detail at 180 chars plus "..."; a command prefix still counts as an echo.
 function textRepeatsCommand(text: string, commands: ReadonlyArray<string | null>): boolean {
   const truncated = text.endsWith("...")
     ? text.slice(0, -3)
@@ -303,14 +299,7 @@ function textRepeatsCommand(text: string, commands: ReadonlyArray<string | null>
   });
 }
 
-/**
- * Decides whether a command row's `detail` is a synthetic echo of the command
- * rather than real output. OpenCode stores completed output in `detail` with no
- * other output channel, so plain equality is only treated as synthetic when the
- * payload shape shows the detail came from the command: Codex item metadata,
- * an ACP tool call (`data.toolCallId`, `kind: "execute"`), a Claude tool-name
- * prefix, or no structured command at all.
- */
+/** OpenCode detail may be real output; treat equality as an echo only with command-metadata evidence. */
 export function commandDetailRepeatsCommand(input: {
   readonly detail: string;
   readonly command: string | null;
@@ -383,8 +372,7 @@ function workEntryIndicatesToolFailureFromOutput(
     if (item.outputIndicatesFailure || (item.exitCode !== undefined && item.exitCode !== 0)) {
       return true;
     }
-    // Older servers/caches can still carry output. Read only the previous
-    // preview-sized prefix for status, without exposing it in the row detail.
+    // Inspect only a bounded prefix of legacy output for failure status without exposing it in row detail.
     if (item.output && toolOutputIndicatesFailure(item.output.slice(0, 32_768))) {
       return true;
     }
@@ -405,7 +393,6 @@ export function workEntryDisplayIndicatesToolFailure(entry: WorkLogPresentationE
   return workEntryIndicatesToolFailureFromOutput(entry, false);
 }
 
-/** Decides whether the row can show a success marker. */
 export function workEntryIndicatesToolSuccess(entry: WorkLogPresentationEntry): boolean {
   return (
     workLogEntryIsToolLike(entry) &&
@@ -756,11 +743,7 @@ export function toolGroupSummaryKind(
   return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
 }
 
-/**
- * Plain-text line for the latest thought in the live activity row. A
- * bold-only opening line (the Codex summary heading) wins; otherwise this is
- * the first sentence of the reasoning text. Web and mobile both render it.
- */
+/** Prefer a bold-only Codex heading, otherwise the first reasoning sentence. */
 export function liveThoughtLine(markdown: string): string {
   const heading = /^\s*\*\*([^*\r\n]+)\*\*[ \t]*\r?(?:\n|$)/.exec(markdown)?.[1];
   const text = (heading ?? markdown)

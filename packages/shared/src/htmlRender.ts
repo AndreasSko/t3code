@@ -6,20 +6,11 @@ import {
 } from "./themePalettes.ts";
 import { EVENT_CODE_SHORTCUT_KEYS } from "./keybindings.ts";
 
-/**
- * Agent-authored HTML pages ("HTML renders") are self-contained documents an
- * agent publishes into a thread with T3's `html_render` MCP tool. The server
- * stores each one as a thread attachment with a small bootstrap injected into
- * its head; clients show it in a sandboxed iframe (web, desktop) or WebView
- * (mobile) and hand it the active theme as CSS custom properties.
- */
-
 export const HTML_RENDER_TOOL_NAME = "html_render";
 export const HTML_RENDER_MIN_HEIGHT = 80;
 export const HTML_RENDER_MAX_HEIGHT = 2000;
 export const HTML_RENDER_MAX_TITLE_LENGTH = 200;
 
-/** What the `html_render` tool result carries so clients can show the page. */
 export interface HtmlRenderReference {
   readonly attachmentId: string;
   readonly title: string;
@@ -32,7 +23,6 @@ export interface HtmlRenderReference {
   readonly heights?: ReadonlyArray<readonly [width: number, height: number]>;
 }
 
-/** Frame widths the server measures a page at, from phones to the wide chat setting. */
 export const HTML_RENDER_MEASURE_WIDTHS = [320, 375, 430, 520, 640, 728, 860, 1000, 1144] as const;
 
 /**
@@ -85,7 +75,6 @@ export function readHtmlRenderReference(value: unknown): HtmlRenderReference | u
   };
 }
 
-/** Whether two references show the same page at the same sizes. */
 export function htmlRenderReferencesEqual(left: HtmlRenderReference, right: HtmlRenderReference) {
   return (
     left.attachmentId === right.attachmentId &&
@@ -109,12 +98,8 @@ function measuredHeight(heights: NonNullable<HtmlRenderReference["heights"]>, wi
 }
 
 /**
- * The frame height for a page at a frame width. It is the page's own reported
- * `contentHeight` when the client has one, else the server's measurement for
- * that width. A page even a few pixels taller than its frame scrolls inside it
- * and takes the reader's scroll, so the frame fits the page. The agent's height
- * caps it only when it is below the page's height at the column width (the
- * agent asked for a scrolling frame) or when the page was never measured.
+ * Fit the frame to the page so nested scrolling does not capture the reader's scroll.
+ * Honor the agent's height cap only when it requests scrolling or measurements are absent.
  */
 export function htmlRenderFrameHeight(
   reference: HtmlRenderReference,
@@ -132,7 +117,6 @@ export function htmlRenderFrameHeight(
   return clampHtmlRenderHeight(Math.min(cap, contentHeight ?? measuredHeight(heights, width)));
 }
 
-/** A readable download name: the title without characters file systems reject. */
 export function htmlRenderFileName(title: string) {
   const name = title
     .replace(/[\\/:*?"<>|\p{Cc}]+/gu, " ")
@@ -159,16 +143,14 @@ export const HTML_RENDER_DEFAULT_FONTS: HtmlRenderFonts = {
 };
 
 /**
- * Fonts the server's headless browser lays pages out with. Arial-metric faces
- * stand in for the system UI fonts readers see, so measured heights and
- * preview screenshots wrap text close to how a client will.
+ * Arial-metric faces approximate client system fonts so headless measurements
+ * and preview screenshots wrap text close to the client.
  */
 export const HTML_RENDER_MEASURE_FONTS: HtmlRenderFonts = {
   sans: '"Liberation Sans", Arimo, Arial, Helvetica, sans-serif',
   mono: '"Liberation Mono", Cousine, Menlo, Consolas, monospace',
 };
 
-/** The resolved theme a client hands an HTML render. */
 export interface HtmlRenderTheme {
   readonly appearance: ThemeAppearance;
   readonly variables: Readonly<Record<string, string>>;
@@ -259,7 +241,6 @@ export const HTML_RENDER_THEME_GUIDE = [
   "The base stylesheet sets html background/color/font from these, body margin to 0, and hides the page's scrollbar; your own CSS overrides it.",
 ].join(" ");
 
-/** Agent-facing layout rules for a page that sits inside a reply. */
 export const HTML_RENDER_LAYOUT_GUIDE = [
   `The frame is borderless on the thread's background, as wide as the reply column (${HTML_RENDER_COLUMN_WIDTH}px on desktop by default, wider if the reader widens chat, about 360px on phones), and its left edge lines up with your reply text.`,
   "The page sits on the thread's own background, so by default leave html, body, and the outermost element with no background color. This overrides general style preferences such as a fixed black page background.",
@@ -269,9 +250,7 @@ export const HTML_RENDER_LAYOUT_GUIDE = [
   "Let content set the page's height. Avoid viewport-based heights such as 100vh or height:100% on html or body; the frame grows to fit the page, so they can make it grow again and again.",
 ].join(" ");
 
-// The bridge between a render and its client speaks the MCP Apps protocol
-// (JSON-RPC over postMessage), so the same host code can later drive upstream
-// MCP apps: https://github.com/modelcontextprotocol/ext-apps
+// MCP Apps uses JSON-RPC over postMessage: https://github.com/modelcontextprotocol/ext-apps
 const HOST_CONTEXT_CHANGED_METHOD = "ui/notifications/host-context-changed";
 const OPEN_LINK_METHOD = "ui/open-link";
 const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
@@ -371,7 +350,6 @@ export function htmlRenderShortcutsMessage(
   return { jsonrpc: "2.0", method: SHORTCUTS_METHOD, params: { shortcuts, blocked } } as const;
 }
 
-/** The empty result a client sends back for a render's request. */
 export function htmlRenderResult(id: string | number) {
   return { jsonrpc: "2.0", id, result: {} } as const;
 }
@@ -466,10 +444,7 @@ const blankNonMarkup = (html: string) => {
   return parts.join("");
 };
 
-/**
- * Inserts the theme bootstrap at the start of the document head, so a page's
- * own styles and scripts come after it.
- */
+/** Inject before authored styles and scripts so pages can override the theme defaults. */
 export function injectHtmlRenderBootstrap(html: string): string {
   const scan = blankNonMarkup(html);
   const markup = bootstrapMarkup(scan);

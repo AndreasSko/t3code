@@ -12,24 +12,14 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 
 const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
-/**
- * Incognito partitions deliberately omit the `persist:` prefix, which is what
- * makes Chromium keep them in memory and discard them with the process. They
- * still carry the product prefix so `isPartition` can admit them — the
- * `will-attach-webview` gate rejects anything it does not recognise.
- */
+/** Omit persist: to keep incognito storage in memory; retain a recognized prefix for the webview attach gate. */
 const PREVIEW_EPHEMERAL_PARTITION_PREFIX = "t3code-preview-ephemeral-";
 const PROFILE_PARTITION_MARKER = "profile-";
 
 export type BrowserSessionPartitionNamespace = "profile";
 
-// Permissions granted to preview web content. `clipboard-sanitized-write` is the
-// Electron permission behind `navigator.clipboard.writeText()` — note it is NOT
-// `clipboard-write`, which is not a valid Electron permission name. Async
-// clipboard writes are gated by the permission *check* handler (not only the
-// request handler), so both handlers must allow it; otherwise built-in "Copy"
-// buttons — e.g. the Next.js / Vercel error overlay — fail with
-// `Failed to execute 'writeText' on 'Clipboard': Write permission denied`.
+// Electron calls async clipboard writes clipboard-sanitized-write, not clipboard-write.
+// Both permission check and request handlers must allow it for page Copy buttons to work.
 const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set([
   "clipboard-read",
   "clipboard-sanitized-write",
@@ -167,11 +157,7 @@ export class BrowserSession extends Context.Service<
   }
 >()("@t3tools/desktop/preview/BrowserSession") {}
 
-/**
- * Restricts a clear to the given partitions. Omitting them keeps the historical
- * "every partition" behaviour, which callers now only use for an explicit
- * "all profiles" action — a per-profile clear must never reach across profiles.
- */
+/** An omitted partition list means all profiles; per-profile clears must pass their partitions explicitly. */
 const selectSessions = (
   sessions: ReadonlyMap<string, Session>,
   partitions: ReadonlyArray<string> | undefined,
@@ -181,14 +167,8 @@ const selectSessions = (
   );
 
 /**
- * Scope bytes for the partition digest.
- *
- * `TextEncoder` replaces a lone UTF-16 surrogate with U+FFFD, so `"p\ud800"`
- * and `"p\ufffd"` would hash to the same partition and share cookies. Those
- * are distinct, supported ids, so lone surrogates are escaped to `\uXXXX`
- * first — and a literal backslash is doubled so the escape cannot be forged.
- * Every well-formed scope passes through byte-for-byte unchanged, which keeps
- * existing partitions (and the logins in them) where they are.
+ * TextEncoder merges lone surrogates with U+FFFD; escape them and backslashes to prevent partition/cookie collisions.
+ * Scopes without backslashes or lone surrogates stay unchanged, preserving their existing logins.
  */
 const encodeScopeForDigest = (scope: string): Uint8Array =>
   new TextEncoder().encode(
@@ -279,9 +259,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
       ),
     );
     const prefix = persistent ? PREVIEW_PARTITION_PREFIX : PREVIEW_EPHEMERAL_PARTITION_PREFIX;
-    // Legacy/default partitions are prefix + hex digest. The non-hex profile
-    // marker creates a disjoint namespace while leaving every legacy default
-    // partition byte-for-byte unchanged.
+    // A non-hex profile marker separates namespaces while preserving existing default partitions.
     return `${prefix}${namespace === "profile" ? PROFILE_PARTITION_MARKER : ""}${Hex.encode(digest).slice(0, 20)}`;
   });
 
@@ -297,12 +275,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
       return Effect.try({
         try: () => {
           const browserSession = session.fromPartition(partition);
-          // The guest keeps Electron's native User-Agent. Rewriting it in any
-          // form — even variants that keep the Electron token — makes Cloudflare
-          // Turnstile fail its integrity check with error 600010 and recreate
-          // the challenge every few seconds, so logins behind it never complete
-          // (#5002). Re-setting the unchanged native string is harmless, so it
-          // is the rewritten string itself that trips the check.
+          // Keep Electron's native User-Agent: rewriting it causes Cloudflare Turnstile integrity error 600010 (#5002).
           browserSession.setPermissionRequestHandler(
             (webContents, permission, callback, details) => {
               if (permission === "openExternal") {

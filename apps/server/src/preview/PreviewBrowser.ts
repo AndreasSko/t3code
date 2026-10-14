@@ -21,13 +21,8 @@ import * as NodeCrypto from "node:crypto";
 import * as ServerConfig from "../config.ts";
 import { openZipArchive } from "../zipArchive.ts";
 
-// The one browser T3 installs on a host. HTML render previews and server
-// browser tabs both run this pinned Chrome for Testing headless shell, so a host
-// downloads it once; neither uses a browser the user installed. To bump the pin, pick a version
-// from https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json,
-// download each platform's chrome-headless-shell zip, and replace the version
-// and every byte count and SHA-256 below. Hosts drop the old build after the
-// new one installs.
+// Both render previews and server tabs use this pin. Choose updates from https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json,
+// then replace the version and every platform archive's byte count and SHA-256.
 const VERSION = "154.0.8037.92";
 const ARCHIVES = {
   linux64: {
@@ -130,11 +125,7 @@ export class PreviewBrowserUnsupportedError extends Schema.TaggedError<PreviewBr
 export class PreviewBrowser extends Context.Service<
   PreviewBrowser,
   {
-    /**
-     * Path to the installed headless shell. The first call starts the
-     * install; callers wait for it up to a bound and then get its progress
-     * instead, while the install keeps running.
-     */
+    /** Start or join installation; after a bounded wait, report progress while installation continues. */
     readonly executable: Effect.Effect<
       string,
       PreviewBrowserInstallError | PreviewBrowserInstallingError | PreviewBrowserUnsupportedError
@@ -335,9 +326,8 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
         yield* fs.remove(destination, { recursive: true, force: true });
         yield* fs.rename(unpacked, destination);
       }).pipe(Effect.scoped);
-      // Older builds and abandoned staging directories. Two servers can share a
-      // home, so a staging directory touched within the last hour may be another
-      // server's install in progress and stays.
+      // Servers can share a home; preserve staging directories touched within the last hour
+      // because another server may still be installing there.
       const entries = yield* fs.readDirectory(installRoot);
       const now = yield* Clock.currentTimeMillis;
       yield* Effect.forEach(
@@ -366,7 +356,6 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
     Effect.mapError(wrapFailure("Could not save the browser in T3's home directory.")),
   );
 
-  // Joins the current install or starts one. A failure is reported once, then cleared.
   const join = (release: PreviewBrowserRelease) =>
     gate.withPermit(
       Effect.gen(function* () {

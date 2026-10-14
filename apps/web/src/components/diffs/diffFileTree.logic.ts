@@ -3,7 +3,6 @@ import type { FileTreeBatchOperation, FileTreeSortComparator, GitStatus } from "
 
 import { resolveFileDiffPath } from "~/lib/diffRendering";
 
-/** One changed file as the tree shows it: its current path and how it changed. */
 export interface DiffFileTreeEntry {
   readonly path: string;
   readonly status: GitStatus;
@@ -23,11 +22,7 @@ function toGitStatus(file: FileDiffMetadata): GitStatus {
   }
 }
 
-/**
- * Maps parsed diff files to tree entries, keeping the diff's own order. A path
- * appears once: a type change (regular file to symlink) is a deletion plus an
- * addition of the same path, and the tree shows the surviving file as modified.
- */
+/** Type changes emit delete/add for one path; keep its surviving tree entry as modified. */
 export function diffFileTreeEntries(
   files: ReadonlyArray<FileDiffMetadata>,
 ): ReadonlyArray<DiffFileTreeEntry> {
@@ -41,10 +36,7 @@ export function diffFileTreeEntries(
   return [...statusByPath].map(([path, status]) => ({ path, status }));
 }
 
-/**
- * Every directory on the way to each file, registered with the trailing slash Pierre uses for
- * directory ids. Parents come before children so the tree can add them in order.
- */
+/** Pierre directory ids need trailing slashes; return parents before children. */
 export function collectDirectoryPaths(paths: ReadonlyArray<string>): ReadonlyArray<string> {
   const directories = new Set<string>();
   for (const path of paths) {
@@ -90,14 +82,8 @@ function pathDepth(path: string): number {
   return path.split("/").filter(Boolean).length;
 }
 
-/**
- * The adds and removes that turn one set of file paths into another, so a diff that changes
- * under the reader (a new slice, a refresh after an agent edit) keeps the directories they
- * have already opened or closed instead of rebuilding the tree from scratch.
- *
- * Directories are removed only once no file needs them; a directory that gains its first file
- * is added before that file.
- */
+/** Update paths without losing folder expansion. Add directories before
+ * their files and remove them only when no remaining file needs them. */
 export function buildDiffFileTreeUpdates(
   previousPaths: ReadonlyArray<string>,
   nextPaths: ReadonlyArray<string>,

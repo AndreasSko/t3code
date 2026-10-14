@@ -2,12 +2,8 @@ import type { RepositoryIdentity, ThreadLinkedPullRequest } from "@t3tools/contr
 import { canonicalRepositoryKey } from "./sourceControl.ts";
 
 /**
- * A change request named the way a thread link names one: the host below which the repository
- * is addressed, the repository path as that host writes it, and the number.
- *
- * The two strings are what `pullRequestHostOf` and the project's `repositoryIdentity` produce
- * from a git remote — lower case, no port, the full path below the host — because links are
- * matched against those. Anything else matches nothing.
+ * Matches thread links by lowercased, portless host and full repository path,
+ * using the same identity produced from git remotes.
  */
 export interface ChangeRequestLink {
   readonly host: string;
@@ -17,25 +13,14 @@ export interface ChangeRequestLink {
   readonly authority?: string;
 }
 
-/** The host itself, one of its subdomains, or an install named after the provider. */
 function isHostOf(hostname: string, apex: string, label?: string): boolean {
   if (hostname === apex || hostname.endsWith(`.${apex}`)) return true;
   return label !== undefined && hostname.split(".").includes(label);
 }
 
 /**
- * The repository and number behind a change request URL on a host this can read, or null for
- * anything else — an issue, a commit, a repository root, a host this cannot tell apart from an
- * ordinary link. A doubtful match is worse than no match, so nothing here guesses.
- *
- * Each host is recognised by the path shape it alone uses, guarded by a hostname it could
- * plausibly be served from, since self-hosted installs are named whatever their admin chose:
- * GitLab's `/-/` marker is unique enough to trust on any hostname, while `/pull/` is generic
- * enough that it is only believed from a GitHub-ish host.
- *
- * Nothing here tries to tell a lookalike hostname from a real one — `github.com.evil.test` and
- * the rest are an open set, and blocking spellings of it costs real hosts (`gitlab.com.br` is a
- * registrable domain). What a claim is worth is decided where it is used.
+ * Recognize forge paths on self-hosted domains; generic /pull/ requires a GitHub-like host.
+ * Hostname candidates are not authenticity checks: stricter checks reject domains like gitlab.com.br.
  */
 export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | null {
   let url: URL;
@@ -73,8 +58,7 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
     const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
     return claim(host, match);
   }
-  // Azure DevOps, both the current host and the per-organisation one it replaced. `_git` is part
-  // of the repository path there, as it is in the remote URL the identity is read from.
+  // Azure DevOps includes _git in the repository path, matching its remote identity.
   if (isHostOf(host, "dev.azure.com") || host.endsWith(".visualstudio.com")) {
     const match = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u.exec(url.pathname);
     return claim(host, match);
@@ -210,7 +194,6 @@ export function matchesLinkedPullRequestUrl(
   );
 }
 
-/** The repository root behind a recognised change-request URL, without PR-specific state. */
 export function changeRequestRepositoryUrl(targetUrl: string): string | null {
   const changeRequest = parseChangeRequestUrl(targetUrl);
   if (changeRequest === null) return null;

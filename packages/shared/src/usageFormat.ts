@@ -1,9 +1,4 @@
 // @effect-diagnostics globalDate:off -- Usage windows are calendar days in the viewer's zone, derived from wall-clock "now" via Intl.
-/**
- * Display formatting for the usage page.
- *
- * @module usageFormat
- */
 import { UsageDay, type UsageResolution, type UsageSummaryInput } from "@t3tools/contracts";
 
 import type { UsageContractMismatch } from "./usageMerge.ts";
@@ -25,10 +20,7 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
-/**
- * Compacts a token count to three significant figures with a unit suffix, so
- * columns of numbers line up at a glance (`19.9B`, `76.7M`, `804K`).
- */
+/** Three significant figures with a unit suffix (`19.9B`, `76.7M`, `804K`). */
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e12) return `${trim(value / 1e12)}T`;
@@ -126,12 +118,7 @@ export function enumerateHourStarts(sinceTime: string, untilTime: string): reado
   return starts;
 }
 
-/**
- * A rolling bucket start rendered in the viewer's requested time zone.
- *
- * Repeated wall-clock hours during a fall-back transition include their short
- * zone name so the two distinct buckets remain distinguishable.
- */
+/** Includes the short zone name for repeated fall-back hours so buckets remain distinct. */
 export function formatHourShort(hourStart: string, timeZone?: string): string {
   const instant = new Date(hourStart);
   if (Number.isNaN(instant.getTime())) return hourStart;
@@ -173,7 +160,6 @@ export function formatDateTimeShort(instant: string, timeZone?: string): string 
   }).format(date);
 }
 
-/** An hourly tooltip label relative to the rolling window's end date. */
 export function formatRelativeHourShort(
   hourStart: string,
   relativeTo: string,
@@ -231,9 +217,7 @@ export function makeWindow(
   }
   const untilDay = format.format(now);
   if (resolution === "hour") {
-    // Minute-aligned bounds keep labels readable while still representing an
-    // exact rolling 24-hour duration. Fixed-duration buckets remain correct
-    // across offset changes and daylight-saving transitions.
+    // Minute alignment keeps labels readable; fixed-duration buckets remain correct across DST.
     const untilTimeMs = Math.floor(now.getTime() / 60_000) * 60_000;
     const sinceTimeMs = untilTimeMs - 24 * HOUR_MS;
     const sinceTime = new Date(sinceTimeMs);
@@ -247,9 +231,7 @@ export function makeWindow(
       untilTime: untilTime.toISOString(),
     };
   }
-  // Subtracting fixed milliseconds from `now` lands on the wrong calendar day
-  // around a DST transition. The window start is pure calendar arithmetic on
-  // the local end day, done in UTC where days are uniform.
+  // Calendar arithmetic in UTC avoids landing on the wrong local day around DST transitions.
   const [year = 0, month = 1, dayOfMonth = 1] = untilDay
     .split("-")
     .map((part) => Number.parseInt(part, 10));

@@ -432,7 +432,6 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             activeIndex: 0,
             match: { entryId: document.entryId, runId: document.runId, occurrence },
           };
-          // The remainder is pulled only after the first frame has been delivered.
           return Stream.concat(Stream.succeed(first), Stream.fromEffect(finish));
         }
         return Stream.fromEffect(finish);

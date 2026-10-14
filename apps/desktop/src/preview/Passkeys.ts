@@ -38,19 +38,8 @@ export class PreviewPasskeysConfigureError extends Schema.TaggedError<PreviewPas
 }
 
 /**
- * Passkeys for in-app browser pages on macOS, where Electron has no WebAuthn UI
- * of its own. Signed builds record which entitlements their provisioning
- * profile granted (scripts/build-desktop-artifact.ts), and each path turns on
- * only when its entitlement is present:
- *
- * - Touch ID: Electron's built-in platform authenticator. Passkeys it creates
- *   stay on this Mac, in T3 Code's keychain group.
- * - Browser passkeys: Apple's managed browser entitlement lets the system sheet
- *   (iCloud Keychain, password managers, phones, security keys) serve any
- *   site. The guest preload hands each ceremony to this process, which pins
- *   the requesting frame's real origin.
- *
- * Windows needs neither: Chromium already uses Windows Hello there.
+ * macOS passkey paths require signed-build entitlements: Touch ID credentials stay in T3's local keychain group.
+ * The managed browser entitlement enables the system sheet; Windows uses Chromium's native Hello support.
  */
 export class PreviewPasskeys extends Context.Service<
   PreviewPasskeys,

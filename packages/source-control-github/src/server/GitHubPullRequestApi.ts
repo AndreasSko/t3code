@@ -133,10 +133,6 @@ import type {
   ProviderListCursor,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 
-/**
- * Names the read that produced unusable output, so a failure reports the call it came from
- * rather than borrowing another operation's message.
- */
 export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullRequestReadError>()(
   "GitHubPullRequestReadError",
   {
@@ -150,7 +146,6 @@ export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullReq
   }
 }
 
-/** Not a decode failure: GitHub answered, the account it answered for just has no login. */
 export class GitHubViewerLoginUnavailableError extends Schema.TaggedError<GitHubViewerLoginUnavailableError>()(
   "GitHubViewerLoginUnavailableError",
   {
@@ -162,7 +157,6 @@ export class GitHubViewerLoginUnavailableError extends Schema.TaggedError<GitHub
   }
 }
 
-/** Not a decode failure: GitHub answered, but the pull request carried no update time. */
 export class GitHubPullRequestUpdatedAtUnavailableError extends Schema.TaggedError<GitHubPullRequestUpdatedAtUnavailableError>()(
   "GitHubPullRequestUpdatedAtUnavailableError",
   {
@@ -176,7 +170,6 @@ export class GitHubPullRequestUpdatedAtUnavailableError extends Schema.TaggedErr
   }
 }
 
-/** Not a decode failure: the reader asked to carry on from a cursor this walk never handed out. */
 export class GitHubDiffCursorError extends Schema.TaggedError<GitHubDiffCursorError>()(
   "GitHubDiffCursorError",
   {
@@ -188,7 +181,6 @@ export class GitHubDiffCursorError extends Schema.TaggedError<GitHubDiffCursorEr
   }
 }
 
-/** Not a decode failure: the reader named a commit that is not a sha this repository could hold. */
 export class GitHubDiffCommitError extends Schema.TaggedError<GitHubDiffCommitError>()(
   "GitHubDiffCommitError",
   {
@@ -200,7 +192,6 @@ export class GitHubDiffCommitError extends Schema.TaggedError<GitHubDiffCommitEr
   }
 }
 
-/** The revisions read successfully, but cannot name both sides this file needs. */
 export class GitHubDiffRevisionsUnavailableError extends Schema.TaggedError<GitHubDiffRevisionsUnavailableError>()(
   "GitHubDiffRevisionsUnavailableError",
   {
@@ -216,7 +207,6 @@ export class GitHubDiffRevisionsUnavailableError extends Schema.TaggedError<GitH
   }
 }
 
-/** A blob exists, but expanding it would be unsafe or would not produce text. */
 export class GitHubDiffFileContentsUnavailableError extends Schema.TaggedError<GitHubDiffFileContentsUnavailableError>()(
   "GitHubDiffFileContentsUnavailableError",
   {
@@ -232,12 +222,7 @@ export class GitHubDiffFileContentsUnavailableError extends Schema.TaggedError<G
   }
 }
 
-/**
- * Not a decode failure: a repository was named that cannot go into a search or into a GraphQL
- * document as itself. Every qualifier and every alias below is composed from `owner/name`, so a
- * name that is not one is refused here rather than escaped into something GitHub might read as a
- * qualifier of its own.
- */
+/** Reject selectors unsafe to embed in repo qualifiers or GraphQL aliases. */
 export class GitHubRepositorySelectorError extends Schema.TaggedError<GitHubRepositorySelectorError>()(
   "GitHubRepositorySelectorError",
   {
@@ -250,7 +235,6 @@ export class GitHubRepositorySelectorError extends Schema.TaggedError<GitHubRepo
   }
 }
 
-/** Not a decode failure: the reader named a subject this pull request never handed out. */
 export class GitHubSubjectScopeError extends Schema.TaggedError<GitHubSubjectScopeError>()(
   "GitHubSubjectScopeError",
   {
@@ -263,7 +247,6 @@ export class GitHubSubjectScopeError extends Schema.TaggedError<GitHubSubjectSco
   }
 }
 
-/** GitHub answered successfully, but approving every returned workflow would be unsafe. */
 export class GitHubWorkflowApprovalRefusedError extends Schema.TaggedError<GitHubWorkflowApprovalRefusedError>()(
   "GitHubWorkflowApprovalRefusedError",
   {
@@ -285,7 +268,6 @@ export class GitHubWorkflowApprovalRefusedError extends Schema.TaggedError<GitHu
   }
 }
 
-/** GitHub omitted the immutable head identity needed to scope an approval safely. */
 export class GitHubWorkflowApprovalHeadUnavailableError extends Schema.TaggedError<GitHubWorkflowApprovalHeadUnavailableError>()(
   "GitHubWorkflowApprovalHeadUnavailableError",
   {
@@ -298,7 +280,6 @@ export class GitHubWorkflowApprovalHeadUnavailableError extends Schema.TaggedErr
   }
 }
 
-/** The pull request moved after its approval candidates were read. */
 export class GitHubWorkflowApprovalHeadChangedError extends Schema.TaggedError<GitHubWorkflowApprovalHeadChangedError>()(
   "GitHubWorkflowApprovalHeadChangedError",
   {
@@ -334,7 +315,6 @@ const DIFF_TIMEOUT = Duration.seconds(60);
 /** Pierre expansion is for source files, not blobs large enough to stall a review surface. */
 const DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 
-/** What `gh pr list --state` asked a repository's own list for, without search. */
 const LIST_STATES: Record<PullRequestListState, ReadonlyArray<"OPEN" | "CLOSED" | "MERGED">> = {
   all: ["OPEN", "CLOSED", "MERGED"],
   open: ["OPEN"],
@@ -355,25 +335,13 @@ const PULL_REQUEST_FALLBACK_MAX_ROWS = 1_000;
 
 /** What the files API serves at most in one response, which is what one slice is made of. */
 const DIFF_FILES_PAGE_SIZE = 100;
-/**
- * How many hundred-file pages of viewed state one read will walk. A point of the hourly GraphQL
- * budget per page, against a change request nobody reviews in one sitting past the first few
- * hundred files: beyond this the read stops and says it was cut short.
- */
+/** Bound viewed-file paging to five GraphQL points; report truncation beyond it. */
 const FILES_VIEWED_MAX_PAGES = 5;
 
-/**
- * How many pull requests' node ids are remembered at once. A long-lived server sees far more of
- * them than a reader ever has open, and least recently used rather than first in: a listing
- * walking cold pull requests must not evict the review being ticked through.
- */
+/** LRU protects the active review from cold listings in a long-lived server. */
 export const NODE_ID_CACHE_CAPACITY = 128;
 
-/**
- * Pages of review threads to follow before the conversation is reported as truncated. GitHub
- * serves a hundred threads a page, so this is a thousand threads — past anything a pull request
- * a person is reading has, and short of walking a repository-sized conversation forever.
- */
+/** Bound review walks to 1000 threads so conversation paging always terminates. */
 const REVIEW_THREAD_PAGES = 10;
 
 /** Pages of a hundred check contexts to walk for one head before the rollup says it was cut. */
@@ -393,17 +361,10 @@ export interface GitHubPullRequestStat {
   readonly deletions: number;
 }
 
-/**
- * Aliased lookups per request, and requests at once. Measured over a hundred rows: one request
- * carrying all hundred takes ~5.2s, four of twenty-five in parallel ~2.1s.
- */
+/** Four concurrent requests of 25 stats measured ~2.1s, versus ~5.2s for one request of 100. */
 const STAT_ALIASES_PER_REQUEST = 25;
 const STAT_REQUEST_CONCURRENCY = 4;
-/**
- * How long a summary read waits for company. The background sync asks for every linked pull
- * request at once, and each read reaches the resolver after its own cache check, so a batch
- * needs a moment longer than one scheduler tick to gather them.
- */
+/** Wait past a scheduler tick to gather summary reads arriving after independent cache checks. */
 const SUMMARY_BATCH_WINDOW = "10 millis";
 
 class PullRequestSummaryRead extends Request.Class<
@@ -429,7 +390,6 @@ class PullRequestWatchFingerprintRead extends Request.Class<
 > {}
 
 export interface GitHubPullRequestSearchBatch {
-  /** Rows across every repository asked for, newest update first, each naming its own. */
   readonly items: ReadonlyArray<GitHubPullRequestSearchItem>;
   readonly truncated: boolean;
 }
@@ -438,7 +398,6 @@ export interface GitHubPullRequestDiffSlice {
   readonly patch: string;
   /** Files in this slice had their hunks withheld, as opposed to there being more slices. */
   readonly truncated: boolean;
-  /** Where the next slice starts, or null once the patch is whole. */
   readonly nextCursor: string | null;
   /** GitHub's own counts for the files whose hunks it withheld from this slice. */
   readonly omittedFileStats?: ReadonlyArray<PullRequestOmittedFileStat>;
@@ -489,13 +448,8 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly filters?: PullRequestListFilters | undefined;
     }) => Effect.Effect<GitHubPullRequestListBatch, GitHubPullRequestApiError>;
 
-    /**
-     * The same listing for a whole host in one search. `limit` is the size of the slice across
-     * all of the repositories rather than per repository, because that is what a search answers:
-     * the newest rows of the lot, which is exactly the page.
-     */
+    /** One host-wide search; limit covers the whole newest-first slice, not each repository. */
     readonly searchPullRequests: (input: {
-      /** Any checkout on the host; the search names its repositories itself. */
       readonly cwd: string;
       readonly host: string;
       readonly repositories: ReadonlyArray<string>;
@@ -508,7 +462,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly filters?: PullRequestListFilters | undefined;
     }) => Effect.Effect<GitHubPullRequestSearchBatch, GitHubPullRequestApiError>;
 
-    /** The line counts the search leaves out, for rows already on the page. */
     readonly listPullRequestStats: (input: {
       readonly cwd: string;
       readonly host: string;
@@ -524,10 +477,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly host: string;
       readonly number: number;
     }) => Effect.Effect<ProviderChangeRequestSummary, GitHubPullRequestApiError>;
-    /**
-     * What a watch compares between passes, batched like summaries. Null when GitHub gave no
-     * answer for this pull request, so the watch reads it in full instead.
-     */
+    /** Null fingerprints fall back to a full read; watches share summary-style batches. */
     readonly getPullRequestWatchFingerprint: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -565,10 +515,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly isCrossRepository: true;
     }) => Effect.Effect<ReadonlyArray<GitHubWorkflowRunApproval>, GitHubPullRequestApiError>;
 
-    /**
-     * The host-native stack this pull request is in, or null when it is in none — which is also
-     * the answer for a host that refuses the stacks preview altogether.
-     */
+    /** Null for no native stack or a host that refuses the stacks preview. */
     readonly getPullRequestStack: (input: {
       readonly cwd: string;
       readonly includeDetails?: boolean;
@@ -589,7 +536,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly repository: string;
       readonly host: string;
       readonly number: number;
-      /** Absent asks for the first slice; anything else is a cursor a slice handed back. */
       readonly cursor?: string | undefined;
       /** One commit's own changes, rather than everything the pull request carries. */
       readonly commit?: string | undefined;
@@ -609,10 +555,7 @@ export class GitHubPullRequestApi extends Context.Service<
       GitHubPullRequestApiError
     >;
 
-    /**
-     * Which files of the pull request the signed-in account has cleared, and which of those have
-     * been pushed to since. Read apart from the patch because GitHub only reports it over GraphQL.
-     */
+    /** Viewed state is GraphQL-only, read independently from the REST patch. */
     readonly getPullRequestFilesViewed: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -620,10 +563,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<GitHubPullRequestFilesViewed, GitHubPullRequestApiError>;
 
-    /**
-     * Clears files, or puts them back, as one request. GitHub takes a single path per mutation,
-     * so a burst is batched with aliases into one document rather than one subprocess per press.
-     */
+    /** Batch single-path viewed-state mutations with aliases so a burst costs one request. */
     readonly setPullRequestFilesViewed: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -639,7 +579,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<GitHubReviewThreadComments, GitHubPullRequestApiError>;
 
-    /** One request for a listing's authors, since no `gh` JSON field reports an avatar. */
     readonly listActorAvatars: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -666,7 +605,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly allowReserve?: boolean | undefined;
     }) => Effect.Effect<GitHubViewerAccess & GitHubRepositoryAccess, GitHubPullRequestApiError>;
 
-    /** Who this pull request may be sent to, and who it has already been sent to. */
     readonly listReviewerCandidates: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -687,7 +625,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly requested: boolean;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
-    /** The repository's labels, and which of them this pull request already wears. */
     readonly listLabelCandidates: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -752,12 +689,8 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly resolved: boolean;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
-    /**
-     * Adds a reaction to a remark, or takes it back. `subjectId` is any node GitHub calls
-     * reactable — a comment, a review, or the pull request itself, which is looked up here
-     * because nothing in the conversation names it. A given `subjectId` is confirmed to belong
-     * to this pull request before the mutation runs, since nothing else ties the two together.
-     */
+    /** Confirm client-provided reactable ids belong to this pull request before mutating them.
+     * Without subjectId, look up the pull request node itself. */
     readonly setReaction: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -768,7 +701,6 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly reacted: boolean;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
-    /** Rewrites the pull request's own words, leaving whichever of the two was not given. */
     readonly updatePullRequest: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -778,11 +710,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly body?: string | undefined;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
-    /**
-     * Rewrites a remark. `commentId` is trusted to be whatever node it names, so it is confirmed
-     * to belong to this pull request before the mutation runs, the way a reaction subject is.
-     * Whether the remark is the reader's to rewrite is GitHub's own answer, not one asked here.
-     */
+    /** Confirm comment ids belong to this pull request; GitHub enforces who may edit at mutation time. */
     readonly updateComment: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -795,11 +723,7 @@ export class GitHubPullRequestApi extends Context.Service<
   }
 >()("@t3tools/source-control-github/server/GitHubPullRequestApi") {}
 
-/**
- * The GraphQL API takes owner and name as separate arguments, so `owner/repo` is split here.
- * The host is not read off the identity: it travels alongside it, because the identity a
- * project records is the path below its host and never names the host itself.
- */
+/** Repository selectors omit the host; it must travel separately for Enterprise routing. */
 function parseRepositorySelector(value: string): {
   readonly owner: string;
   readonly name: string;
@@ -808,39 +732,21 @@ function parseRepositorySelector(value: string): {
   return { name: parts.at(-1) ?? "", owner: parts.at(-2) ?? "" };
 }
 
-/**
- * The page a diff cursor names, or null for anything this walk cannot have issued. The cursor
- * arrives from the reader as a string and goes straight into a request path, so it is parsed
- * rather than trusted; the length bound keeps a page number out of exponential notation.
- */
+/** Bound decimal cursor pages before using them in request paths; disallow exponential notation. */
 function diffCursorPage(cursor: string): number | null {
   return /^[1-9][0-9]{0,6}$/.test(cursor) ? Number(cursor) : null;
 }
 
-/**
- * A commit sha arrives from the reader and goes straight into a request path, so it is checked
- * rather than trusted: hexadecimal only, from the shortest abbreviation a host prints up to a
- * whole sha.
- */
+/** Validate SHAs before inserting reader-supplied commits into request paths. */
 function isCommitSha(value: string): boolean {
   return /^[0-9a-f]{7,64}$/i.test(value);
 }
 
-/**
- * The reader's own words as one literal phrase of a GitHub search query. Quoting is the whole
- * defence: outside quotes GitHub reads `is:merged` as a qualifier and `label:x` as another, so
- * text typed into a search box could widen the very listing it is meant to narrow — inside them
- * it is only text. The two characters that could end the phrase early are therefore escaped
- * first, which GitHub reads back as themselves; an unbalanced quote is dropped instead, which
- * would let everything after it out of the phrase.
- *
- * The phrase is one argv element, so nothing in it can become a flag of its own either.
- */
+/** Quote and escape user text as one search phrase so repo/status/label qualifiers cannot escape it. */
 function searchPhrase(query: string): string {
   return `"${query.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-/** GitHub's own spelling of a review state, which is not the contract's. */
 const REVIEW_QUALIFIERS = {
   approved: "approved",
   "changes-requested": "changes_requested",
@@ -848,11 +754,7 @@ const REVIEW_QUALIFIERS = {
   none: "none",
 } as const;
 
-/**
- * The extra narrowings as GitHub search qualifiers. Values a reader typed are quoted, and the
- * one character that could end the quoted value early is dropped rather than escaped: no GitHub
- * label or login holds a double quote, so there is nothing to preserve and everything to lose.
- */
+/** Strip double quotes from qualifiers; valid GitHub labels/logins cannot contain them. */
 function qualifierValue(value: string): string {
   return `"${value.replaceAll('"', "").trim()}"`;
 }
@@ -879,14 +781,7 @@ function filterQualifiers(
   ];
 }
 
-/**
- * The same narrowings over a row that has already arrived, for the search-free fallback. Every
- * listed row now carries its own `checksState`, so `checks` is judged the way `review` is: by
- * equality against the row's field. Unlike `review`, `checks` has no `"none"` value to catch an
- * absent state on purpose — a row with no checks configured, or whose checks are still `pending`,
- * equals neither `"passing"` nor `"failing"` and so fails both, the same as a row search would
- * not have surfaced for `status:success` or `status:failure`.
- */
+/** Match fallback rows to search qualifiers; missing or pending checks match neither passing nor failing. */
 function matchesFilters(
   item: GitHubPullRequestListItem,
   filters: PullRequestListFilters | undefined,
@@ -934,18 +829,8 @@ function matchesUnsortedListing(
 /** What a repository selector may hold before it goes into a search as itself. */
 const SEARCH_REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
-/**
- * A listing as one GitHub search, across one repository or several: the only way to read a
- * whole host in one request, and the only order (`updated`) a continuation can carry on from.
- *
- * `--state closed` in GitHub's own list includes merged pull requests, so the Closed tab is
- * `is:closed is:unmerged` here.
- *
- * Null where a repository is not `owner/name`. A name is written into the query as itself, and a
- * name holding a space could otherwise end the `repo:` qualifier and start a qualifier of its
- * own — so an unaddressable one refuses the whole read rather than being escaped into something
- * GitHub might still read.
- */
+/** Search alone supports updated-order continuation; Closed excludes merged rows.
+ * Reject unsafe repository selectors before embedding them as repo qualifiers. */
 function searchQuery(input: {
   readonly repositories: ReadonlyArray<string>;
   readonly state: PullRequestListState;
@@ -1018,7 +903,6 @@ const decodeMergeMessageResponse = Schema.decodeUnknownResult(
 const decodeMergeMessage = (raw: string) =>
   Result.map(decodeMergeMessageResponse(raw), (response) => response.data.repository.pullRequest);
 
-/** What `gh pr merge` and `gh pr update-branch` read before they act. */
 const ACTION_STATE_GRAPHQL_QUERY = `
 query PullRequestActionState($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
   repository(owner: $owner, name: $name) {
@@ -1093,7 +977,6 @@ const GRAPHQL_MERGE_METHODS = {
 /** States in which `gh pr merge --auto` merges at once instead of arming auto-merge. */
 const IMMEDIATELY_MERGEABLE = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
-/** The mutations that only need the pull request's node id. */
 const SIMPLE_ACTION_MUTATIONS = {
   "disable-auto-merge": DISABLE_AUTO_MERGE_GRAPHQL_MUTATION,
   ready: READY_FOR_REVIEW_GRAPHQL_MUTATION,
@@ -1128,7 +1011,6 @@ export const make = Effect.gen(function* () {
     function* (input: { readonly cwd: string; readonly host: string }) {
       const unavailable = () => new GitHubViewerLoginUnavailableError({ cwd: input.cwd });
       const host = input.host.toLowerCase();
-      // A missing or signed-out credential keeps its own error, so the page can say which.
       const { token, fingerprint: key } = yield* api.credential(host);
       const credential = { host, token, credentialFingerprint: key };
       // A cold page may ask several times. Wait per credential and check again after the
@@ -1193,13 +1075,7 @@ export const make = Effect.gen(function* () {
       Effect.map(({ accountId, viewer }) => ({ accountId, viewer })),
     );
 
-  /**
-   * The pull request's own node id, which is what a mutation against the pull request itself is
-   * addressed by: a reaction on its description, or a rewrite of its words.
-   *
-   * A pull request keeps its node id for life, so it is remembered rather than re-read: a reader
-   * ticking files viewed would otherwise pay a GraphQL round trip per press.
-   */
+  /** Node ids are immutable; caching avoids a GraphQL round trip on each viewed-file press. */
   const nodeIds = new Map<string, string>();
 
   const pullRequestNodeId = (input: {
@@ -1213,9 +1089,7 @@ export const make = Effect.gen(function* () {
     const key = `${input.host} ${owner}/${name} ${input.number}`;
     const held = nodeIds.get(key);
     if (held !== undefined) {
-      // Put back at the end on every hit, so what falls out is the pull request nobody has looked
-      // at rather than the one being ticked through: a run of cold reads would otherwise evict the
-      // open review and make it pay a round trip per press.
+      // Refresh LRU order so recently used reviews outlast cold entries.
       nodeIds.delete(key);
       nodeIds.set(key, held);
       return Effect.succeed(held);
@@ -1241,12 +1115,7 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  /**
-   * Whether a client-given subject actually belongs to the pull request the request names. A
-   * subject id is trusted to be whatever node it names, and that node can hang off any pull
-   * request on the host — so the mutation itself would write wherever the id actually belongs,
-   * not wherever the request says it does, unless this confirms the two agree first.
-   */
+  /** Client-given node ids can name another pull request; confirm ownership before mutating. */
   const subjectBelongsToPullRequest = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1267,7 +1136,6 @@ export const make = Effect.gen(function* () {
     });
   };
 
-  /** A GraphQL mutation whose answer is not read back; a GraphQL error fails it. */
   const graphql = (input: {
     readonly host: string;
     readonly operation: string;
@@ -1278,7 +1146,6 @@ export const make = Effect.gen(function* () {
   const readError = (cwd: string, operation: string, cause: unknown) =>
     new GitHubPullRequestReadError({ cwd, operation, cause });
 
-  /** Decodes an answer, reporting a failure against the read that made it. */
   const decodeWith = <A>(
     cwd: string,
     operation: string,
@@ -1291,7 +1158,6 @@ export const make = Effect.gen(function* () {
       : Effect.fail(readError(cwd, operation, decoded.failure));
   };
 
-  /** A GraphQL read whose answer is decoded, reporting a failure against the read that made it. */
   const graphqlRead = <A>(input: {
     readonly cwd: string;
     readonly host: string;
@@ -1311,7 +1177,6 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.flatMap((raw) => decodeWith(input.cwd, input.operation, input.decode, raw)));
 
-  /** A REST read whose JSON answer is decoded the same way. */
   const restRead = <A>(input: {
     readonly cwd: string;
     readonly host: string;
@@ -1327,16 +1192,8 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  /**
-   * One page of the patch, read from the files API. GitHub refuses a whole diff past 300 changed
-   * files, and still serves those files' hunks here.
-   *
-   * A page is a whole number of files, so each one parses on its own; the caller carries on from
-   * `nextCursor` for as long as GitHub keeps handing pages back.
-   *
-   * A named commit is read from the commit endpoint, which lists the same file entries and pages
-   * them the same way, only wrapped in an object.
-   */
+  /** GitHub refuses whole patches past 300 files; files-API pages form standalone patch slices.
+   * Commit files use the same entries and pagination under an object wrapper. */
   const diffFilesPage = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1360,10 +1217,7 @@ export const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.flatMap((response) => {
-          // Checked before decoding: a byte-truncated response is a JSON prefix, which would
-          // fail to parse. Nothing of this page can be shown, and an empty patch would render
-          // as a change with no files rather than as the failure it is; slices already handed
-          // over stay with the reader either way.
+          // Byte-truncated JSON cannot describe a complete page; fail rather than display an empty change.
           if (response.truncated) {
             return Effect.fail(
               readError(
@@ -1381,8 +1235,7 @@ export const make = Effect.gen(function* () {
           );
         }),
         Effect.map((files) => {
-          // Counted before decoding, so a page whose files all failed to decode still moves on
-          // rather than pointing the reader back at the page it just read.
+          // Raw counts let pages advance even when every file fails decoding.
           const morePages = files.rawCount >= DIFF_FILES_PAGE_SIZE;
           return {
             patch: files.patch,
@@ -1413,8 +1266,7 @@ export const make = Effect.gen(function* () {
           timeout: DIFF_TIMEOUT,
         });
         const refs = decodeRevisionRefs(refsResponse.body);
-        // A root commit has no parent, which is an absent old revision. Every file in it is new,
-        // so that is a usable answer whenever the caller does not need the old side.
+        // Root commits have no old revision; they remain usable when only the new side is needed.
         const baseRef = Option.isSome(refs)
           ? input.commit === undefined
             ? refs.value.base?.sha
@@ -1478,11 +1330,7 @@ export const make = Effect.gen(function* () {
         return { oldContents, newContents };
       });
 
-  /**
-   * Every check context of the head commit, a page at a time, for a rollup the detail read cut at
-   * its first hundred. Each page names the head it read, so a push mid-walk fails rather than
-   * mixing two revisions' checks.
-   */
+  /** Page the head's full check rollup; revision checks prevent mixing heads after a push. */
   type CheckContextsPage = Result.Result.Success<
     ReturnType<typeof decodePullRequestCheckContextsJson>
   >;
@@ -1573,10 +1421,7 @@ export const make = Effect.gen(function* () {
   const workflowApprovalReadError = (cwd: string, cause: unknown) =>
     readError(cwd, "listWorkflowRunsRequiringApproval", cause);
 
-  /**
-   * Every open pull request whose head branch carries this name, up to one past the limit.
-   * `truncated` says some were never read, which is never enough to call a head unique.
-   */
+  /** Read one past the head-match limit; truncation cannot establish a unique head. */
   const listHeadsByBranch = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1606,10 +1451,7 @@ export const make = Effect.gen(function* () {
       return { heads: pages.flatMap((page) => page.heads), truncated };
     });
 
-  /**
-   * The runs waiting on a maintainer for this exact head, up to one past the limit. `head_sha` is
-   * what scopes them; `head_branch` is checked as well, the way `gh run list --branch` did.
-   */
+  /** Scope approval candidates to exact head SHA and branch, reading one past the limit. */
   const listActionRequiredRuns = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1717,7 +1559,6 @@ export const make = Effect.gen(function* () {
         { concurrency: 2 },
       ).pipe(Effect.map(([, runs]) => runs));
 
-  /** One pull request's summary, through the same aliased query the batch uses. */
   const viewPullRequestSummary = (input: PullRequestSummaryRead) => {
     const { owner, name } = parseRepositorySelector(input.repository);
     return graphqlRead({
@@ -1743,12 +1584,8 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  /**
-   * Summaries asked for together, on one host under one credential, share aliased GraphQL reads
-   * of twenty-five: the background sync reads every linked pull request each minute, and one
-   * `gh pr view` apiece is most of what it spends. Whatever the batch cannot answer — a selector
-   * GraphQL cannot address, a pull request GitHub returned nothing for — is read on its own.
-   */
+  /** Group same-host/credential summaries in batches of 25 to avoid one request per linked pull request.
+   * Missing or unaddressable entries fall back to individual reads. */
   const summaryResolver = RequestResolver.makeGrouped<PullRequestSummaryRead, string>({
     key: ({ request, context }) =>
       JSON.stringify([
@@ -1779,9 +1616,7 @@ export const make = Effect.gen(function* () {
               decode: decodePullRequestSummariesJson,
             });
       return batched.pipe(
-        // A GraphQL error anywhere fails the whole document — one repository gone or out of
-        // reach — so a batch that could not be read leaves every entry to its own read. A paused
-        // budget is the exception: reading one at a time would only spend what is being saved.
+        // One bad alias fails the document, so retry entries separately except when preserving a paused budget.
         Effect.catchCauseIf(
           (cause) =>
             !Cause.hasInterruptsOnly(cause) &&
@@ -1824,8 +1659,7 @@ export const make = Effect.gen(function* () {
   const getPullRequestSummary: GitHubPullRequestApi["Service"]["getPullRequestSummary"] = (input) =>
     Effect.request(new PullRequestSummaryRead(input), summaryResolver);
 
-  // Every watched pull request on a host in one read per pass. A pull request the batch has no
-  // answer for gets null, and its watch reads it in full; a failed batch fails every entry.
+  // Missing fingerprint entries return null for a full read; a failed batch fails every entry.
   const watchFingerprintResolver = RequestResolver.makeGrouped<
     PullRequestWatchFingerprintRead,
     string
@@ -1897,7 +1731,6 @@ export const make = Effect.gen(function* () {
           }),
         );
       }
-      /** Pages of up to a hundred until `rows` have arrived or GitHub has no more. */
       const collect = (
         rows: number,
         page: (
@@ -1933,7 +1766,6 @@ export const make = Effect.gen(function* () {
                 cwd: input.cwd,
                 host: input.host,
                 operation: "listPullRequests",
-                // The reader's own words are in the query.
                 variables: { q: query, after },
                 query: pullRequestSearchGraphQlQuery(rows, false, true),
                 decode: decodePullRequestSearchJson,
@@ -1973,23 +1805,9 @@ export const make = Effect.gen(function* () {
             });
           }),
         );
-      // GitHub does not index every repository for search, and one it will not search answers
-      // with no rows rather than with an error — so an empty listing is read again from the
-      // repository's own list. Those rows come back newest-created first, an order no `updated:`
-      // qualifier can carry on from, so that page says it cannot be continued and the reader
-      // reaches the rest of it by asking for a larger page, as every listing used to.
-      //
-      // Only ever the first slice: a repository that answered the search once will answer it
-      // again, so an empty slice under a cursor is a repository that has run out.
-      // A text search that finds nothing has found nothing: falling back would answer it with the
-      // repository's whole list, which is every row the reader did not search for. The fallback
-      // is for a repository the index does not cover, and a listing with no text to match is the
-      // only place an empty answer can mean that.
-      // Every filter is a qualifier `matchesFilters` can judge over the fallback's own rows just
-      // as well as search judges them over its own, so carrying them into the fallback answers
-      // the same read rather than a wider one. Free text is the one thing the fallback cannot
-      // judge locally — it lists rows, it does not search their text — so a query still rules
-      // the fallback out: an empty answer under one is already the answer.
+      // GitHub may return empty search results for unindexed repositories; fall back only on the first slice.
+      // A text query finding nothing is final; otherwise apply the same filters to fallback rows.
+      // Fallback rows sort by creation, so an updated-time cursor cannot continue them.
       const hasQuery = (input.query?.trim().length ?? 0) > 0;
       return read(true).pipe(
         Effect.filterOrElse(
@@ -2050,9 +1868,7 @@ export const make = Effect.gen(function* () {
           }),
         );
       }
-      // One extra row reveals that the host has more than the slice shows, the way the
-      // per-repository read does — up to GitHub's own ceiling on a search page, past which
-      // `hasNextPage` is what says there is more.
+      // Read one extra row as a continuation probe; at GitHub's page ceiling use hasNextPage instead.
       const rows = Math.min(input.limit + 1, PULL_REQUEST_SEARCH_MAX_ROWS);
       return graphqlRead({
         cwd: input.cwd,
@@ -2212,15 +2028,14 @@ export const make = Effect.gen(function* () {
       if (input.commit !== undefined && !isCommitSha(input.commit)) {
         return Effect.fail(new GitHubDiffCommitError({ cwd: input.cwd }));
       }
-      // A cursor only ever comes from the files walk, so a reader carrying one is already past
-      // the point where `gh pr diff` had anything to say.
+      // A cursor already belongs to the files API, so do not retry the whole-patch endpoint.
       if (input.cursor !== undefined) {
         const page = diffCursorPage(input.cursor);
         return page === null
           ? Effect.fail(new GitHubDiffCursorError({ cwd: input.cwd }))
           : filesPage(page);
       }
-      // `gh pr diff` speaks for the whole pull request and has no way to name one commit of it.
+      // Whole-PR patches cannot select one commit.
       if (input.commit !== undefined) {
         return filesPage(1);
       }
@@ -2236,20 +2051,13 @@ export const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.flatMap((response) =>
-            // A patch cut at a byte boundary ends mid-file, which is neither a whole slice nor
-            // something the reader can carry on from. The files API can serve the same change a
-            // whole number of files at a time, so an oversized patch takes that road as well.
+            // Byte cuts can split files; switch to files-API pages that end on file boundaries.
             response.truncated
               ? filesPage(1)
-              : // One read served the whole patch, so there is no next slice to ask for.
-                Effect.succeed({ patch: response.body, truncated: false, nextCursor: null }),
+              : Effect.succeed({ patch: response.body, truncated: false, nextCursor: null }),
           ),
-          // GitHub answers 406 rather than a diff past 300 changed files, so the patch is read
-          // from the files API instead, a page per call. Only once the direct read has failed: a
-          // pull request GitHub will serve a diff for must not pay for a second request. A
-          // fallback that fails too reports the original refusal, which is the one that explains
-          // the page. Narrowed to a request GitHub answered and refused: a missing credential or
-          // a rate limit fails the same way for every request.
+          // Past 300 files GitHub returns 406; retry via files API only for host response failures.
+          // Preserve the original refusal if fallback fails; auth/rate-limit failures do not retry.
           Effect.catchTags({
             GitHubApiResponseError: (error) => filesPage(1).pipe(Effect.mapError(() => error)),
           }),
@@ -2324,8 +2132,6 @@ export const make = Effect.gen(function* () {
           for (const login of read.botLogins) botLogins.add(login);
           for (const [login, avatarUrl] of read.avatarsByLogin)
             avatarsByLogin.set(login, avatarUrl);
-          // The roster, the commits and the viewer's standing travel with every page, and the
-          // first one already carries all of them.
           if (page === 0) {
             reviewers = read.reviewers;
             reactions = read.reactions;
@@ -2342,9 +2148,7 @@ export const make = Effect.gen(function* () {
           page += 1;
         } while (cursor !== null && page < REVIEW_THREAD_PAGES);
 
-        // Almost never entered: the embedded page already holds every dismissal a pull request
-        // ordinarily accrues. Followed so a review whose event fell past that page still finds
-        // its reason.
+        // Follow dismissal pagination so reasons beyond the embedded page remain available.
         if (dismissalCursor !== null) {
           const { pages } = yield* readGraphQlPages(
             (cursor) =>
@@ -2378,8 +2182,6 @@ export const make = Effect.gen(function* () {
           comments: reviewThreadConversation(reviewThreads),
           dismissalsByReviewId,
           reviewThreads,
-          // GitHub's own count of each thread, so the number the page shows is the host's even
-          // where a bound kept some of the words on GitHub.
           commentCount: entries.reduce((total, entry) => total + entry.commentCount, 0),
           truncated: cursor !== null || entries.some((entry) => entry.nextCommentCursor !== null),
           reviewThreadsTruncated: cursor !== null,
@@ -2437,8 +2239,6 @@ export const make = Effect.gen(function* () {
 
     setReviewerRequest: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      // Posting to a login GitHub has already been asked about is what a re-request is, so
-      // there is nothing to say here about somebody who has reviewed once already.
       return api
         .rest({
           host: input.host,
@@ -2465,9 +2265,7 @@ export const make = Effect.gen(function* () {
 
     setLabels: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      // A pull request is an issue to the labels API. Adding posts a list and leaves what was
-      // already there; taking off is one delete per label, since the endpoint names one in its
-      // path. The name goes into the path encoded, because a label may carry a space or a slash.
+      // PR labels use the issue API: POST adds a list, DELETE removes one URL-encoded name.
       const issue = `repos/${owner}/${name}/issues/${input.number}/labels`;
       if (input.applied) {
         return api
@@ -2623,7 +2421,6 @@ export const make = Effect.gen(function* () {
           decode: decodeActionState,
         });
         if (action === "update-branch") {
-          // Already current is done, the way `gh pr update-branch` reports it.
           if (state.baseRef?.compare?.behindBy === 0) return;
           // GitHub updates with a merge commit unless asked to rebase, which is its own default.
           return yield* graphql({
@@ -2663,10 +2460,8 @@ export const make = Effect.gen(function* () {
             }
           }
         }
-        // A merge queue takes a pull request through auto-merge rather than a direct merge, and
-        // `--auto` on a pull request that is mergeable right now simply merges it, as `gh` does.
-        // GitHub stores the strategy with a standing instruction rather than choosing one at
-        // merge time, so arming still names it.
+        // Merge queues use auto-merge; otherwise a currently mergeable --auto request merges immediately.
+        // Arming auto-merge stores the chosen strategy.
         const auto =
           state.isMergeQueueEnabled === true ||
           (action === "enable-auto-merge" &&
@@ -2809,8 +2604,6 @@ export const make = Effect.gen(function* () {
             host: input.host,
             operation: "updatePullRequest",
             query: UPDATE_PULL_REQUEST_GRAPHQL_MUTATION,
-            // A field the caller did not name is left out of the request entirely, so GitHub
-            // keeps the words that are there rather than being asked for an empty one.
             variables: {
               pullRequestId,
               ...(input.title === undefined ? {} : { title: input.title }),

@@ -95,7 +95,6 @@ export function undoLatestThreadAction(): boolean {
   return true;
 }
 
-/** Shows one compact confirmation for the currently undoable thread actions. */
 export function showThreadUndoNotice(options: UndoOptions) {
   if (!options.claim.isCurrent()) return;
   liveUndos.push(options);

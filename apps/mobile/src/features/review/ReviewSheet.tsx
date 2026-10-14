@@ -250,7 +250,6 @@ const ReviewFileNavigatorRow = memo(function ReviewFileNavigatorRow(props: {
   readonly onSelectFile: (fileId: string | null) => void;
 }) {
   const { file, selected, onSelectFile } = props;
-  // Tapping the selected file again returns to the all-files diff.
   const handlePress = useCallback(() => {
     onSelectFile(selected ? null : file.id);
   }, [file.id, onSelectFile, selected]);
@@ -373,9 +372,7 @@ function ReviewFileNavigator({
       contentContainerStyle={{
         paddingHorizontal: 8,
         paddingBottom: 8,
-        // The nested native header is translucent; start the list below it so
-        // the scroll-edge effect can sample the content (same treatment as
-        // FileTreeBrowser in the Files pane).
+        // The translucent native header needs content underneath for its scroll-edge effect.
         paddingTop: Platform.OS === "ios" ? insets.top + IOS_NAV_BAR_HEIGHT + 8 : 8,
       }}
       scrollIndicatorInsets={
@@ -507,14 +504,11 @@ export function ReviewSheet(props: ReviewSheetProps) {
     revision: diffPreviewRevision,
     draftMessage,
   });
-  // Resolution returns null while Expo registers the native view (or forever
-  // when the binary lacks it). Rendering a null component type crashes the
-  // app, so callers must fall back — ThreadFeed's ReviewCommentCard does the
-  // same check.
+  // Expo may not have registered this view, or the binary may lack it entirely.
+  // Rendering a null component type crashes, so use the raw fallback.
   const NativeReviewDiffView = resolveNativeReviewDiffView();
   const nativeReviewDiffViewRef = useRef<NativeReviewDiffViewHandle>(null);
   const showcasedReviewDrawRef = useRef<string | null>(null);
-  // Native pull-to-refresh on the diff surface (replaces the old Refresh menu item).
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullToRefresh = useCallback(async () => {
     setIsPullRefreshing(true);
@@ -666,18 +660,14 @@ export function ReviewSheet(props: ReviewSheetProps) {
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
-  // The changed-files navigator drives the native diff surface via
-  // scrollToFile, so it is only useful when that surface resolved. In raw
-  // fallback mode the ref is necessarily null and the raw patch neither
-  // scrolls nor filters — registering the navigator would present working
-  // controls that cannot navigate.
+  // The file navigator calls the native surface's scrollToFile; raw fallback
+  // cannot respond to those controls.
   const showChangedFilesPane =
     !showConnectionNotice &&
     selectedSection !== null &&
     parsedDiff.kind === "files" &&
     NativeReviewDiffView !== null;
   useRegisterWorkspaceInspector(showChangedFilesPane ? renderInspector : undefined);
-  // A toggle needs registered content; loading, errors and raw patches have no navigator pane.
   const showChangedFilesToggle = panes.supportsAuxiliaryPane && showChangedFilesPane;
 
   const listHeader = useMemo(() => {
@@ -817,10 +807,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
               showsVerticalScrollIndicator={false}
               className="flex-1"
               refreshControl={
-                // The native diff surface owns pull-to-refresh via onPullToRefresh;
-                // the raw fallback (and empty states) need an explicit control —
-                // iOS has no other refresh affordance here (the explicit
-                // "Refresh current diff" menu is Android-only).
+                // Raw/empty fallbacks need their own refresh control; iOS has no refresh menu.
                 <RefreshControl
                   refreshing={isPullRefreshing || isSelectedSectionPending || areFilePatchesPending}
                   onRefresh={() => void handlePullToRefresh()}
@@ -893,8 +880,6 @@ export function ReviewSheet(props: ReviewSheetProps) {
                   </ScrollView>
                 </View>
               ) : parsedDiff.kind === "files" ? (
-                // The native diff surface could not be resolved on this binary;
-                // degrade to the raw patch instead of crashing the app.
                 <View
                   className={cn(
                     "gap-3 bg-card px-4 py-4",

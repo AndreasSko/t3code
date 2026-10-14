@@ -125,7 +125,6 @@ export type PointerReporter = (
 ) => Promise<void>;
 const noPointer: PointerReporter = async () => {};
 
-/** The viewport point an action will hit: the target's center after scrolling it into view. */
 const targetPoint = async (
   page: Page,
   locator: Locator | null,
@@ -270,9 +269,7 @@ export const type = async (page: Page, input: PreviewAutomationTypeInput) => {
     (locator !== null || (await target.count()) > 0) &&
     (await target.evaluate(
       (element) => {
-        // Like the desktop host: an enabled text control or contenteditable
-        // that actually takes focus. Anything else would swallow the text or
-        // send it to whichever field had focus before.
+        // Require a text control that takes focus, or typing could land in the previously focused field.
         const control = element as unknown as {
           readonly type?: string;
           readonly disabled?: boolean;
@@ -341,7 +338,6 @@ export const select = async (
 ): Promise<PreviewAutomationSelectResult> => {
   const locator = targetLocator(page, input)!;
   const timeout = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  // Each entry matches an option by value first, then by its visible label.
   const options = await locator.evaluate(
     (element) =>
       element.tagName === "SELECT"
@@ -380,8 +376,7 @@ export const drag = async (
   const source = targetLocator(page, { locator: input.source })!;
   const target = targetLocator(page, { locator: input.target })!;
   await pointer(await targetPoint(page, source, {}, timeout), "move");
-  // The cursor travels with the drag; the page sees one continuous gesture. Observe the drag's
-  // outcome as it starts: a rejection nobody handles while the cursor moves exits the server.
+  // Observe rejection immediately so cursor movement cannot leave an unhandled rejection.
   const dragFailure = source.dragTo(target, { timeout }).then(
     () => null,
     (error: unknown) => ({ error }),
@@ -392,7 +387,7 @@ export const drag = async (
   if (failure) throw failure.error;
 };
 
-/** Sets files on one file input; false when no locator or selector names one. */
+/** Returns false when no target locator or selector is provided. */
 export const setInputFiles = async (page: Page, input: PreviewAutomationUploadInput) => {
   const locator = targetLocator(page, input);
   if (locator === null) return false;
@@ -415,11 +410,7 @@ export const scroll = async (page: Page, input: PreviewAutomationScrollInput) =>
   await locator.evaluate((element, [x, y]) => element.scrollBy(x, y), delta);
 };
 
-/**
- * Runs an agent's expression, bounded by its request's deadline. Past it, the
- * page's script is terminated and the call fails, so the tab's control queue
- * frees for the next request instead of waiting on the script.
- */
+/** Terminates timed-out scripts so they cannot block the tab's control queue. */
 export const evaluate = async (
   cdp: CDPSession,
   input: PreviewAutomationEvaluateInput,
@@ -470,7 +461,7 @@ export const waitFor = async (page: Page, input: PreviewAutomationWaitForInput) 
   const locator = targetLocator(page, input);
   const { text, urlIncludes } = input;
   const checks: Array<() => Promise<boolean>> = [];
-  // Like the desktop host: the selector must match an element, visible or not.
+  // The selector must match an element, visible or not.
   if (locator !== null) checks.push(async () => (await locator.count()) > 0);
   if (text !== undefined) {
     // A navigation can destroy the context mid-check; that counts as not yet.

@@ -54,18 +54,12 @@ export function HostedBrowserWebview(props: {
   readonly initialUrl: string | null;
   readonly viewport: PreviewViewportSetting;
   readonly pictureInPicture: boolean;
-  /**
-   * Fixed for the tab's lifetime: Electron only honours `partition` before the
-   * guest attaches, so a live change here would not move the tab anyway.
-   */
+  /** Fixed for the tab's lifetime because Electron only reads partition before the guest attaches. */
   readonly profileId: string | undefined;
   readonly zoomFactor: number;
   /** A tab of the desktop's own server; the server drives this webview's page. */
   readonly serverDriven?: boolean;
-  /**
-   * For a server-driven tab, the appearance and zoom its environment published,
-   * which this webview follows so every client and agent sees one state.
-   */
+  /** Follow the environment's rendering so every client and agent sees the same state. */
   readonly serverRendering?: {
     readonly colorScheme: DesktopPreviewColorScheme;
     readonly zoomFactor: number;
@@ -128,7 +122,6 @@ export function HostedBrowserWebview(props: {
     };
   }, [clientSettingsHydrated, runtimeTabId, serverDriven, tabId, threadRef.threadId]);
 
-  // A server tab looks the way its environment published, once the desktop tab exists.
   useEffect(() => {
     const bridge = window.desktopBridge?.preview;
     if (!bridge || serverColorScheme === undefined) return;
@@ -163,9 +156,7 @@ export function HostedBrowserWebview(props: {
       if (!lease) return;
       void (async () => {
         try {
-          // The main-process tab and the DOM webview are created by separate
-          // effects. Wait for the former so registration cannot race and fail
-          // with PreviewTabNotFoundError on a fast about:blank attachment.
+          // Wait for the separately created main-process tab to avoid PreviewTabNotFoundError on fast attachment.
           await lease.ready;
           if (disposed || webviewRef.current !== webview) return;
           const webContentsId = webview.getWebContentsId();
@@ -190,9 +181,7 @@ export function HostedBrowserWebview(props: {
         }
       }, recovery.delayMs);
     };
-    // A click inside the guest only reaches this document as a webview focus
-    // event, so open menus and popovers never see the outside press that
-    // would dismiss them. Replay it as a pointerdown on the webview itself.
+    // Guest clicks reach the host only as focus; replay pointerdown so host menus dismiss.
     const dismissHostPopups = () => {
       webview.dispatchEvent(
         new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }),
@@ -302,9 +291,7 @@ export function HostedBrowserWebview(props: {
   const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({
     active,
     renderingActive,
-    // Electron 43 can permanently blank a macOS webview after `visibility: hidden`.
-    // Inactive macOS guests intentionally remain paintable offscreen; other platforms still
-    // suspend them, and automation continues to see the macOS guests as inactive.
+    // Electron 43 can permanently blank macOS guests after visibility: hidden; keep inactive guests paintable offscreen.
     keepPaintableWhenInactive: isMacPlatform(navigator.platform),
     cornerRadius: presentation.cornerRadius,
     zIndex: presentation.zIndex,
@@ -334,11 +321,7 @@ export function HostedBrowserWebview(props: {
         <webview
           key={webviewGeneration}
           ref={setWebviewRef}
-          // Must be an attribute on the element itself: Electron reads it when the
-          // guest attaches, so setting it from the ref callback lands too late and
-          // the guest attaches with popups disabled. React types `allowpopups` as a
-          // boolean, but react-dom drops boolean values for unrecognized attributes,
-          // so the literal string has to be spread past the type.
+          // Electron reads allowpopups before the ref callback; React drops boolean unknown attributes, so spread a string.
           {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
           src={webviewGeneration === 0 ? initialSrc : recoverySrc}
           partition={config.partition}

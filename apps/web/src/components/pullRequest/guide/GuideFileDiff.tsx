@@ -12,11 +12,7 @@ import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
 import { DIFF_VIEW_UNSAFE_CSS } from "../../diffs/StyledDiffCodeView";
 
-/**
- * A whole file's diff inside a stop, for a file the guide vouched for without excerpting. The row
- * above it names the file, so the renderer's own header is left off. The bars between hunks load
- * the unchanged lines, as in the Code tab.
- */
+/** Hide the viewer header because the stop already names this file. */
 export function GuideFileDiff({
   file,
   loadDiffFiles,
@@ -25,8 +21,7 @@ export function GuideFileDiff({
   loadDiffFiles: FileDiffContentsLoader;
 }) {
   const { resolvedTheme } = useTheme();
-  // Loading the unchanged lines rewrites the diff it is given; the excerpts read the same file
-  // as a patch, so this view expands a copy of its own.
+  // Expansion mutates metadata; clone it so excerpts keep their original patch.
   const expandable = useMemo(() => cloneFileDiffMetadata(file), [file]);
   const options = useMemo(
     () => ({

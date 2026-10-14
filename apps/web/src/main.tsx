@@ -29,8 +29,6 @@ if (isElectron) {
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
-// A failed split-chunk fetch usually means the hashed assets went stale under
-// a deploy; one guarded reload picks up the fresh index.html.
 let chunkLoadFailed = false;
 let reloadScheduled = false;
 window.addEventListener("vite:preloadError", (event) => {
@@ -43,10 +41,7 @@ window.addEventListener("vite:preloadError", (event) => {
 
 const app = <AppRoot router={router} />;
 
-// Managed auth is cloud-only, and the Electron Clerk provider bundles the full
-// clerk-js runtime. Loading only the selected runtime as a split chunk keeps
-// every Clerk byte out of the startup graph for local-mode users, and keeps
-// the bundled clerk-js out of the browser build entirely.
+// Split the selected auth runtime so local users load no Clerk bytes and browsers omit the Electron bundle.
 const managedAuthShellModule =
   clerkPublishableKey && hasCloudPublicConfig()
     ? isElectron
@@ -54,20 +49,15 @@ const managedAuthShellModule =
       : import("./components/clerk/BrowserManagedAuthShell")
     : null;
 
-// The index.html boot splash lives inside #root, and React's first commit
-// clears it. Resolve everything that first commit needs, the selected
-// managed-auth runtime and the initial route's split chunks, before
-// rendering, so the splash holds until real UI paints instead of dropping to
-// a blank window while chunks download.
+// React clears the boot splash on its first commit; wait for auth and initial route chunks to avoid a blank
+// window.
 export const startup = Promise.all([
   managedAuthShellModule?.then((module) => module.default) ?? null,
   router.load(),
 ])
   .then(([ManagedAuthShell]) => {
-    // A route chunk failure still resolves router.load(): the error is parked in
-    // the lazy component and surfaces through the route error boundary. Skip the
-    // paint when a reload is on its way, and only re-arm the guard after a boot
-    // that fetched every chunk it asked for.
+    // Router load resolves despite lazy-chunk failures; skip paint during reload and clear the guard only after
+    // all chunks load.
     if (reloadScheduled) return;
     if (!chunkLoadFailed) clearChunkReloadGuard();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
@@ -81,7 +71,6 @@ export const startup = Promise.all([
     );
   })
   .catch((error: unknown) => {
-    // Let the bootstrap entry show the error unless a reload is already scheduled.
     if (reloadScheduled) return;
     throw error;
   });

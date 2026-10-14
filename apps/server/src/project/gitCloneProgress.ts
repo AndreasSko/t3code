@@ -19,12 +19,8 @@ const STAGE_PREFIXES: ReadonlyArray<readonly [RegExp, ProjectCloneStage]> = [
 
 const PERCENT = /:\s+(\d+)%\s+\((\d+)\/(\d+)\)(?:,\s*(.*?))?\s*(?:,\s*done\.)?\s*$/;
 
-/**
- * Parses one line of `git clone --progress` stderr. Git redraws each counter
- * with a bare `\r`, so callers hand over each redraw as its own line. Lines
- * that are not progress counters (hints, warnings, `Cloning into ...`) return
- * null and are left for the error surface.
- */
+/** Pass each `git clone --progress` stderr redraw, separated by bare `\r`.
+ * Non-progress lines return null for the error surface. */
 export function parseGitCloneProgressLine(line: string): GitCloneProgressLine | null {
   const trimmed = line.trim();
   const stageEntry = STAGE_PREFIXES.find(([pattern]) => pattern.test(trimmed));

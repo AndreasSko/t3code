@@ -79,12 +79,8 @@ export function createAssistantTextSelector(
 }
 
 /**
- * Matches case-sensitive text after collapsing each JS whitespace run to one
- * space, without trimming. All positions and context lengths use UTF-16 units
- * in that normalized stream, not markdown offsets or Unicode code points.
- * `selector.text` can retain the original line breaks and code indentation.
- * Repeated quotes require one match for all supplied context. Even matching
- * saved offsets cannot break a context tie, since those offsets may have drifted.
+ * Match case-sensitive text after whitespace collapse, without trimming; positions use normalized UTF-16
+ * units. Require one context match; saved offsets cannot break ties because they may drift.
  */
 export function findAssistantCitationText(
   text: string,
@@ -131,11 +127,8 @@ export function findAssistantCitationText(
 type TextChunk = { node: Text; start: number; end: number };
 
 /**
- * Uses DOM text order, with a line break between HTML blocks and at <br>.
- * Inline markup, including code and links, contributes its displayed text.
- * Controls and subtrees marked hidden/aria-hidden do not contribute. No layout
- * reads, CSS-generated content, or soft-wrap line breaks enter the stream, so
- * reflow cannot move it.
+ * Use displayed DOM text with block/br breaks, excluding hidden/control content and layout-dependent
+ * wrapping so reflow cannot move offsets.
  */
 function readAssistantText(root: HTMLElement) {
   const parts: string[] = [];
@@ -185,7 +178,6 @@ function isUsableRange(root: HTMLElement, range: Range): boolean {
   ) {
     return false;
   }
-  // Interior controls are allowed; readAssistantText omits them from the stream.
   return true;
 }
 
@@ -216,7 +208,6 @@ function selectedTextBoundary(range: Range, node: Node, last: boolean): Text | n
   return null;
 }
 
-/** Captures the ordered native range, including selections dragged backwards. */
 export function captureAssistantTextSelection(
   viewport: HTMLElement,
   selection: Selection | null,

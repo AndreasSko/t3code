@@ -81,7 +81,6 @@ type QuickActionIcon =
   | "checkmark.circle"
   | "arrow.up.circle";
 
-/** The subset of git-control wiring the standalone git menu needs. */
 export type ThreadGitMenuProps = {
   readonly environmentId: EnvironmentId | string;
   readonly threadId: ThreadId | string;
@@ -540,11 +539,7 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
   );
 }
 
-/**
- * The standalone git actions menu (branch status, quick commit/push action,
- * review, more). Rendered inside a NativeHeaderToolbar by both the thread
- * chat header and the review screen's toolbar.
- */
+/** Shared git menu for the thread and review screen native toolbars. */
 export function ThreadGitMenu(props: ThreadGitMenuProps) {
   const menu = useThreadGitMenuDefinition(props);
   return menu ? createNativeHeaderMenu(menu) : null;

@@ -21,22 +21,16 @@ export interface UpdateEverythingMachine {
   /** Served by the desktop app this client runs in (the primary backend or a
       local WSL backend). Its server updates when the app installs. */
   readonly hostedByThisApp: boolean;
-  /** The session holds the scope a server update needs. */
   readonly canMaintain: boolean;
   readonly updateState: ServerUpdateState;
 }
 
-/** A server that restarts during a run. */
 export interface RestartingMachine {
   readonly environmentId: EnvironmentId;
-  /** The server resumes interrupted threads after it restarts. */
   readonly continuesThreads: boolean;
 }
 
-/**
- * The servers a run restarts: each server it updates, and the servers this app
- * hosts when this app installs. Provider updates restart nothing.
- */
+/** Includes servers restarted by this app installing; provider updates restart nothing. */
 export function collectRestartingMachines(
   machines: ReadonlyArray<UpdateEverythingMachine>,
   servers: ReadonlyArray<Pick<ServerUpdateTarget, "environmentId">>,
@@ -308,7 +302,6 @@ export function getUpdateEverythingToastView(
 }
 
 export interface UpdateEverythingPlan {
-  /** The version this desktop app installs, or null when it is not updating. */
   readonly localVersion: string | null;
   readonly servers: ReadonlyArray<
     Pick<ServerUpdateTarget, "environmentId" | "serverLabel" | "selfUpdate" | "targetVersion">
@@ -316,7 +309,6 @@ export interface UpdateEverythingPlan {
   readonly providerMachines: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
-    /** Display names of the outdated providers on that machine. */
     readonly providers: ReadonlyArray<string>;
   }>;
 }
@@ -330,11 +322,7 @@ function joinList(parts: ReadonlyArray<string>): string {
   return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
 }
 
-/**
- * Text for the sidebar tooltip and the confirmation. `summary` reads like
- * "Update this app, 2 servers, and 3 providers". `lines` has one entry per
- * machine, this app first, such as "alvin: server to 0.0.50, Codex, Claude".
- */
+/** Summary names update counts; lines describe each machine, with this app first. */
 export function describeUpdateEverything(plan: UpdateEverythingPlan): {
   readonly summary: string;
   readonly lines: ReadonlyArray<string>;

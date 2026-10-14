@@ -1,17 +1,3 @@
-/**
- * OpenCodeDriver — `ProviderDriver` for the OpenCode runtime.
- *
- * Mirrors the Codex / Claude drivers: a plain value whose `create()`
- * bundles `snapshot` / `adapter` / `textGeneration` closures over the
- * per-instance `OpenCodeSettings`.
- *
- * Two instances with different `serverUrl`s therefore talk to independent
- * OpenCode servers; when no `serverUrl` is set, the adapter + text-generation
- * shares spin up their own scoped child processes, and those child
- * processes are released when the registry scope closes.
- *
- * @module provider/Drivers/OpenCodeDriver
- */
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Crypto from "effect/Crypto";
@@ -143,7 +129,6 @@ function selectOpenCodeRuntimeAdapter(input: {
   };
 }
 
-/** Text generation runs on the server the instance's probe detected, each in its own protocol. */
 function selectOpenCodeRuntimeTextGeneration(
   probe: OpenCodeRuntimeProbe,
   v1: ProviderTextGeneration,
@@ -231,10 +216,7 @@ export const OpenCodeDriver: ProviderDriver<
           Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
         ),
       );
-      // Updates follow the installed package, which the version probe names. An
-      // unknown version offers no package update, since a guess could move a
-      // 2.x install onto 1.x's package or the reverse. A disabled instance never
-      // runs its binary, so it has no version and offers no update.
+      // An unknown version must offer no update: guessing could move the install between incompatible 1.x and 2.x packages.
       const noUpdate = makeManualOnlyProviderMaintenanceCapabilities({
         provider: DRIVER_KIND,
         packageName: null,
@@ -287,7 +269,6 @@ export const OpenCodeDriver: ProviderDriver<
             }),
         ),
       );
-      // One OpenCode 2 server per instance, spawned on first use or reached at `serverUrl`.
       const openCode2Server = yield* OpenCode2Server.make({
         binaryPath: effectiveConfig.binaryPath,
         serverUrl: effectiveConfig.serverUrl,
@@ -394,14 +375,8 @@ export const OpenCodeDriver: ProviderDriver<
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       );
-      // NOTE: the local branch intentionally uses the shared SDK server
-      // instead of `opencode debug skill` (loadSkillsFromCli). The CLI writes
-      // its full JSON inventory to stdout, but the Bun-compiled binary does
-      // not flush more than one 64KB pipe buffer to a non-TTY stdout, so the
-      // piped output arrives truncated and unparseable — which degrades to an
-      // empty skill list and poisons the workspace snapshot the `$` picker
-      // reads. The SDK `app.skills` endpoint honors the per-request directory
-      // and returns complete results regardless of size.
+      // The Bun CLI truncates piped skill JSON beyond one 64KB buffer.
+      // The SDK endpoint returns complete results and honors the request directory.
       const loadWorkspaceInventory = (
         client: Parameters<typeof OpenCodeRuntime.loadOpenCodeCommands>[0],
       ) =>

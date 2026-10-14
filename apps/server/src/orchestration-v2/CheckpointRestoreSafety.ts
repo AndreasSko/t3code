@@ -46,10 +46,8 @@ export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpoi
           const paths = [
             otherThread.worktreePath,
             ...other.checkpointScopes.map((candidate) => candidate.cwd),
-            // A failed turn can leave an errored session with a live event stream.
-            // A session shared across threads keeps the cwd it was opened with,
-            // often another thread's; each turn runs in the thread's own
-            // worktree or project root, which this list already covers.
+            // Errored sessions can still stream. Shared sessions retain their original cwd;
+            // per-turn worktrees and project roots are already covered by the thread list.
             ...providerContext.providerSessions
               .filter(
                 (session) =>

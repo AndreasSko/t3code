@@ -12,13 +12,8 @@ const isNotASymlink = (error: PlatformError.PlatformError) =>
   isNotFound(error) ||
   (error.cause instanceof Error && "code" in error.cause && error.cause.code === "EINVAL");
 
-/**
- * Follows a chain of symlinks to the file it finally names, which may not exist
- * yet. Any path that is not a symlink resolves to itself. Atomic writers rename
- * onto this path so a linked file keeps its link. Fails on a cycle, an overly
- * long chain, or an unreadable link rather than handing back a link that a
- * rename would replace.
- */
+/** Resolve the final symlink target before atomic renames so the link survives.
+ * Fails on cycles, excessive depth, or unreadable links; the target may not exist yet. */
 export const resolveSymlinkTarget = (filePath: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

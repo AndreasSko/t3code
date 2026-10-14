@@ -1,13 +1,8 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useSyncExternalStore } from "react";
 
-/**
- * Dragging a sidebar thread past the list edge turns the sort gesture into a context drop.
- * The composer form marks itself as the target; the sidebar hit-tests the pointer against it
- * and hands over the dragged thread refs through a DOM event, so neither side imports the
- * other. Ghost position lives here rather than in Sidebar state so pointer moves only
- * re-render the ghost.
- */
+/** DOM drop events decouple the sidebar from the composer. Ghost state lives here
+ * so pointer moves only rerender the ghost. */
 
 export const THREAD_CONTEXT_DROP_EVENT = "t3-thread-context-drop";
 const DROP_TARGET_ATTRIBUTE = "data-thread-context-drop";
@@ -50,7 +45,6 @@ function findDropTarget(point: { x: number; y: number }): HTMLElement | null {
   );
 }
 
-/** Tracks the ghost and the highlighted drop target while the pointer is outside the list. */
 export function moveThreadContextDrag(
   point: { x: number; y: number },
   label: { title: string; count: number },

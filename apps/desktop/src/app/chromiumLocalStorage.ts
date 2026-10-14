@@ -5,12 +5,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 /**
- * Read-only decoder for a Chromium profile's `Local Storage/leveldb`.
- *
- * It reads the database files directly and never takes LevelDB's lock, so it
- * works while another app version has the profile open. Live files come from
- * the MANIFEST that CURRENT names, and the newest sequence number wins, which
- * is how LevelDB itself resolves overwrites and deletions.
+ * Read LevelDB files without taking its lock, including while another app holds the profile open.
+ * Follow CURRENT's MANIFEST and the newest sequence number for overwrites and deletions.
  */
 
 const LOG_BLOCK_SIZE = 32 * 1024;
@@ -212,7 +208,6 @@ interface LiveFiles {
   readonly previousLogNumber: number;
 }
 
-/** Replays MANIFEST version edits to find the live table files and log. */
 function readManifest(bytes: Uint8Array): LiveFiles {
   const tables = new Set<number>();
   let logNumber = 0;

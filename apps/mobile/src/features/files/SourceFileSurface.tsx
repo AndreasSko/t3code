@@ -281,11 +281,8 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     [codeSurface, codeWordBreak, targetIndex, tokens],
   );
 
-  // One selectable text for the whole file. On iOS `uiTextView` renders a real `UITextView`,
-  // which selects across every line, wraps, and lays out long documents through TextKit; on
-  // Android the primitive is an RN `Text`, which selects across its nested children. Either
-  // way "select all" takes the file rather than a line, which a `FlatList` row can never do
-  // because each row is its own selection scope.
+  // Use one native text scope so "select all" spans the whole file; virtualized rows
+  // have separate selection scopes on both iOS and Android.
   const selectableBlock = props.selectable ? (
     <SourceText
       selectable

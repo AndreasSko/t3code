@@ -24,12 +24,8 @@ export type { DiffFileTreeEntry } from "./diffFileTree.logic";
 
 interface DiffFileTreeProps {
   readonly entries: ReadonlyArray<DiffFileTreeEntry>;
-  /** Called with the file's path when the reader picks a file row. */
   readonly onSelectFile: (path: string) => void;
-  /**
-   * The file the diff is currently showing, kept selected in the tree. Bump `revealRequestId` to
-   * scroll the tree to the same path again.
-   */
+  /** Bump revealRequestId to scroll to the same selected path again. */
   readonly selectedPath?: string | null;
   readonly revealRequestId?: number;
   readonly ariaLabel: string;
@@ -40,10 +36,7 @@ interface DiffFileTreeProps {
   readonly className?: string;
 }
 
-/**
- * A directory tree of the files in a diff. Every directory starts open: a diff is a short list
- * compared to a workspace, and the reader came for the files, not the folders.
- */
+/** Start directories open because diff readers came for files, not folders. */
 export function DiffFileTree({
   entries,
   onSelectFile,
@@ -135,8 +128,7 @@ export function DiffFileTree({
       handledRevealRef.current = null;
       return;
     }
-    // A path list that changes under an already-revealed file (a refresh, a later slice) must
-    // not pull the tree back to it over whatever the reader has picked since.
+    // Path-list refreshes must not override what the reader picked after a reveal.
     const item = model.getItem(selectedPath);
     if (item === null || item.isDirectory()) {
       // A file that left the diff has to be revealed again when it comes back.

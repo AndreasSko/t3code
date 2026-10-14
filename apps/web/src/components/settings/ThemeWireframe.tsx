@@ -1,9 +1,6 @@
 import { cn } from "../../lib/utils";
 import type { ThemeCardPreviewColors } from "./ThemePreviewCircles";
 
-// A simple miniature of the app: sidebar, a short conversation, the
-// composer, and the orchestrator panel floating over the interface as an
-// island with horizontal agent rows.
 function ThemeWireframePane({
   colors,
   clip,

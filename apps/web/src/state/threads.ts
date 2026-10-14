@@ -55,9 +55,7 @@ const isRunning = (status: string) =>
 
 type KeptThreads = ReadonlyMap<EnvironmentId, ReadonlySet<ThreadId>>;
 
-// True once a thread's own stream no longer needs to stay open: it is in sync
-// and shows a settled session, or it cannot progress (deleted or failed). A
-// stream that is still loading or reconnecting keeps waiting for the stop.
+// Loading and reconnecting detail streams must stay mounted until their own stop arrives.
 function isDetailDone<E>(result: AsyncResult.AsyncResult<EnvironmentThreadState, E>): boolean {
   if (!AsyncResult.isSuccess(result)) return true;
   const { status, data, error } = result.value;
@@ -68,15 +66,7 @@ function isDetailDone<E>(result: AsyncResult.AsyncResult<EnvironmentThreadState,
   );
 }
 
-/**
- * Keeps the thread state atom mounted for each running thread in the listed
- * environments. Mount the result; its value is only bookkeeping.
- *
- * The shell and detail streams are independent, so the shell can report a
- * stop before the detail loads or catches up. A stopped thread stays mounted
- * until its own detail is live and shows the stop too. Then the stream closes
- * and saves the settled state to disk.
- */
+/** Mount this atom; its value is bookkeeping. Keep threads until their independent detail streams show the stop. */
 export function createRunningThreadKeepAliveAtom<E>(input: {
   readonly environmentIdsAtom: Atom.Atom<ReadonlyArray<EnvironmentId>>;
   readonly threadsAtom: (
@@ -104,7 +94,6 @@ export function createRunningThreadKeepAliveAtom<E>(input: {
   return Atom.make((get): KeptThreads => {
     const previous = Option.getOrUndefined(get.self<KeptThreads>());
     const kept = new Map<EnvironmentId, ReadonlySet<ThreadId>>();
-    // An environment that leaves the list is not visited, so its mounts drop.
     for (const environmentId of get(input.environmentIdsAtom)) {
       const threadIds = new Set(get(runningThreadIdsAtom(environmentId)));
       for (const threadId of previous?.get(environmentId) ?? []) {

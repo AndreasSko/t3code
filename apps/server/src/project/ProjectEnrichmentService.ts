@@ -19,10 +19,7 @@ const DEFAULT_CACHE_CAPACITY = 512;
 const DEFAULT_MAX_PENDING = 512;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_SUCCESS_TTL = Duration.minutes(1);
-// A favicon scan checks about 20 files. Shell reads (and PR sync through them) ask for every
-// linked project about once a minute, and icons rarely change, so a resolved favicon is kept
-// longer than the identity, which is only a hit on RepositoryIdentityResolver's own cache.
-// Moving a project's workspace root, and deleting it, invalidate both at once.
+// Favicon scans cost about 20 probes and icons rarely change, so cache longer than repository identity.
 const DEFAULT_FAVICON_TTL = Duration.minutes(15);
 const DEFAULT_FAILURE_TTL = Duration.seconds(5);
 
@@ -59,7 +56,6 @@ export class ProjectEnrichmentService extends Context.Service<
     readonly request: (workspaceRoot: string) => Effect.Effect<void>;
     /** Read immediately available metadata and schedule anything missing. */
     readonly getAvailable: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;
-    /** Invalidate workspace-derived metadata. */
     readonly invalidate: (workspaceRoots: Iterable<string>) => Effect.Effect<void>;
     /** Subscribe to ephemeral completion notifications. */
     readonly subscribeChanges: Effect.Effect<

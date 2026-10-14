@@ -57,14 +57,8 @@ async function cleanUpRemovedMessages(
 }
 
 /**
- * The only way a queued message leaves the outbox. Removal also releases the
- * message's local attachment files (via the reference-counting sweep, so a
- * file still referenced by a draft or another queued message survives).
- * Keeping release inside the removal call means no call site can forget it.
- *
- * `expectedRevision` (from `threadOutboxRevision`) and `canRemove` make the
- * removal a compare-and-set: when an edit was accepted or an editor takes the
- * message, it stays queued, nothing is released, and this returns false.
+ * Removal owns attachment release so callers cannot forget it; other draft/outbox references protect shared files.
+ * Capture expectedRevision before slow work; an intervening edit or failed canRemove guard keeps it queued.
  */
 export async function removeThreadOutboxMessage(
   message: QueuedThreadMessage,
@@ -83,9 +77,7 @@ export async function removeThreadOutboxMessage(
 
 /** Removes every queued message of an environment and releases their files. */
 export async function clearThreadOutboxEnvironment(environmentId: EnvironmentId): Promise<void> {
-  // clearEnvironment loads and merges persisted messages itself and reports
-  // what it actually removed, so the release set cannot miss messages a
-  // failed earlier hydration would have hidden.
+  // Use actual removals so cleanup includes persisted messages hidden by an earlier failed hydration.
   const removed = await threadOutboxManager.clearEnvironment(environmentId);
   await cleanUpRemovedMessages(removed);
 }

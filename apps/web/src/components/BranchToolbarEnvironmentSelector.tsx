@@ -52,11 +52,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
     [availableEnvironments, autoEnvironmentLabel, onAutoEnvironment],
   );
 
-  // The static label carries the xs control's height (h-7 sm:h-6) as well as
-  // its padding: the composer context strip has no min-height of its own, and
-  // the glass seam joining it to the composer assumes a fixed strip height, so
-  // a shorter label would drag the seam out of line whenever this label is the
-  // only thing in the strip.
+  // Preserve the xs control height: the glass seam assumes a fixed strip height even with only this label.
   if (envLocked || onEnvironmentChange === undefined) {
     const lockedRow = (
       <span

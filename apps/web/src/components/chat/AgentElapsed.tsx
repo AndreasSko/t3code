@@ -26,11 +26,7 @@ export function formatCompactElapsedSeconds(totalSeconds: number): string {
   return `${Math.floor(minutes / 6) / 10}h`;
 }
 
-/**
- * Elapsed time for the current activation. Live agents self-tick via DOM
- * writes (zero React commits per tick); settled agents freeze at completedAt.
- * `compact` drops the smaller unit for narrow rows such as Lineage.
- */
+/** Tick live elapsed time through DOM writes to avoid React commits; compact omits the smaller unit. */
 export function AgentElapsed({
   agent,
   compact = false,

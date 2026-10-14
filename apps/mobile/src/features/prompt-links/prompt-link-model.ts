@@ -1,14 +1,10 @@
 import type { PromptLinkRepository } from "@t3tools/shared/promptLinks";
 
-/** The query keys a prompt link adds to the `new` and thread routes. */
 export const PROMPT_LINK_PARAM_KEYS = ["prompt", "repo", "pr", "provider", "model"] as const;
 
 type RouteParams = Readonly<Record<string, unknown>> | undefined;
 
-/**
- * Rebuilds the link's query from React Navigation route params, so the shared parser reads the
- * same input on every surface. Null when the route carries no prompt link.
- */
+/** Adapts native route params for the shared URL parser; null without a prompt link. */
 export function promptLinkSearchFromParams(
   params: RouteParams,
   keys: ReadonlyArray<string> = PROMPT_LINK_PARAM_KEYS,
@@ -27,10 +23,6 @@ export function clearedPromptLinkParams(keys: ReadonlyArray<string> = PROMPT_LIN
   return Object.fromEntries(keys.map((key) => [key, undefined]));
 }
 
-/**
- * The text of the one notice a prompt link shows. Every link says the prompt came from a link;
- * hidden characters replace that line with a stronger warning.
- */
 export function promptLinkNotice(input: {
   readonly hiddenCharacters: number;
   readonly modelUnavailable?: boolean;
@@ -51,7 +43,6 @@ export function promptLinkNotice(input: {
     .join("\n\n");
 }
 
-/** How a linked prompt lands in an existing thread composer. */
 export function linkedThreadDraftAction(currentText: string, prompt: string) {
   if (currentText.trim().length === 0) return "fill" as const;
   return currentText === prompt ? ("keep" as const) : ("ask" as const);

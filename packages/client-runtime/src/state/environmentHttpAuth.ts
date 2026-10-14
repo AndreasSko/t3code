@@ -36,14 +36,8 @@ export function withOrchestrationProtocolHeader(
   };
 }
 
-/**
- * Primary/local environments with no bearer or DPoP credential authenticate the
- * browser via a session cookie. A cross-origin `fetch` does not send cookies by
- * default, so those requests must opt into credentialed mode; bearer/DPoP
- * connections carry their credential in a header and need no cookies. Applied
- * per-request via `FetchHttpClient.RequestInit`, which the fetch client reads
- * from the fiber context at request time.
- */
+// Cross-origin cookie sessions need credentialed fetch; bearer/DPoP requests
+// use headers. FetchHttpClient reads RequestInit from the per-request fiber context.
 const withEnvironmentCredentials = <A, E, R>(
   authorization: PreparedHttpAuthorization | null,
   request: Effect.Effect<A, E, R>,
@@ -52,17 +46,8 @@ const withEnvironmentCredentials = <A, E, R>(
     ? request.pipe(Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }))
     : request;
 
-/**
- * Build request-bound headers from the current environment credential:
- * - primary/local connections carry no credential,
- * - bearer connections send a static `Bearer` token,
- * - relay connections send a `DPoP` access token with a freshly signed proof
- *   bound to this request's method and URL.
- *
- * The DPoP signer is passed in (not resolved from context) and is only required
- * for relay/DPoP connections, so bearer/primary connections work even when no
- * signer is available.
- */
+// DPoP proofs bind method and URL; pass the signer explicitly so cookie
+// and bearer connections do not require it.
 const buildEnvironmentAuthHeaders = (
   authorization: PreparedHttpAuthorization | null,
   method: HttpMethod.HttpMethod,
@@ -96,15 +81,8 @@ const buildEnvironmentAuthHeaders = (
     return { authorization: `DPoP ${authorization.accessToken}`, dpop: proof };
   });
 
-/**
- * Resolve relay credentials at request time without replacing the live socket.
- * A rejected credential gets one refresh and retry, with a new request-bound
- * proof. Cookie and bearer requests keep their existing authentication behavior.
- *
- * A DPoP request is T3 Connect work, so its span starts an exported trace that
- * the environment continues; its local caller's span would leave that trace
- * without a root.
- */
+/** Resolves relay credentials at request time and retries rejection once with a fresh proof.
+ * DPoP requests start an exported root trace that the environment can continue. */
 export const executeAuthenticatedEnvironmentHttpRequest = <
   Group extends Parameters<typeof makeEnvironmentHttpApiGroupClient>[1],
   A,
@@ -132,11 +110,7 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
   readonly signer: Option.Option<ManagedRelayDpopSigner["Service"]>;
   readonly remoteAuthorization?: Option.Option<RemoteEnvironmentAuthorization["Service"]>;
   readonly method: HttpMethod.HttpMethod;
-  /**
-   * The URL to sign, from the group's contract URL builder. It encodes path
-   * params exactly like the request client, so the DPoP proof matches the
-   * URL actually sent.
-   */
+  /** Contract URL builders must match request path encoding so the DPoP proof signs the actual URL. */
   readonly url: (urls: ReturnType<typeof makeEnvironmentHttpApiUrlBuilder>[Group]) => string;
   readonly timeoutMs: number;
   readonly group: Group;

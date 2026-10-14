@@ -1,14 +1,3 @@
-/**
- * The usage reader contract: how a driver tells the server's usage page where
- * its history lives and how to read it.
- *
- * A driver either points at JSONL transcripts that the server's shared engine
- * streams, caches and resumes (`kind: "transcripts"`), or scans its own
- * sources and returns their records (`kind: "scan"`). The server owns
- * pricing, aggregation, de-duplication and the scan cache.
- *
- * @module provider-core/server/usage
- */
 import type {
   ProviderInstanceId,
   ServerSettings,
@@ -20,11 +9,7 @@ import type {
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 
-/**
- * Billing speed of a request. Faster speeds bill at a model-specific premium.
- * Claude fast mode and Codex `priority` are `fast`; Codex `ultrafast` is its
- * own, more expensive tier.
- */
+/** Claude fast mode and Codex priority bill as fast; Codex ultrafast has its own premium. */
 export type UsageSpeed = "standard" | "fast" | "ultrafast";
 
 export interface UsageRecord {
@@ -82,18 +67,14 @@ export function parseTimestampMs(value: unknown): number | null {
 export type SelectedFields = { readonly [key: string]: true | SelectedFields };
 
 /**
- * How the server's JSONL engine reads one provider's transcript lines.
- *
- * Lines arrive one at a time. A line too large to parse whole is projected to
- * `selectFields` and handed to `parseProjected` instead of `parseLine`.
+ * Oversized lines are projected to selectFields and passed to parseProjected
+ * instead of parseLine.
  */
 export interface TranscriptUsageFormat<State> {
   readonly selectFields: SelectedFields;
   /**
-   * ASCII substrings, at least one of which every line that matters contains.
-   * Transcripts are mostly tool output, so the engine matches these against a
-   * line's raw bytes and neither decodes nor parses the rest, which is worth an
-   * order of magnitude. Lines that only update `State` must match too.
+   * ASCII markers let the engine skip decoding irrelevant tool output.
+   * Every relevant line must match, including lines that only update State.
    */
   readonly usageMarkers: readonly [string, ...string[]];
   parseLine(line: string, state: State): readonly UsageRecord[];
@@ -129,7 +110,6 @@ export interface ProviderUsageInstance<Config> {
   readonly configured: boolean;
 }
 
-/** One source a `scan` reader read. */
 export interface ProviderUsageScan {
   readonly dir: string;
   /** Identity of the source across hosts. Defaults to the filesystem identity of `dir`. */
@@ -149,7 +129,6 @@ export interface ProviderUsageScan {
 
 export interface ProviderUsageScanInput<Config> {
   readonly instances: ReadonlyArray<ProviderUsageInstance<Config>>;
-  /** The settings snapshot the whole read runs against. */
   readonly settings: ServerSettings;
   /** Files last written before this cannot hold records inside the window. */
   readonly windowStartMs: number;

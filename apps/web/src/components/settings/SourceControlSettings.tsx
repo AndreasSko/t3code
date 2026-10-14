@@ -209,8 +209,6 @@ function itemSummary({
 
   if (auth) {
     if (auth.status === "authenticated") {
-      // The server names the account its requests use, Settings choice included, and
-      // says when an environment token overrides it.
       const authDetail = optionLabel(auth.detail);
       return (
         <>
@@ -226,8 +224,7 @@ function itemSummary({
       );
     }
 
-    // API integrations have no CLI to sign in with; an unverified saved credential falls
-    // through to the "could not verify" detail instead of repeating the setup hint.
+    // API integrations have no CLI login; unverified saved credentials need verification errors.
     if (!item.executable && auth.status === "unauthenticated") {
       return <span>Available. {item.installHint}</span>;
     }
@@ -504,9 +501,7 @@ function EmptySourceControlDiscovery({
 
 export function SourceControlSettingsPanel() {
   const { scope, environment, connectedEnvironments } = useSettingsScope();
-  // Discovery scans one machine's tools, so it shows the representative
-  // environment (named in the section title when several are selected);
-  // the settings rows above it fan out like everywhere else.
+  // Discovery reads one representative machine; scoped settings writes still fan out.
   const environmentId =
     environment?.connection.phase === "connected" ? environment.environmentId : null;
   const aggregate = scope.environmentIds.length !== 1 && connectedEnvironments.length > 1;
@@ -526,7 +521,6 @@ export function SourceControlSettingsPanel() {
   const handleScan = () => {
     discovery.refresh();
   };
-  /** The host's own settings form, for a host whose definition declares settings. */
   const hostSettingsPanel = (kind: string) => {
     const definition = sourceControlClients.find(kind);
     if (!definition?.settings || environmentId === null) return undefined;

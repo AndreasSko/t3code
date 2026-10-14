@@ -1,13 +1,4 @@
-/**
- * Shared server settings.
- *
- * Every server keeps its own `settings.json`, but some keys are user
- * preferences that only live on the server because the server has to act on
- * them (auto-settlement runs with no client attached). A user does not want
- * those to differ per machine. Clients write these keys to every shared-settings
- * sync target, and warn when another target still holds a different value so
- * the user can push their current value out.
- */
+// These server-owned preferences must agree across machines even when no client is attached.
 import type {
   EnvironmentId,
   ExecutionEnvironmentCapabilities,
@@ -86,7 +77,6 @@ export function filterSharedServerPatch(
     : Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
 }
 
-/** The shared subset supported by one environment. */
 export function pickSharedServerSettings(
   settings: ServerSettings,
   capabilities?: Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">,
@@ -98,10 +88,7 @@ export function pickSharedServerSettings(
   );
 }
 
-/**
- * Whether an environment can participate in shared-settings sync right now.
- * Auto-settlement establishes baseline support; newer preferences are filtered separately.
- */
+/** Auto-settlement establishes baseline sync support; newer preferences are filtered separately. */
 export function supportsSharedSettingsSync(environment: {
   readonly connection: { readonly phase: EnvironmentConnectionPhase };
   readonly serverConfig: {
@@ -126,14 +113,8 @@ export interface SharedSettingsEnvironment {
     | undefined;
 }
 
-/**
- * Shared-settings sync targets whose values differ from the primary
- * environment's. Other environments are skipped: nothing can be read from or
- * written to them, or their server lacks baseline shared-settings support. With no
- * primary settings loaded there is nothing to compare against, so nothing is
- * reported. Callers must pass the real loaded settings, never a default
- * fallback, or "apply to all" would push defaults over real values.
- */
+/** Pass real loaded settings, never defaults, so apply-to-all cannot overwrite preferences.
+ * Skip environments that cannot read/write or lack baseline support. */
 export function findSharedSettingsMismatches(input: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly primarySettings: ServerSettings | null;

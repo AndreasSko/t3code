@@ -69,13 +69,8 @@ function RemoteEnvironmentRowsSkeleton() {
   );
 }
 
-/**
- * The user's T3 Connect environments from relay discovery, each with a
- * Connect button. The primary environment is always excluded; already-saved
- * environments are hidden unless `showSavedEnvironments` renders them with
- * their live connection state (used by onboarding, where the full device mesh
- * should be visible).
- */
+/** Excludes the primary environment and hides saved environments unless
+ * `showSavedEnvironments` is set to display their live connection state. */
 export function CloudEnvironmentConnectRows({
   primaryEnvironmentId,
   savedEnvironments,
@@ -197,9 +192,7 @@ export function CloudEnvironmentConnectRows({
     return false;
   };
 
-  // During onboarding selection a machine saved over another route already
-  // has its own row elsewhere, and selecting it must not add a T3 Connect
-  // route as a side effect, so it is left out here.
+  // Onboarding must not add a relay route for machines already listed through another route.
   const visibleEnvironments = [...environmentsState.environments.values()].filter(
     ({ environment }) =>
       environment.environmentId !== primaryEnvironmentId &&
@@ -291,8 +284,7 @@ export function CloudEnvironmentConnectRows({
   }
 
   if (standalone && visibleEnvironments.length === 0) {
-    // A failed or offline discovery is not "no environments" — misreporting it
-    // as empty would read as the user's devices having disappeared.
+    // Failed discovery must not suggest that the user has no environments.
     const discoveryProblem = environmentsState.offline
       ? "You appear to be offline."
       : (Option.getOrNull(environmentsState.error)?.message ?? null);
@@ -333,13 +325,9 @@ export function CloudEnvironmentConnectRows({
       : savedEnvironment
         ? presentSavedCloudEnvironmentConnection(savedEnvironment.connection)
         : null;
-    // A connected machine's own config (with the user's icon pick) wins. Before
-    // that, the relay's health probe already carries the server's descriptor, so
-    // a machine can wear its detected glyph before this device ever connects.
+    // Connected config preserves icon overrides; relay descriptors supply the glyph before connection.
     const relayStatus = status === undefined ? null : Option.getOrNull(status);
     const descriptor = relayStatus?.descriptor;
-    // Why the relay reports this environment offline, when it knows more than
-    // "no answer". Shown for saved and unsaved rows alike.
     const offlineReason =
       availability === "offline" && relayStatus !== null
         ? relayOfflineReasonMessage(relayStatus)

@@ -8,12 +8,7 @@ export interface PasskeyCeremonyContext {
   readonly nativeWindowHandle: Buffer;
 }
 
-/**
- * One platform's way to create and use passkeys for a preview page. The
- * bridge in `Passkeys.ts` owns everything platform-neutral: which frame may
- * ask, focus, one ceremony at a time, the deadline, and dropping results for
- * a page that navigated away. A backend only talks to the platform.
- */
+/** The bridge owns origin, focus, concurrency, deadlines, and navigation checks; backends only invoke the platform. */
 export interface PasskeyBackend {
   readonly create: (
     publicKey: PublicKeyCredentialCreationOptions,

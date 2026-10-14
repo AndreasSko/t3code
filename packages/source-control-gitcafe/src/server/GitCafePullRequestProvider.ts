@@ -44,7 +44,6 @@ const CAPABILITIES: PullRequestCapabilities = {
 };
 
 const PAGE_SIZE = 100;
-/** Conversation pages read before the list is reported as truncated. */
 const MAX_PAGES = 10;
 /** GitCafe's cap on paths per `/diff-files` read, and so one diff page. */
 const DIFF_FILES_BATCH = 64;
@@ -61,15 +60,10 @@ const chunk = <A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>
     items.slice(index * size, (index + 1) * size),
   );
 
-/** Files whose hunks GitCafe can return; binary and oversized ones are listed as they are. */
 const detailablePaths = (files: ReadonlyArray<Json.GitCafeDiffFile>) =>
   files.filter((file) => !file.binary && !file.tooLarge).map((file) => file.path);
 
-/**
- * A strategy GitCafe lists, the viewer may use, and no blocker names. A blocker without
- * strategies (changes requested, a lock) still leaves Merge offered, so pressing it shows
- * GitCafe's own reason.
- */
+/** Offer listed, permitted strategies; blockers without strategy lists stay for the host to explain on merge. */
 const mergeStrategyOpen = (status: typeof Status.Type, strategy: string) =>
   status.merge.permitted !== false &&
   status.merge.strategies.includes(strategy) &&
@@ -133,13 +127,11 @@ const MergeOutcome = Schema.Struct({
   reason: Schema.optional(Schema.String),
 });
 const StackOutcome = Schema.Struct({ id: Schema.String, state: Schema.String });
-/** Where a stack operation stopped short; anything else is underway or done. */
 const FAILED_STACK_STATES = new Set(["failed", "stopped", "cancelled", "reconciliation_required"]);
 
 type PullRef = ProviderRepositoryRef & { readonly number: number };
 type Paged<A> = { readonly items: ReadonlyArray<A>; readonly next: string | null };
 
-/** The heads a reader saw are still every unmerged layer the action moves. */
 function stackHeadsCurrent(
   stack: Json.GitCafeStack,
   input: { readonly number: number; readonly merge: boolean },
@@ -163,7 +155,6 @@ function stackHeadsCurrent(
   );
 }
 
-/** Lays the detailed files over the structural page, keeping its order and anything omitted. */
 const withDetails = (
   files: ReadonlyArray<Json.GitCafeDiffFile>,
   details: ReadonlyArray<Json.GitCafeDiffFile>,
@@ -185,7 +176,6 @@ export const make = Effect.gen(function* () {
       ...(cause === undefined ? {} : { cause }),
     });
 
-  /** The repository's API root, refused before anything is sent for a host GitCafe is not on. */
   const repositoryPath = (
     operation: string,
     input: ProviderRepositoryRef,
@@ -276,10 +266,7 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  /**
-   * The stack a pull request belongs to, with each unmerged layer's head. GitCafe's stack lists no
-   * heads, and they are what a land or restack is fenced on, so each open layer's pull is read.
-   */
+  /** Read each unmerged pull's head because stack responses omit the heads needed for land/restack fencing. */
   const readStack = Effect.fn("GitCafePullRequestProvider.readStack")(function* (
     operation: string,
     input: PullRef,
@@ -377,11 +364,7 @@ export const make = Effect.gen(function* () {
       return yield* failure(operation, `GitCafe's stack operation ${outcome.state}.`);
   });
 
-  /**
-   * Added and deleted line totals and the file count. `/changes` lists files without counting
-   * lines, so the counts come from batched hunk reads, and a pull request past the cap reports
-   * none rather than paying for every file.
-   */
+  /** /changes omits line totals; bounded hunk batches supply them, otherwise leave them unknown. */
   const readLineStats = Effect.fn("GitCafePullRequestProvider.readLineStats")(function* (
     input: PullRef,
     version: number,
@@ -492,9 +475,7 @@ export const make = Effect.gen(function* () {
         const involved = input.involvement === "authored" || input.involvement === "reviewing";
         let actorId: string | undefined;
         if (involved) {
-          // A host narrows as far as it can: when the actor list can't be read, the listing comes
-          // back unnarrowed and the page's own involvement filter does the rest. A refused token
-          // or a rate limit still fails, since the service acts on those for the whole host.
+          // Actor-read failures leave involvement filtering to the client; auth/rate limits still fail the host read.
           const options = yield* read(
             "listChangeRequests",
             input,

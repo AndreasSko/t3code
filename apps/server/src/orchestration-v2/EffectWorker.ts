@@ -39,13 +39,8 @@ export class OrchestrationEffectExecutionError extends Schema.TaggedError<Orches
 ) {}
 
 /**
- * Pure interrupt races with hard process teardown or a dead session produce
- * "not active" protocol errors. Retrying those only delays recovery.
- *
- * Do not apply this to `provider-turn.restart`: that compound effect also runs
- * detach and start. Swallowing a start failure that happens to mention
- * "is not active" would drop the outbox item without ever starting the
- * replacement turn.
+ * Interrupt errors indicating an inactive or already-stopping session are terminal; retrying delays recovery.
+ * Restart also detaches and starts, so swallowing its start failure could lose the replacement turn.
  */
 export function isNonRetryableProviderTurnControlFailure(
   effectType: string,
@@ -315,11 +310,7 @@ export const layerExecutor: Layer.Layer<
                           : { senderThreadId: message.senderThreadId }),
                       })
                       .pipe(
-                        // The turn that just completed leaves no further retry
-                        // target once the instance is off: the completed turn
-                        // stands as the thread's result instead of going
-                        // through the outbox's bounded retry on a refusal that
-                        // retrying cannot change.
+                        // A disabled instance cannot retry this follow-up; keep the completed turn's result.
                         Effect.catchTags({
                           ThreadManagementProviderInstanceDisabledError: (disabledError) =>
                             Effect.logInfo(
@@ -704,10 +695,8 @@ export const layerWithOptions = (
             return false;
           }
           const effect = claimed.value;
-          // Arm the process-local cancellation signal before re-reading durable
-          // state. A cancellation that commits after the row read has begun can
-          // then still win the execution race instead of falling into the gap
-          // between the read and signal registration.
+          // Register cancellation before reading durable state so a cancellation
+          // committed during the read can still prevent execution.
           const cancellation = outbox
             .awaitCancellation(effect.id)
             .pipe(Effect.as("cancelled" as const));
@@ -724,10 +713,8 @@ export const layerWithOptions = (
               ),
               Duration.millis(Math.max(0, claimedAt - eligibleAt)),
             );
-            // Cancellation can commit after the durable claim but before the
-            // process-local Deferred is registered. Re-read the authoritative row
-            // once before starting external work; later cancellations use the
-            // Deferred raced below.
+            // Recheck durable cancellation after registering the Deferred to cover
+            // cancellations committed between claiming the row and signal registration.
             if (yield* wasCancelled(effect.id)) {
               yield* outbox.clearCancellation(effect.id);
               return true;

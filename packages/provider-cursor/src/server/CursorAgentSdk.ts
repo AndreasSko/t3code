@@ -298,27 +298,15 @@ function makeCursorAgentSdkProtocolLogger(input: {
       .pipe(Effect.ignore);
 }
 
-/**
- * Runs agents through the Cursor SDK, logging every frame to the protocol
- * logger chosen for each opened agent. The live layer writes the native
- * provider event log; the replay recorder turns the same frames into a
- * transcript.
- */
+/** Logs SDK frames through the per-agent logger, shared by live logs and replay recording. */
 export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(function* (
   protocolLoggerFor: (input: CursorAgentSdkOpenInput) => CursorAgentSdkProtocolLogger | undefined,
 ) {
   const { Agent, createAgentPlatform } = yield* CursorSdk.CursorSdk;
 
   /**
-   * The Cursor SDK decides once per process whether local sandboxing works, and
-   * caches the answer the first time any run starts. Only sandboxed runs point
-   * it at its `cursorsandbox` helper first, so after an unsandboxed (Full access)
-   * run it caches "unsupported" and rejects every later sandboxed run until the
-   * server restarts. Warming a bare sandboxed executor before the first
-   * unsandboxed agent opens lets the SDK find the helper and cache the real
-   * answer. Warming is best effort: on a machine without sandbox support it
-   * fails, the SDK caches "unsupported", and sandboxed runs report that as
-   * before.
+   * An unsandboxed first run makes the SDK cache sandboxing as unsupported process-wide.
+   * Best-effort sandbox warmup discovers cursorsandbox before that cache can be poisoned.
    */
   const sandboxSupportPrimeStarted = yield* Ref.make(false);
   const sandboxSupportPrimed = yield* Deferred.make<void>();

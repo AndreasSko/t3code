@@ -18,11 +18,7 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
-/**
- * Agents and terminals share this slice. It sits in app.slice next to the
- * server's own unit, so the server's CPUWeight and IOWeight compete with the
- * agents directly.
- */
+/** Shares app.slice with the server so the server's CPUWeight and IOWeight compete directly. */
 const AGENT_SLICE = "app-t3code-agents.slice";
 
 /**
@@ -39,12 +35,8 @@ export function ownedAgentSlice(stateDir: string): string {
 
 const GiB = 1024 ** 3;
 
-/**
- * Memory limits for the agents slice. Agents together leave about 6 GB free
- * before they are throttled and 4 GB before the kernel kills one, so the
- * server, sshd, and tailscaled keep working. Small machines still give agents
- * at least half of RAM before throttling and three quarters before a kill.
- */
+/** Leave 6 GiB before throttling and 4 GiB before an OOM kill for the server, sshd, and tailscaled.
+ * Small machines give agents at least half of RAM before throttling and three quarters before a kill. */
 export function agentSliceMemoryLimits(totalBytes: number) {
   return {
     high: Math.max(totalBytes - 6 * GiB, Math.floor(totalBytes / 2)),
@@ -62,12 +54,7 @@ export interface ScopeState {
   readonly populated: boolean | undefined;
 }
 
-/**
- * Reads one scope as the server sees it right after the agent process exits.
- * Our pipe can close before systemd handles the kill, so a scope that is
- * still stopping, is empty, or already counted an OOM kill is "stopping":
- * systemd records `Result=oom-kill` for it in a moment.
- */
+/** Pipes can close before systemd records `Result=oom-kill`; treat pending kills as stopping. */
 export function classifyScope(state: ScopeState): "oom-killed" | "gone" | "running" | "stopping" {
   if (state.result === "oom-kill") return "oom-killed";
   if (
@@ -295,8 +282,6 @@ export const make = Effect.gen(function* () {
       yield* forget(systemctl, tracked.unit);
     });
 
-  // Records a thread's newest scope, or forgets the thread when `unit` is
-  // undefined. The replaced scope has its failed state cleared.
   const track = (systemctl: string, threadId: string, unit: string | undefined) =>
     Effect.gen(function* () {
       const previous = scopeByThread.get(threadId);

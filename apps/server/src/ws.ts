@@ -278,7 +278,6 @@ type EditorDiscovery = Pick<
   "resolveAvailableEditors" | "resolveFileManagerRevealKind"
 >;
 
-// The config fields that follow from which editors are installed.
 const resolveEditorConfig = <E, R>(
   availableEditors: ReadonlyArray<EditorId>,
   revealKind: Effect.Effect<FileManagerRevealKind | undefined, E, R>,
@@ -298,14 +297,8 @@ const resolveEditorConfig = <E, R>(
     };
   });
 
-/**
- * Live config updates that follow a snapshot of `config`. A busy host can
- * outlast the snapshot's discovery timeouts, which send no editors, or no
- * reveal kind for the file manager. The scan keeps running, so once it lands
- * this resends the config: clients replace theirs on any snapshot. The resent
- * config is folded from the live updates already sent, so it cannot roll back
- * a change that landed while the scan ran.
- */
+/** Resend config when discovery outlasts the snapshot timeout. Fold in already-sent
+ * live updates so late discovery cannot roll back concurrent changes. */
 export const withLateEditorConfig = <E, R>(
   config: ClientServerConfig,
   liveUpdates: Stream.Stream<ServerConfigStreamEvent, E, R>,
@@ -549,15 +542,11 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
-// When a resuming client's cursor is more than this many events behind the
-// current head, skip the per-event catch-up replay and send a fresh shell
-// snapshot instead. Replaying each intervening event costs a shell refetch;
-// past this gap a single O(active-threads) snapshot is cheaper and bounded.
-// Matches the event store's default page size (DEFAULT_READ_FROM_SEQUENCE_LIMIT).
+// Replaying shell events costs a refetch per event; beyond this gap, one bounded
+// snapshot is cheaper. Matches DEFAULT_READ_FROM_SEQUENCE_LIMIT.
 const SHELL_RESUME_MAX_GAP = 1_000;
-// Row count alone does not bound replay memory: a few events with large tool
-// payloads can decode to gigabytes. Before replaying, sum the serialized
-// payload bytes of the range in SQL and reset with a snapshot past this budget.
+// A few large events can exhaust memory despite a small row count; bound serialized
+// payload bytes in SQL before decoding the replay.
 const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
 
 function toAuthAccessStreamEvent(
@@ -623,9 +612,7 @@ export function shouldUseBoundedThreadSnapshot(input: {
   return input.acceptBoundedSnapshot === true;
 }
 
-// Optional client identity announced on the /ws upgrade URL next to wsTicket.
-// Lenient by design: absent or malformed values degrade to {} so a connection
-// never fails over attribution metadata.
+// Malformed or absent attribution metadata must never fail a WebSocket connection.
 function readClientConnectionOrigin(
   request: HttpServerRequest.HttpServerRequest,
 ): OrchestrationClientOrigin {
@@ -724,11 +711,8 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
       Effect.forEach(
         projects,
         (project) =>
-          // Non-blocking: emit with cached identity (or null) and schedule
-          // background resolution. subscribeChanges is attached before
-          // loadSnapshot, so later identity completions push refreshed
-          // shells for multi-env grouping without blocking the initial
-          // snapshot or completion marker on slow git probes.
+          // Cached identity keeps the initial snapshot off slow git probes. The pre-attached
+          // subscription catches background completions for cross-environment grouping.
           projectEnrichment.getAvailable(project.workspaceRoot).pipe(
             Effect.map((enrichment) => ({
               project: {
@@ -869,13 +853,8 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
       );
     });
 
-    // When the client already holds the projection (cached, or loaded over
-    // HTTP) it passes that snapshot's sequence, and we resume by replaying
-    // persisted events after it instead of re-sending the (potentially
-    // multi-KB) snapshot frame over the socket. The event sink subscribes
-    // to live events before reading the persisted tail, so no event
-    // published during the replay window is lost; overlapping events are
-    // deduped by sequence on the client.
+    // Resume from the client's sequence without resending its snapshot. Subscribe before
+    // reading the persisted tail; client sequence deduplication handles replay/live overlap.
     if (input.afterSequence !== undefined) {
       const highWater = yield* applicationEvents.latestAgentSequence(input.threadId).pipe(
         Effect.mapError(
@@ -1018,10 +997,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       });
     });
 
-    // Coalescing makes each per-thread shell read represent every event
-    // for that thread in the current window; reading only the affected
-    // threads keeps the cost of a busy stream independent of how many
-    // threads exist overall.
+    // Coalesce reads per affected thread so busy-stream cost stays independent of total thread count.
     const projectShellItems = Effect.fn("ws.orchestrationV2.projectShellItems")(function* (
       events: ReadonlyArray<ShellApplicationEvent>,
     ) {
@@ -1060,10 +1036,8 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const enrichmentRefreshes = Stream.fromSubscription(enrichmentChanges).pipe(
       Stream.filter((change) => change.repositoryIdentityResolved),
       Stream.groupedWithin(64, Duration.millis(25)),
-      // Build the refresh from the identities the changes carry. Re-enriching
-      // every project here re-requested each expired root, whose resolution
-      // published again, so one expiry kept every subscriber reloading every
-      // project's metadata once a minute.
+      // Use carried identities; re-enriching expired roots triggers resolution publishes
+      // that would feed back into repeated metadata refreshes.
       Stream.mapEffect((changes) =>
         Effect.gen(function* () {
           const identities = new Map(
@@ -1092,22 +1066,8 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       ),
     );
 
-    // Always attach the enrichment subscription before the first load so
-    // completions that race HTTP snapshot fetch still push a refresh.
-    // When the client already holds a shell snapshot (cached, or loaded
-    // over HTTP) it passes that snapshot's sequence. We still emit one
-    // compact metadata refresh up front: getAvailable may have been cold on the
-    // HTTP path (null identity), and enrichment PubSub events published
-    // before this subscribe attached are dropped. Rehydrating here fills
-    // repositoryIdentity for cross-environment project grouping even on
-    // afterSequence resumes. Application events after the sequence still
-    // stream as deltas; overlapping events are deduped by sequence on the
-    // client.
-    //
-    // After the unmarked authoritative frame, emit a same-sequence
-    // metadata-only frame for roots that already resolved successfully
-    // (including cached null). Cold/failed roots stay unmarked and use
-    // the PubSub enrichment path when they complete later.
+    // Subscribe before loading to catch enrichment races; always send initial metadata on resume
+    // because HTTP snapshots may predate identity resolution and PubSub does not replay.
     const completionMarker =
       input.requestCompletionMarker === true
         ? Stream.make({ kind: "synchronized" as const })
@@ -1225,9 +1185,7 @@ const layerWsRpc = (
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
-      // Client-origin attribution (#7774): every thread/turn the connecting
-      // client starts is credited to its surface + app version. Best-effort:
-      // attribution must never fail the user's command.
+      // Client attribution is best-effort and must never fail the user's command.
       const originProps = clientAnalyticsProps;
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
         switch (command.type) {
@@ -1722,8 +1680,7 @@ const layerWsRpc = (
             issues: keybindingsConfig.issues,
             providers,
             ...editorConfig,
-            // Same discovery-with-timeout treatment as editors: a slow probe
-            // must not stall server.getConfig, so it degrades to no targets.
+            // Slow discovery must not stall server.getConfig; timeouts yield no targets.
             remoteOpenTargets: yield* resolveAvailableEditorsForConfig(
               remoteOpenTargets.resolveTargets(),
             ),
@@ -1854,7 +1811,6 @@ const layerWsRpc = (
             Effect.andThen(
               startup
                 .enqueueCommand(
-                  // A retry also restarts the preparation work the launch owns.
                   (command.type === "prepared-run.retry"
                     ? threadLaunch.retryPreparation(command)
                     : ThreadMessageIntake.dispatchCommand(
@@ -1939,8 +1895,7 @@ const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(
-              // Pre-pagination clients still call this compatibility endpoint.
-              // Keep stale clients from materializing an unbounded transcript.
+              // Compatibility clients must not materialize an unbounded transcript.
               threadManagement
                 .getThreadSnapshotWindow(input.threadId, {
                   rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
@@ -2224,10 +2179,8 @@ const layerWsRpc = (
                 { concurrency: "unbounded", discard: true },
               );
             }
-            // An untargeted refresh is "re-read everything's status", which
-            // includes quota from configured usage-limit sources. Awaited,
-            // not forked: the RPC scope closes on return and would
-            // interrupt a fork before the hub answered.
+            // Await the usage-source refresh; returning closes the RPC scope and would
+            // interrupt a fork before the hub answers.
             if (input.instanceId === undefined) {
               yield* usageLimitSources.refresh;
             }
@@ -2998,9 +2951,7 @@ const layerWsRpc = (
                 })),
               );
               const providerStatuses = Stream.zipLatestWith(
-                // The registry stream carries changes only. Seed it with the current
-                // providers so a source refresh that lands before any provider change
-                // still pairs up and reaches the client.
+                // Seed the changes-only stream so usage sources can emit before a provider change.
                 Stream.concat(
                   Stream.fromEffect(providerRegistry.getProviders),
                   providerRegistry.streamChanges,
@@ -3015,10 +2966,8 @@ const layerWsRpc = (
                 (providers, sources) =>
                   usageLimitsCommand ? withUsageLimitsCommands(providers, sources) : providers,
               ).pipe(
-                // Both sides replay their current value, so the first pairing normally
-                // repeats the snapshot the client already holds. Compare against that
-                // snapshot rather than dropping blindly: a refresh that landed between
-                // the snapshot and the subscription still goes out.
+                // Suppress the replayed snapshot while preserving updates that landed
+                // between the config read and subscription.
                 (updates) => Stream.concat(rpcInitialItems([config.providers]), updates),
                 Stream.changesWith(
                   (previous, next) => JSON.stringify(previous) === JSON.stringify(next),
@@ -3031,13 +2980,8 @@ const layerWsRpc = (
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
-              // The only source of published themes: the stream emits the
-              // current set before any change, so the snapshot carrying it too
-              // would just send every client the same array twice per connect.
-              // Gated on the subscriber's capability flag because an
-              // already-shipped client decodes this stream against the old
-              // event union and its whole config subscription dies on an
-              // unknown member.
+              // Themes replay on this stream, so omit them from the config snapshot. Gate
+              // on capability because clients with older event unions reject unknown members.
               const environmentThemeUpdates =
                 input.environmentThemes === true
                   ? environmentTheme.streamChanges.pipe(
@@ -3153,9 +3097,8 @@ const layerWsRpc = (
     }),
   );
 
-// A defect in a handler's effect fails only its own request. RpcServer's default
-// sends a socket-level Defect frame instead, and the client ends every pending
-// request on the socket with it. DefectReporter logs these defects.
+// Socket-level Defect frames fail every pending request; isolate handler defects
+// to their own request and let DefectReporter log them.
 export const WS_RPC_SERVER_OPTIONS = {
   disableTracing: true,
   disableFatalDefects: true,

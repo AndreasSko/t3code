@@ -135,8 +135,7 @@ export function appendReviewCommentToDraft(input: {
     return;
   }
   if (input.attachments && input.attachments.length > 0) {
-    // Capped: a review comment is new content, not a send-failure restore, so
-    // it must not push the draft over the send limit. Overflow is released.
+    // Review comments are new content, so enforce the send cap rather than restore-path overflow.
     const rejectedCount = appendComposerDraftAttachments(threadKey, input.attachments, {
       appendReference: true,
     });
@@ -148,13 +147,7 @@ export function appendReviewCommentToDraft(input: {
   }
 }
 
-/**
- * Which draft the composer is editing right now. While a queued message is
- * being edited the composer is pointed at that edit's own draft, so typing,
- * attaching, and pasting never touch the user's draft for the thread.
- * Resolved per call rather than captured, so a callback created before the
- * edit began still writes to the right place.
- */
+/** Resolve per call so callbacks created before queued-edit mode still target its draft, not the user's own. */
 function activeComposerDraftKey(thread: {
   readonly environmentId: EnvironmentId;
   readonly id: ThreadId;
@@ -257,10 +250,7 @@ export function useThreadComposerState() {
   const selectedThreadMessages = selectedThreadProjection?.projection.messages;
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
   const selectedThreadNodes = selectedThreadProjection?.projection.nodes;
-  // A thread whose creation has not delivered its turn yet: the prompt only
-  // exists in the outbox, so it is appended to whatever the server has. The
-  // detail is usually present but empty during a worktree checkout, so this
-  // cannot be an either/or with the loaded messages.
+  // Checkout can yield empty detail before the prompt; append the outbox creation until its message arrives.
   const pendingCreationMessage = selectedThreadCreation?.message ?? null;
   const selectedThreadFeed = useMemo(() => {
     const pendingCreation =
@@ -354,9 +344,7 @@ export function useThreadComposerState() {
         selectedDraft?.interactionMode ?? selectedThread.interactionMode,
       )
     : null;
-  // Whether the model picker may leave this thread's provider. Derived here
-  // because the projection already drives this hook; the composer only needs
-  // the answer, not a subscription to every projection update.
+  // Reuse this hook's projection so the composer does not subscribe to every projection update.
   const canSwitchThreadProvider = useMemo(
     () =>
       threadAllowsProviderSwitch({
@@ -439,9 +427,7 @@ export function useThreadComposerState() {
     [selectedThreadProjection],
   );
 
-  // The run can start, or be cancelled from another client, while its message
-  // is open in the composer. Leave edit mode rather than saving into a run the
-  // server will refuse, and keep whatever was typed if there is room for it.
+  // Runs can start or be canceled on another client; preserve edits instead of saving into a run the server rejects.
   const selectedThreadRuns = selectedThreadProjection?.projection.runs;
   const editedRunId = queuedRunEdit?.runId ?? null;
   useEffect(() => {
@@ -572,16 +558,11 @@ export function useThreadComposerState() {
       if (!selectedThreadShell) {
         return null;
       }
-      // The server has not created this thread yet. Queuing a follow-up against
-      // its id would strand the message: if the creation is rejected the thread
-      // never appears and the drain drops the orphan. The composer disables its
-      // send button too; this guard also covers the editor's submit key.
+      // Pending creation can fail and leave follow-ups orphaned; guard keyboard submit as well as the send button.
       if (selectedThreadCreation !== null) {
         return null;
       }
 
-      // Editing a queued message repurposes the composer: the send button saves
-      // the edit in place instead of enqueuing a new message.
       const editKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
       if (getQueuedRunEdit(editKey) !== null) {
         await saveQueuedRunEdit();
@@ -607,10 +588,7 @@ export function useThreadComposerState() {
       if (text.length === 0 && attachments.length === 0) {
         return null;
       }
-      // A send-failure restore appends with allowOverflow so it never drops the
-      // user's files, which can leave the draft over the cap. Sending it anyway
-      // would enqueue a message that outbox recovery rejects forever, so block
-      // here until the user removes attachments.
+      // Restore paths can exceed the cap; block sending until trimmed to avoid an endless send/recovery cycle.
       if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
         Alert.alert(
           "Too many attachments",
@@ -682,20 +660,13 @@ export function useThreadComposerState() {
         return null;
       }
 
-      // Resolved here rather than at drain time: the outbox can deliver minutes
-      // later, and the choice belongs to the moment the user pressed send.
-      // Steering travels as "auto" so a turn that ends in the meantime degrades
-      // to a queued run on the server instead of failing the delivery and
-      // bouncing the message back into the draft.
+      // Capture follow-up intent at send time; "auto" degrades to queue if the live turn ends before delivery.
       const followUpAction = resolveComposerDispatchMode({
         running: activeThreadBusy && canSteerActiveTurn,
         alternateModifier: followUpOverride !== undefined && followUpOverride !== followUpBehavior,
         activeTurnDefault: followUpBehavior,
       });
-      // A send while the worktree is still being set up waits behind that setup,
-      // so the server can hold it if the setup ends without a worktree.
-      // Before detail loads, the shell's latest run can be a queued follow-up
-      // while its runtime still reports the setup.
+      // Setup can outlive the shell's latest run; queue behind it so failed checkout can hold follow-ups.
       const setupRunning = [selectedThreadActivityRun?.status, selectedThreadRuntime?.status].some(
         (status) => status === "preparing" || status === "starting",
       );
@@ -709,13 +680,8 @@ export function useThreadComposerState() {
 
       const metadata = makeQueuedMessageMetadata();
       const messageId = MessageId.make(metadata.messageId);
-      // A new send supersedes the reason the previous one bounced back.
       clearThreadComposerError(threadKey);
-      // Enqueue publishes the queued atom synchronously (the durable write
-      // happens behind it), so clearing the draft here gives send feedback on
-      // the tap frame instead of after file I/O. If the write fails the message
-      // is rolled out of the queue and the content is merged back into the
-      // draft, preserving anything typed since.
+      // Optimistic enqueue gives immediate feedback; failed writes merge content back without replacing newer typing.
       const enqueuePromise = enqueueThreadOutboxMessage({
         environmentId: selectedThreadShell.environmentId,
         threadId: selectedThreadShell.id,
@@ -737,10 +703,7 @@ export function useThreadComposerState() {
       enqueuePromise.then(
         () => scheduleUnusedComposerAttachmentCleanup(attachments),
         (error: unknown) => {
-          // Restore text via merge (idempotent) but attachments via the uncapped
-          // append: the merge path slots existing attachments first and truncates
-          // at the send limit, which would silently drop this message's images if
-          // the user attached new ones while the write was in flight.
+          // Restore attachments uncapped: the merge path could truncate this message's files after concurrent additions.
           void mergeComposerDraftContent(threadKey, {
             text,
             context: draft.context,
@@ -826,7 +789,6 @@ export function useThreadComposerState() {
 
     const threadKey = activeComposerDraftKey(selectedThreadShell);
     const insertion = captureComposerDraftInsertion(threadKey);
-    // pickComposerFiles clamps the advertised limit to the contract maximum.
     const result = await pickComposerFiles({
       existingCount: countComposerDraftAttachmentsAfterSelection(threadKey, insertion),
       maxBytes,
@@ -994,9 +956,7 @@ export function useThreadComposerState() {
           ),
           maxBytes: clampFileAttachmentUploadBytes(advertisedMax),
         });
-        // The chip is how a folded paste stays visible: without it the attachment is in the
-        // draft but nothing in the composer says so until the message is sent. Web folds
-        // through its ordinary attach path, which always writes a reference; match that.
+        // Folded pastes need a chip reference to remain visible before sending.
         const rejectedCount = appendComposerDraftAttachments(threadKey, [attachment], {
           appendReference: true,
           insertion,

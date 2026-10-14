@@ -28,7 +28,7 @@ import * as ConnectionResolver from "./resolver.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import { connectionRoutes, hasRelayRoute, routeEntry, routeHttpBaseUrl } from "./routes.ts";
 
-// A v1 host restarting into v2 runs migrations before its descriptor answers again.
+// Allow descriptor recovery to wait for migrations during a protocol upgrade.
 const OUTDATED_HOST_RESTART_TIMEOUT = Duration.minutes(4);
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
@@ -42,14 +42,7 @@ export class OutdatedHostUpdateError extends Schema.TaggedError<OutdatedHostUpda
 
 export type OutdatedHostUpdateStage = "downloading" | "installing" | "resuming";
 
-/**
- * Updates a host whose orchestration protocol is too old for this client.
- *
- * The normal session refuses to open against such a host, so this opens a
- * bare socket and calls only the self-update RPCs, whose wire shape has not
- * changed across protocol versions. Once the host relaunches on a compatible
- * protocol the environment is switched back on and connects normally.
- */
+/** Uses a bare socket for stable self-update RPCs when normal protocol negotiation refuses the host. */
 export const updateOutdatedHost = Effect.fn("clientRuntime.connection.updateOutdatedHost")(
   function* (
     environmentId: EnvironmentId,
@@ -64,8 +57,6 @@ export const updateOutdatedHost = Effect.fn("clientRuntime.connection.updateOutd
     if (entry === undefined) {
       return yield* new EnvironmentRegistry.EnvironmentNotRegisteredError({ environmentId });
     }
-    // An outdated server cannot connect normally, so the routes are tried in
-    // order here. The first that authorizes carries the update.
     const { prepared, descriptor } = yield* Effect.firstSuccessOf(
       connectionRoutes(entry).map((route) => resolver.prepareForUpdate(routeEntry(entry, route))),
     );

@@ -120,13 +120,8 @@ export type BrowserDefaultSettings = Pick<
   | "browserAutoShowFloatingPreview"
 >;
 
-/**
- * True when two viewport settings describe the same viewport.
- *
- * The setting is a tagged union rather than a scalar, so identity comparison
- * reports every stored viewport as changed — including one that matches the
- * default.
- */
+/** Compare viewport values structurally; tagged-union identity marks even
+ * a stored default viewport as changed. */
 function isSamePreviewViewport(
   left: PreviewViewportSetting,
   right: PreviewViewportSetting,
@@ -271,10 +266,6 @@ export function buildProviderInstanceUpdatePatch(input: {
       : {}),
   };
 }
-
-// ── Background-activity interval helpers ─────────────────────────────
-// Shared by the General panel's interval rows and the Providers panel's
-// health-check row.
 
 export const PROVIDER_HEALTH_INTERVAL_STEP_SECONDS = 30;
 

@@ -99,7 +99,6 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
   );
 }
 
-/** Live sessions keep their cwd even when no turn is currently running. */
 export function storageCleanupThreadIdle(thread: OrchestrationV2ThreadShell, now: number): boolean {
   return (
     thread.branch !== null &&
@@ -130,11 +129,7 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
   );
 }
 
-/**
- * Whether the host's pull request proves this worktree's head was merged. A
- * squash or rebase merge leaves the head outside the default branch, so the
- * merged pull request then has to name this exact commit.
- */
+/** Squash and rebase merges need an exact PR head match because the commit may not be on the default branch. */
 export function storageCleanupPullRequestMerged(
   pullRequest: Pick<
     GitManager.GitBranchPullRequest,
@@ -278,9 +273,7 @@ const make = Effect.gen(function* () {
     return false;
   });
 
-  // Whether cwd stopped being a checkout of this branch. Two small Git reads,
-  // since every worktree in a sweep is asked; statusDetailsLocal also diffs and
-  // counts.
+  // Avoid statusDetailsLocal's diffs and counts when checking every worktree in a sweep.
   const branchChanged = Effect.fn("StorageCleanup.branchChanged")(function* (
     cwd: string,
     branch: string | null,
@@ -319,7 +312,6 @@ const make = Effect.gen(function* () {
     });
     const index = yield* read(["rev-parse", "--git-path", "index"]);
     if (index === null) return true;
-    // Another Git process is writing to this checkout.
     if (yield* fs.exists(`${path.resolve(cwd, index.stdout.trim())}.lock`))
       return yield* failure(
         "Git index is locked. Status will resume when the index lock is removed.",
@@ -330,8 +322,7 @@ const make = Effect.gen(function* () {
     if (head === null) return true;
     const ref = head.exitCode === 0 ? head.stdout.trim() : "";
     const name = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length).trim() : null;
-    // Status output writes a detached HEAD as "(detached)", so a branch named
-    // with a leading "(" has always been read as one.
+    // Treat leading "(" as detached to match status output's "(detached)" convention.
     return (name?.startsWith("(") ? null : name) !== branch;
   });
 
@@ -598,7 +589,6 @@ const make = Effect.gen(function* () {
             return "provider session is still open";
           return null;
         });
-        // Most cancelled removals are caught here, before the worktree is walked.
         const blocked = yield* blockedSinceCheck();
         if (blocked !== null) return keep(blocked);
         const bytes = yield* measureWorktree(worktreePath);

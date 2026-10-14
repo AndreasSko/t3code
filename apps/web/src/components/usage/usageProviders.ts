@@ -8,11 +8,7 @@ type UsageProviderPresentation = {
   readonly driverKind: ProviderDriverKind;
 };
 
-/**
- * Exhaustive presentation for providers supported by the usage contract.
- * Declaration order is reused by every chart and table, so adding a provider
- * only requires its contract support and one entry here.
- */
+/** Declaration order is shared by charts and tables. */
 export const PROVIDER_PRESENTATION = {
   codex: {
     label: "Codex",

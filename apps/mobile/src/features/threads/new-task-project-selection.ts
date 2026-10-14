@@ -43,15 +43,7 @@ function getOnlySelectableProject(
   return onlyScope?.representative ?? null;
 }
 
-/**
- * Picks the project on a target environment that corresponds to the project
- * currently selected in the new-task flow, so switching computers follows the
- * same repo. Repository identity is preferred; projects without one (e.g. not
- * yet indexed) fall back to workspace basename, then title. When nothing
- * matches, the first project on the target stands in — the same fallback the
- * render path applies when no key is selected — so the draft always has a
- * concrete key to carry over to.
- */
+/** Matches repository identity, then unknown-identity basename/title; a first-project fallback keeps a draft key. */
 export function resolveEnvironmentProjectMatch(
   projectsOnTarget: ReadonlyArray<EnvironmentProject>,
   selectedProject: EnvironmentProject | null,
@@ -59,12 +51,9 @@ export function resolveEnvironmentProjectMatch(
   const repositoryKey = selectedProject?.repositoryIdentity
     ? repositoryGroupingKeyOf(selectedProject.repositoryIdentity)
     : null;
-  // `|| null` (not `??`): a pending-task placeholder project can have an empty
-  // workspaceRoot, and an "" basename would match nothing meaningful.
+  // Placeholder projects can have empty workspaceRoot; || excludes that meaningless basename.
   const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
-  // The weaker signals only apply where identity is unknown on at least one
-  // side; two known, different repositories never match on a shared basename
-  // or title (mirrors the environment list filter in the new-task flow).
+  // Known different repository identities must not match on a shared basename or title.
   const isKnownMismatch = (project: EnvironmentProject) => {
     const projectKey = project.repositoryIdentity
       ? repositoryGroupingKeyOf(project.repositoryIdentity)

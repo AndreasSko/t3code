@@ -1,20 +1,6 @@
 /**
- * PiRpc — stdio JSONL transport for the Pi coding agent's RPC mode.
- *
- * Spawns `pi --mode rpc` and speaks Pi's line-delimited JSON protocol:
- * requests go to stdin as `{"type": "...", "id": "..."}` records, responses
- * come back as `{"type": "response", "id": ..., "success": ...}` and are
- * correlated by `id`; every other stdout record is a session event and is
- * surfaced on the `events` queue in arrival order.
- *
- * Framing follows Pi's spec: LF-delimited only, with a trailing `\r`
- * stripped. Lines are split manually (never with `readline`, which also
- * splits on U+2028/U+2029 and would corrupt frames). Records that fail to
- * parse as JSON are dropped with a debug log rather than failing the
- * transport, so a chatty extension cannot take the session down.
- *
- * Used by `PiAdapterV2` for sessions and by `PiTextGeneration` /
- * `PiProvider` for ephemeral one-shot processes.
+ * Split only on LF: readline also splits U+2028/U+2029 and corrupts protocol frames.
+ * Ignore malformed JSON so a chatty extension cannot take down the transport.
  */
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -350,7 +336,6 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
     Effect.forkIn(scope),
   );
 
-  // Reader: decode stdout into LF-delimited JSON records.
   yield* Effect.gen(function* () {
     const frame = makeJsonlFramer();
     yield* child.stdout.pipe(
@@ -410,7 +395,6 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
     Effect.forkIn(scope),
   );
 
-  // Surface stderr as debug logs; pi reserves stdout for the protocol.
   yield* child.stderr.pipe(
     Stream.decodeText(),
     Stream.runForEach((chunk) =>

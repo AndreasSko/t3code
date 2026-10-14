@@ -58,11 +58,7 @@ function latestUserMessageAt(
   return null;
 }
 
-/**
- * Builds an optimistic thread shell from the detail projection for the window
- * where the shell list has not materialized the thread yet (e.g. a thread that
- * was just created from this device).
- */
+/** Bridge detail arrival before the shell list materializes a newly created thread. */
 function threadDetailToShell(
   environmentId: EnvironmentId,
   projection: OrchestrationV2ThreadProjection,

@@ -1,8 +1,3 @@
-/**
- * Azure DevOps's client definition. Browser- and React Native-safe.
- *
- * @module source-control-azure-devops/client/definition
- */
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
 import {

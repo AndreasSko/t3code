@@ -1,21 +1,11 @@
 export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
-/** The standard T3 Code palette, kept separate from the optional built-in theme library. */
 export const MOBILE_DEFAULT_THEME_ID = "t3-code";
 
-/**
- * Every palette the mobile app can render. Declared here so host-side tooling
- * (the app-store screenshot harness) can validate a requested theme without
- * importing React Native application code.
- */
+/** Host tooling can validate mobile theme ids without importing React Native. */
 export const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
 
-/**
- * Ids a theme may not take: the appearance keywords a stored preference uses,
- * every built-in, and the legacy aliases older saves still carry. Taking one
- * would either be shadowed by the built-in or capture clients that never chose
- * it, so the client library and the publish path both consult this set.
- */
+/** Reserved ids would shadow built-ins or capture saved preferences that never selected the theme. */
 export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "system",
   "light",
@@ -28,12 +18,8 @@ export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "t3-iris",
 ]);
 
-/**
- * Additionally closed to a machine publishing a theme: the mobile default is
- * not a web or desktop built-in, so a saved theme may legitimately carry that
- * id, but no client that follows published themes can resolve it -- publishing
- * it would report success and change nothing.
- */
+/** Saved themes may use the mobile default id, but clients following published themes
+ * cannot resolve it, so publishing it would succeed without changing their appearance. */
 export const UNPUBLISHABLE_THEME_IDS: ReadonlySet<string> = new Set([
   ...RESERVED_THEME_IDS,
   MOBILE_DEFAULT_THEME_ID,
@@ -43,7 +29,6 @@ export type BuiltInThemeId = (typeof BUILT_IN_THEME_IDS)[number];
 export type MobileThemeId = (typeof MOBILE_THEME_IDS)[number];
 export type ThemeAppearance = "light" | "dark";
 
-/** Product roles shared by web CSS, React Native tokens, and native surfaces. */
 export const THEME_COLOR_ROLES = [
   "canvas",
   "chrome",
@@ -125,15 +110,8 @@ export type ThemeDefinition = Readonly<{
   managed?: boolean;
 }>;
 
-/**
- * The palette T3 Code wears with no theme installed, captured from the app's
- * stock tokens (index.css) so a draft seeded from the default look paints the
- * pixels the user is already seeing. Alpha-bearing tokens are flattened over
- * their real backdrops (canvas, or the sidebar for its rows) because theme
- * colors are stored as opaque OKLCH tokens.
- * Search uses amber across built-ins to separate matches from accent-tinted
- * inline code. The current match uses a stronger gold with dark text.
- */
+/** Flatten stock alpha tokens over their actual backdrops because theme colors are opaque OKLCH.
+ * Amber search highlights distinguish matches from accent-tinted inline code. */
 export const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
   searchMatchBackground: "#ffde8b",
   searchMatchForeground: "#21180a",

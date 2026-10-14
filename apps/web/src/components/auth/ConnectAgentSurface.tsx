@@ -54,12 +54,6 @@ type Answer<A> =
   | { readonly kind: "redirect"; readonly url: string }
   | { readonly kind: "error"; readonly message: string };
 
-/**
- * Runs an approval call. The server validates the agent's request again on
- * every call and answers what the page asked for, a message to show, or a URL
- * the browser must follow (an approval, a denial, or a protocol error the
- * agent should receive).
- */
 function runApproval<A>(
   call: (
     client: Context.Service.Shape<typeof PrimaryEnvironmentHttpClient>,
@@ -87,12 +81,6 @@ function readAuthorizationRequest(): AuthMcpAuthorizationRequest {
   return Object.fromEntries(new URL(window.location.href).searchParams);
 }
 
-/**
- * /connect-agent: where an outside agent's MCP sign-in lands after the server
- * checks the request. The user picks the most the agent may allow, then
- * approves with a pairing code, or in one click when this browser is already
- * signed in to the environment as an administrator.
- */
 /**
  * Whether this browser's session may approve `access` without a pairing code.
  * A session may only grant access whose scopes it holds itself.

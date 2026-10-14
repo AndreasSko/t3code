@@ -82,5 +82,4 @@ export function duoViewSnaps(frames: readonly DuoRestFrame[], panel: 1 | 3) {
   return snaps;
 }
 
-/** Fold-specific candidates use the base viewer's nearest-family selection. */
 export const nearestDuoView = nearestDeviceView<DuoViewSnap>;

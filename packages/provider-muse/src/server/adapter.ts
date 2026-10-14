@@ -234,9 +234,8 @@ interface PendingRequest {
 }
 
 /**
- * One native subagent's child thread. Muse 1.4.4 cannot address an inline
- * child session (`session/read` and `view/subscribe` answer sessionNotFound),
- * so the thread carries the prompt, live status (on its root node) and result.
+ * Muse 1.4.4 rejects reads/subscriptions for inline child sessions with sessionNotFound,
+ * so child threads carry only the prompt, live root status, and result.
  */
 interface ChildContext {
   readonly childSessionId: string;
@@ -245,7 +244,6 @@ interface ChildContext {
   readonly rootNodeId: NodeId;
   readonly parentThreadId: ThreadId;
   status: OrchestrationV2TurnItemStatus;
-  /** The result shown in the child thread, once the subagent settled. */
   result?: string;
 }
 
@@ -347,7 +345,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       const seenTerminals = new Set<string>();
       // Workflows and subagents that outlive their turn, by item id, with the turn that owns them.
       const observedChildren = new Map<string, ActiveTurn>();
-      // Native subagents' child threads, by subagent item id.
       const childrenByItemId = new Map<string, ChildContext>();
       // Titles per native subagent and workflow child attempt; later revisions drop the label.
       const agentTitles = new Map<string, string>();
@@ -488,7 +485,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           },
         });
       });
-      /** One synthesized conversation row in a child thread: its prompt or its result. */
       const publishChildMessage = Effect.fnUntraced(function* (
         context: ChildContext,
         role: "user" | "assistant",
@@ -524,7 +520,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           turnItem: artifacts.turnItem,
         });
       });
-      /** Creates the child thread for a native subagent the first time its session id is known. */
       const ensureChildContext = Effect.fnUntraced(function* (
         turn: ActiveTurn,
         item: MuseItem,
@@ -571,10 +566,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         if (prompt) yield* publishChildMessage(context, "user", prompt, "prompt", time);
         return context;
       });
-      /**
-       * Shows a native subagent on its parent thread and mirrors it into a child
-       * thread the user can open, like Claude's and Codex's subagents.
-       */
       const publishNativeSubagent = Effect.fnUntraced(function* (
         turn: ActiveTurn,
         item: MuseItem,
@@ -690,7 +681,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           }
         }
       });
-      /** Lists running workflows and subagents on the thread, so it shows it still waits on them. */
       const syncBackground = Effect.fnUntraced(function* () {
         yield* updateThread({
           pendingBackgroundTasks: [...observedChildren].flatMap(([itemId, owner]) => {
@@ -815,11 +805,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         yield* emit({ type: "turn_item.updated", driver: MUSE_PROVIDER, turnItem });
         if (item.kind === "workflow") yield* publishWorkflowAgents(turn, item, base, status);
       });
-      /**
-       * Shows each workflow child as a native subagent under the workflow row. Muse
-       * reports only their status, label and outcome, not their conversations, so
-       * they get no child thread.
-       */
+      /** Muse reports workflow children without conversations, so they get no child thread. */
       const publishWorkflowAgents = Effect.fnUntraced(function* (
         turn: ActiveTurn,
         item: MuseItem,
@@ -1069,7 +1055,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       });
       const owns = (turn: ActiveTurn, turnId: string) =>
         turnId === turn.nativeId || turn.joined.has(turnId);
-      /** Sends T3's decision for a pending approval to Muse. */
       const decideApproval = Effect.fnUntraced(function* (
         entry: PendingRequest,
         decision: ProviderApprovalDecision | undefined,
@@ -1087,9 +1072,8 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         }).pipe(Effect.tapError(() => Effect.sync(() => delete entry.response)));
       });
       /**
-       * Shows a Muse approval or question as a T3 request. A workflow child's approval
-       * is runless: the turn that started the workflow may end long before the child
-       * asks, and T3 keeps a runless request on the thread until Muse settles it.
+       * Workflow children can request approval after their starting turn ends, so their
+       * requests stay runless on the thread until Muse settles them.
        */
       const publishRequest = Effect.fnUntraced(function* (native: PendingRequest["native"]) {
         const child = native.type === "approval" && native.value.subagentOrigin !== undefined;
@@ -1173,7 +1157,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                 providerTurnId: null,
                 nativeItemRef: nativeRef(nativeId),
                 parentItemId: null,
-                // Sorts after the latest turn's items.
                 ordinal: previous?.item.ordinal ?? ((latestTurn?.ordinal ?? 0) + 1) * 100,
                 startedAt: runtimeRequest.createdAt,
                 updatedAt: time,

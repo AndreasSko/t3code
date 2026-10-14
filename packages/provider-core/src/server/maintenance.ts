@@ -5,10 +5,8 @@ export interface ProviderMaintenanceCapabilities {
   readonly packageName: string | null;
   readonly update: ProviderMaintenanceCommandAction | null;
   /**
-   * Latest version reported by the installer that owns the executable.
-   * `undefined` means the installer has no channel of its own and the npm
-   * registry entry for `packageName` is authoritative; `null` means the
-   * installer was asked and did not know.
+   * undefined falls back to packageName's npm registry; null means
+   * the owning installer was queried but could not determine a version.
    */
   readonly latestVersion?: string | null;
   /** Compare native release revisions when the provider does not use plain semver. */
@@ -21,10 +19,8 @@ export interface ProviderMaintenanceCommandAction {
   readonly args: ReadonlyArray<string>;
   readonly lockKey: string;
   /**
-   * Extra environment for the spawned updater, on top of the server's own.
-   * A native updater finds its install through the same variables the
-   * provider runs with (e.g. `CODEX_HOME`), so an instance with a custom home
-   * must update that home and not the default one.
+   * Native updaters need the instance's environment to target its custom home
+   * instead of silently updating the default install.
    */
   readonly env?: NodeJS.ProcessEnv;
 }

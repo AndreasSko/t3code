@@ -12,12 +12,8 @@ import * as Result from "effect/Result";
 import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
 export const WORKTREE_BRANCH_PREFIX = "t3";
-// Canonical form is `t3/<8 hex>`. `t3-<8 hex>` is the fallback when a plain `t3`
-// branch blocks the namespace. The matcher also accepts every legacy shape, so
-// existing threads stay eligible for branch regeneration: `t3code/<8 hex>` and
-// `t3code-<8 hex>` from before the prefix was shortened, and `t3code/<uuid>` from
-// older mobile builds that used Crypto.randomUUID() (always RFC 4122 v4, so version
-// nibble `4` and variant nibble `[89ab]`). Nothing looser than what was generated.
+// Match only generated t3/<8 hex>, flat fallback, and legacy t3code hex/UUID-v4 names.
+// A plain t3 branch blocks slash refs; legacy shapes keep existing threads eligible for regeneration.
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
   "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -111,9 +107,6 @@ export function resolveAutoFeatureBranchName(
   return resolved;
 }
 
-/**
- * Strip the remote prefix from a remote ref such as `origin/feature/demo`.
- */
 export function deriveLocalBranchNameFromRemoteRef(branchName: string): string {
   const firstSeparatorIndex = branchName.indexOf("/");
   if (firstSeparatorIndex <= 0 || firstSeparatorIndex === branchName.length - 1) {
@@ -151,13 +144,8 @@ export function isTemporaryWorktreeBranch(refName: string): boolean {
 }
 
 /**
- * The web spelling of an Azure DevOps repository reached over SSH, or null for anything else.
- *
- * Azure alone addresses one repository under two names that share no part: `ssh.dev.azure.com` and
- * `v3/{org}/{project}/{repo}` over SSH, against `dev.azure.com` and `{org}/{project}/_git/{repo}`
- * everywhere a person sees it. A project cloned over SSH would otherwise be a different repository
- * to every comparison made against a pull request URL, which arrives in the web spelling. So the
- * web spelling is the one both are keyed by.
+ * Azure SSH and web URLs use different hosts and paths for the same repository.
+ * Key both by the web spelling so SSH clones match pull request URLs.
  */
 function azureDevOpsRepositoryKey(host: string, segments: ReadonlyArray<string>): string | null {
   if (host !== "ssh.dev.azure.com" && host !== "vs-ssh.visualstudio.com") return null;
@@ -169,9 +157,6 @@ function azureDevOpsRepositoryKey(host: string, segments: ReadonlyArray<string>)
     : `${organization}.visualstudio.com/${project}/_git/${repository}`;
 }
 
-/**
- * Normalize a git remote URL into a stable comparison key.
- */
 export function normalizeGitRemoteUrl(value: string): string {
   const normalized = value
     .trim()
@@ -270,9 +255,6 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
   return originUrl ?? firstRemoteUrl;
 }
 
-/**
- * Best-effort parse of a GitHub `owner/repo` identifier from common remote URL shapes.
- */
 export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) {
@@ -307,15 +289,8 @@ function deriveLocalBranchNameCandidatesFromRemoteRef(
   return [...candidates];
 }
 
-// Git rejects ASCII space and the ASCII control characters (tab, newline and
-// friends) in ref names, so the picker's "Create new ref" entry can only fail
-// for a typed name like "new branch". Replacing runs of those with a dash makes
-// the name usable without reimplementing check-ref-format: names invalid for
-// other reasons still surface the git error. Only the whitespace git actually
-// rejects is replaced — git accepts U+00A0 and friends, and rewriting those
-// would silently create a ref the user never asked for. Case and existing
-// dashes are left alone, since ref names are case sensitive and consecutive
-// dashes are valid.
+// Replace ASCII whitespace inside the trimmed name; git permits Unicode whitespace.
+// Keep case and existing dashes, and let git report names invalid for other reasons.
 export function sanitizeNewRefName(rawName: string): string {
   return rawName.trim().replace(/[ \t\n\r\f\v]+/g, "-");
 }

@@ -248,16 +248,7 @@ export interface GrokModelsCliOutput {
   readonly models: ReadonlyArray<ServerProviderModel>;
 }
 
-/**
- * Parses `grok models`. The command exits 0 whether or not the user is logged in, so the
- * text is the only signal. Current output looks like:
- *
- *     You are logged in with grok.com.
- *     Default model: grok-4.6
- *     Available models:
- *       * grok-4.6 (default)
- *       - grok-4.5
- */
+/** grok models exits 0 even when logged out, so only its text establishes login state. */
 export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
   const authenticated = /you are logged in/i.test(output)
     ? true

@@ -1,12 +1,4 @@
-/**
- * The languages a composer fence can be switched to from its header, and how
- * a choice is written back into the fence's info string.
- *
- * Ids are the names the highlighter and the file icons both know. The list
- * is curated rather than every grammar the highlighter bundles: a picker is
- * for the common case, and any other language can still be typed on the
- * fence line, where it shows as its own entry.
- */
+/** Keep the picker curated; unlisted highlighter languages remain usable by typing their fence info string. */
 export const CODE_BLOCK_LANGUAGES = [
   { id: "", label: "Plain text" },
   { id: "bash", label: "Bash" },
@@ -51,7 +43,6 @@ export const CODE_BLOCK_LANGUAGES = [
 
 export type CodeBlockLanguage = { readonly id: string; readonly label: string };
 
-/** Short names people type on the fence line, labelled like the entry they mean. */
 const LANGUAGE_ALIASES: Record<string, string> = {
   cs: "csharp",
   "c++": "cpp",
@@ -72,21 +63,16 @@ export function languageOfInfoString(info: string): string {
 }
 
 /**
- * Replaces the language and keeps everything around it: the whitespace the
- * fence had before it and whatever follows it. Plain text clears it, unless
- * something follows: a bare `title=x` would read as the language, so that
- * keeps `text` in front.
+ * Preserve surrounding whitespace and metadata. Clearing language with metadata keeps text in front so
+ * title=x cannot become the language.
  */
 export function withInfoStringLanguage(info: string, language: string): string {
   const leading = /^\s*/.exec(info)![0];
-  // The language is the first word, so what follows it is empty or starts
-  // with whitespace.
   const rest = info.slice(leading.length + languageOfInfoString(info).length);
   if (language) return `${leading}${language}${rest}`;
   return rest.trim() ? `${leading}text${rest}` : "";
 }
 
-/** The canonical entry a language names, if the picker lists it. */
 export function codeLanguageEntry(language: string): CodeBlockLanguage | null {
   const id = language === "text" ? "" : (LANGUAGE_ALIASES[language.toLowerCase()] ?? language);
   return CODE_BLOCK_LANGUAGES.find((entry) => entry.id === id.toLowerCase()) ?? null;

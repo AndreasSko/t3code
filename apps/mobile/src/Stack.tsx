@@ -153,12 +153,7 @@ type AppScreenOptions = NativeStackNavigationOptions & {
   readonly unstable_navigationItemStyle?: "editor";
 };
 
-// Shared header presets. Screens only override genuinely dynamic values (titles,
-// subtitles, toolbar items, search callbacks) via NativeStackScreenOptions.
-//
-// GLASS: transparent header over the screen's primary scroll view on supported
-// iOS versions. Pre-glass iOS gets the same solid material as internal-scroll
-// surfaces so content is laid out below the bar instead of underlapping it.
+// Pre-glass iOS uses a solid material so content sits below the bar instead of underlapping it.
 const GLASS_HEADER_OPTIONS: AppScreenOptions = {
   headerBackButtonDisplayMode: "minimal",
   headerBackTitle: "",
@@ -178,7 +173,6 @@ const PULL_REQUEST_HEADER_OPTIONS: AppScreenOptions = {
   headerShown: Platform.OS !== "android",
 };
 
-// SOLID: opaque sheet-colored header for surfaces that manage their own viewport.
 const SOLID_HEADER_OPTIONS: AppScreenOptions = {
   headerBackButtonDisplayMode: "minimal",
   headerBackTitle: "",
@@ -190,7 +184,6 @@ const SOLID_HEADER_OPTIONS: AppScreenOptions = {
   unstable_navigationItemStyle: Platform.OS === "ios" ? "editor" : undefined,
 };
 
-// Solid header variant for screens inside sheets (centered title, no editor style).
 const SHEET_SOLID_HEADER_OPTIONS: AppScreenOptions = {
   ...SOLID_HEADER_OPTIONS,
   unstable_navigationItemStyle: undefined,
@@ -392,15 +385,8 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Diagnostics",
       },
     }),
-    // Deliberately the one settings screen with no `linking:` path. Its params
-    // are a tap-time snapshot, not a stable resource address: `now` is the
-    // wall-clock of the tap, `environmentIds` is the usage screen's local
-    // filter selection, and the window id/kind identify freshly aggregated
-    // pools. React Navigation round-trips non-path params through the URL as
-    // query strings, so a path here would bake in a permanently stale
-    // timestamp and filter. The deep linkable surface is the list at
-    // `settings/usage`, which rebuilds this state and pushes the detail from a
-    // tapped account segment.
+    // These params are a tap-time usage snapshot; URL round-tripping would preserve
+    // stale timestamps and filters. Deep links go through settings/usage instead.
     SettingsUsageAccount: createNativeStackScreen({
       screen: UsageLimitAccountScreen,
       options: { title: "Account" },
@@ -453,22 +439,16 @@ const SettingsSheetStack = createV5SheetStackNavigator({
       linking: "auth",
     }),
     SettingsWaitlist: createNativeStackScreen({
-      // Keep the old deep link working after the Connect GA launch.
       screen: SettingsAuthRouteScreen,
       linking: "waitlist",
     }),
   },
 });
 
-// Thread routes live FLAT in the root stack (not in a nested navigator). A nested
-// stack means a second UINavigationController with its own UINavigationBar, which
-// breaks iOS 26's shared-header morphing between Home and Thread (each pair inside
-// one bar morphs; across two bars the whole screen slides). Flat linking paths keep
-// the same deep-link URLs the nested config produced.
+// A nested thread stack adds a second UINavigationBar, breaking iOS 26's
+// shared-header morphing between Home and Thread.
 const THREAD_LINKING_PREFIX = "threads/:environmentId/:threadId";
 
-// New-task / add-project flow: the nested navigator owns the header and pushes
-// whether the flow opens in the workspace or in a compact form sheet.
 const NewTaskSheetStack = createNativeStackNavigator({
   initialRouteName: "NewTask",
   screenOptions: {
@@ -630,9 +610,7 @@ function RootStackLayout(props: {
   const pathname = path.startsWith("/") ? path : `/${path}`;
   const workspaceLocation = workspaceLocationFromState(props.state);
   useAgentNotificationNavigation(workspaceLocation.pathname);
-  // Presents the T3 Connect onboarding sheet after an in-session sign-in.
   useConnectOnboardingNavigation();
-  // Launcher app shortcuts: routes shortcut taps and tracks opened threads.
   useAppShortcuts(props.state);
   useEffect(() => {
     const topRouteName = props.state.routes[props.state.index]?.name;
@@ -860,14 +838,8 @@ const RootStackConfig = createWorkspaceStackNavigator({
       linking: `${THREAD_LINKING_PREFIX}/attachments/:attachmentId`,
       options: SOLID_HEADER_OPTIONS,
     }),
-    // Deliberately the one root route with no `linking:` path. The route
-    // carries zero params: its content is a session object (staged model,
-    // provider groups, and live update callbacks) that the active
-    // ThreadComposer presents into ExistingThreadSettingsRouteProvider before
-    // pushing this screen — state no URL can reconstruct. Reached without a
-    // presented session the screen navigates straight back, so a path would
-    // only produce a flash-and-dismiss link. Deep links to a thread land on
-    // `threads/:environmentId/:threadId`, where this sheet is one tap away.
+    // This sheet requires a live session supplied by the thread composer; a URL
+    // cannot reconstruct it, so deep links must go through the thread instead.
     ThreadSettingsSheet: createNativeStackScreen({
       screen: ExistingThreadSettingsRouteScreen,
       options: {
@@ -999,10 +971,8 @@ const RootStackConfig = createWorkspaceStackNavigator({
     NewTaskSheet: createNativeStackScreen({
       screen: NewTaskSheetStack,
       linking: "new",
-      // The whole new-task flow (choose project → draft → add project) shares
-      // draft state via NewTaskFlowProvider. The expo-router era mounted it in
-      // app/new/_layout.tsx; this layout wrapper is the native-stack equivalent.
-      // A screen's layout replaces the navigator's screenLayout.
+      // Share one draft across the new-task flow. A screen's layout replaces the
+      // navigator's screenLayout, so retain GuardedScreenLayout here.
       layout: ({ children, route }) => (
         <GuardedScreenLayout route={route}>
           <NewTaskFlowProvider>

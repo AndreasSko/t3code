@@ -29,7 +29,6 @@ import {
 
 const EMPTY_FAVICON_URL = Atom.make<string | null>(null);
 
-/* ─── Component ──────────────────────────────────────────────────────── */
 export const ProjectFavicon = memo(function ProjectFavicon(props: {
   readonly environmentId: EnvironmentId;
   readonly open?: boolean;

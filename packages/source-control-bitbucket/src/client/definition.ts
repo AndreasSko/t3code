@@ -1,8 +1,3 @@
-/**
- * Bitbucket's client definition. Browser- and React Native-safe.
- *
- * @module source-control-bitbucket/client/definition
- */
 import {
   makeProviderSettingsSchema,
   SourceControlProviderKind,
@@ -28,11 +23,7 @@ const text = (annotations: Schema.Annotations.Key<string>) =>
     Schema.annotateKey(annotations),
   );
 
-/**
- * Bitbucket API credentials, used before the `T3CODE_BITBUCKET_*` environment variables: an
- * access token, or an Atlassian account email with an API token. The access token wins when both
- * are saved.
- */
+/** Saved credentials precede environment values; access tokens precede email/API-token pairs. */
 export const settings = makeProviderSettingsSchema(
   {
     accessToken: text({
@@ -74,8 +65,7 @@ export const definition = defineSourceControlClient({
   defaultCloneTransport: "ssh",
   changeRequestUrl: ({ host, repository, number }) =>
     `https://${host}/${repository}/pull-requests/${number}`,
-  // No endpoint reopens a declined pull request, and nothing documented moves one in or out of
-  // draft, so neither is offered rather than failing when pressed.
+  // No API reopens declined pull requests or converts drafts.
   changeRequestActions: new Set(["merge", "close"] as const),
   // Bitbucket has no checkout CLI, so clone the head branch from its own repository.
   checkoutCommand: ({ number, headBranch, headRepositoryNameWithOwner }) =>
@@ -87,7 +77,7 @@ export const definition = defineSourceControlClient({
   authorProfileUrl: () => null,
   referenceAutolinkRepositoryUrl: () => null,
   reviewSummaryRequired: () => false,
-  // No checkout CLI, and the reference field never accepted Bitbucket URLs.
+  // Bitbucket has no checkout CLI or accepted command reference.
   checkoutCommandArgument: () => null,
   isChangeRequestReference: () => false,
   changeRequestUrlHost: (url) => url.hostname,

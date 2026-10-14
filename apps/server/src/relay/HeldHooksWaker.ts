@@ -8,11 +8,7 @@ import { readHoldWebhooksWhileOffline, readRelayConnection } from "../cloud/conf
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { makeRelayEnvironmentClient } from "./relayEnvironmentClient.ts";
 
-/**
- * Tells T3 Connect this environment is reachable again, so the relay delivers
- * the webhook requests it held while we were offline now rather than at its
- * next backoff step. Nothing happens unless the environment opted in.
- */
+/** Wake opted-in relays before their next retry backoff so held requests arrive on reconnect. */
 const wakeHeldHooks = Effect.fn("HeldHooksWaker.wake")(function* () {
   if (!(yield* readHoldWebhooksWhileOffline)) return false;
   const connection = yield* readRelayConnection;
@@ -24,7 +20,6 @@ const wakeHeldHooks = Effect.fn("HeldHooksWaker.wake")(function* () {
   return pending;
 });
 
-/** Wakes held webhooks each time the managed tunnel connects. */
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const runtime = yield* CloudManagedEndpointRuntime.CloudManagedEndpointRuntime;

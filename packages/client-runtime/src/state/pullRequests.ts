@@ -164,11 +164,7 @@ export function pullRequestDetailToVcsStatus(
   };
 }
 
-/**
- * Reopening a PR within a minute reuses detail and activity. Explicit refreshes and
- * turn notifications still revalidate. Mutations run serially per environment: actions on the same
- * pull request are order-sensitive. Confirmed label and reviewer edits update cached state.
- */
+/** Caches detail/activity for one minute; serial per-environment mutations preserve order and patch confirmed edits. */
 export function createPullRequestEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<
     EnvironmentRegistry | PullRequestDiffLoader.PullRequestDiffLoader | R,
@@ -257,12 +253,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId, input }) =>
         input.cursors === undefined ? refreshes({ environmentId, input: {} }) : undefined,
     }),
-    /**
-     * The line counts for rows the listing has already handed over. Its own query because the
-     * listing is quicker without them — measured over twelve repositories, ~4.0s against ~7.1s —
-     * so the rows arrive first and their stats a moment later. Kept longer than the listing:
-     * a change request's size only moves when somebody pushes to it.
-     */
+    // Across 12 repositories, listings took ~4.0s without stats versus ~7.1s with them.
+    // Fetch stats separately and retain them longer because size changes only on pushes.
     listStats: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list-stats",
       persistence: persistPullRequestStats(),
@@ -337,10 +329,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: (input) => routedRequest(WS_METHODS.pullRequestsFilesViewed, input),
       staleTimeMs: 15_000,
     }),
-    /**
-     * One write in flight per change request: the host applies these in order, and a reader
-     * ticking down a file list faster than the round trip would otherwise race their own presses.
-     */
+    // Serialize viewed-file writes per change request so quick presses cannot arrive out of order.
     setFilesViewed: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-files-viewed",
       tag: WS_METHODS.pullRequestsSetFilesViewed,
@@ -452,12 +441,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
-    /**
-     * Its own query rather than part of the detail: the people who may be asked are only wanted
-     * once somebody opens the reviewer menu, so this atom is read then and not before. Kept fresh
-     * for a minute, because who has access to a repository changes far more slowly than the
-     * change request it is being read for.
-     */
+    // Reviewer candidates load on menu open and stay fresh for a minute because repository access changes slowly.
     reviewerCandidates,
     requestReviewers: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:request-reviewers",
@@ -599,11 +583,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
-    /**
-     * Explicit refresh: forget the server's cached answers, then re-run the reads. A separate
-     * request rather than a flag on a read, so only a person's refresh spends host requests
-     * while every silent re-read shares the cache.
-     */
+    // Only explicit refresh spends host requests; silent reads share cached answers.
     invalidate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:invalidate",
       tag: WS_METHODS.pullRequestsInvalidate,

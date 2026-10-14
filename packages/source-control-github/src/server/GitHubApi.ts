@@ -22,11 +22,8 @@ const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const CONCURRENCY = 8;
 const API_VERSION = "2022-11-28";
 
-/**
- * A credential already verified for one host. Every request made under it must target that
- * host, so a page cannot read one account's data with another's token mid-flight. Server-local:
- * never put its value in RPC payloads or cache keys.
- */
+/** Requests under a pinned credential must target its verified host and keep the same account.
+ * Server-only: never expose the token in RPC payloads or cache keys. */
 export const PinnedGitHubCredential = Context.Reference<{
   readonly host: string;
   readonly token: Redacted.Redacted<string>;
@@ -75,11 +72,7 @@ export class GitHubApiNotFoundError extends Schema.TaggedError<GitHubApiNotFound
   }
 }
 
-/**
- * GitHub answered with a failure that is none of the above. `githubErrors` carries GitHub's own
- * error messages, from a GraphQL `errors` list or a REST `message`/`errors` body: they name the
- * field and the reason ("A pull request already exists for acme:feature"), never a token.
- */
+/** REST/GraphQL error messages identify GitHub's field-level refusal without exposing tokens. */
 export class GitHubApiResponseError extends Schema.TaggedError<GitHubApiResponseError>()(
   "GitHubApiResponseError",
   {
@@ -110,7 +103,6 @@ export interface GitHubRestResponse {
   readonly headers: Readonly<Record<string, string | undefined>>;
   readonly body: string;
   readonly truncated: boolean;
-  /** The body was not valid UTF-8, which a raw file read takes to mean binary. */
   readonly invalidUtf8: boolean;
 }
 
@@ -147,7 +139,6 @@ export class GitHubApi extends Context.Service<
     /** The raw JSON body of a successful GraphQL answer, with `rateLimit` recorded. */
     readonly graphql: (input: GitHubGraphQlInput) => Effect.Effect<string, GitHubApiError>;
     readonly rest: (input: GitHubRestInput) => Effect.Effect<GitHubRestResponse, GitHubApiError>;
-    /** The credential a request to `host` would carry right now. */
     readonly credential: (
       host: string,
     ) => Effect.Effect<
@@ -161,10 +152,7 @@ function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
 }
 
-/**
- * Where the API for a host lives. github.com and GHE.com data residency serve it from an `api.`
- * subdomain; GitHub Enterprise Server serves it under `/api` on the instance itself.
- */
+/** Public/data-residency APIs use api. subdomains; Enterprise Server uses /api on the instance. */
 export function gitHubApiUrls(host: string): { readonly rest: string; readonly graphql: string } {
   const normalized = normalizeHost(host);
   if (normalized === "github.com") {
@@ -182,7 +170,6 @@ export function gitHubApiUrls(host: string): { readonly rest: string; readonly g
 /** GraphQL documents longer than this are cut in traces; the hash still identifies them. */
 const TRACED_QUERY_MAX_CHARS = 4_000;
 
-/** A stable short id for a GraphQL document, so traces group by query without its text. */
 function queryHash(query: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < query.length; index++) {
@@ -192,7 +179,6 @@ function queryHash(query: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-/** The numeric rate-limit headers GitHub sends, as span attributes. */
 function rateLimitAttributes(
   headers: Readonly<Record<string, string | undefined>>,
 ): Record<string, number | string> {
@@ -211,7 +197,6 @@ function rateLimitAttributes(
   return attributes;
 }
 
-/** The pause GitHub asked for, from `retry-after` or the primary limit's reset. */
 function retryAtFrom(
   headers: Readonly<Record<string, string | undefined>>,
   now: number,
@@ -275,7 +260,6 @@ function restErrorMessages(body: string): ReadonlyArray<string> | undefined {
   });
 }
 
-/** What one GitHub answer means, decided once from its status, headers and body. */
 type Answer = Data.TaggedEnum<{
   Ok: {};
   RateLimited: {};
@@ -285,11 +269,7 @@ type Answer = Data.TaggedEnum<{
 }>;
 const Answer = Data.taggedEnum<Answer>();
 
-/**
- * GitHub reports a failed GraphQL document with HTTP 200 and an `errors` list, so a GraphQL body
- * is read for its error types as well as its status. `gh api graphql` failed those too, and
- * callers rely on that to fall back to narrower reads.
- */
+/** GraphQL failures can use HTTP 200; inspect errors as well as status to trigger narrow fallbacks. */
 function classify(input: {
   readonly status: number;
   readonly headers: Readonly<Record<string, string | undefined>>;
@@ -360,10 +340,6 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  /**
-   * Sends one request under the host's rate-limit pause and fails a refusal with the error that
-   * says why. `onSuccess` sees the answer only once it is known to be one.
-   */
   const send = Effect.fn("GitHubApi.send")(function* (input: {
     readonly host: string;
     readonly operation: string;
@@ -386,9 +362,8 @@ export const make = Effect.gen(function* () {
     });
     const { token, fingerprint } = yield* credential(host);
     const scope = yield* SourceControlRateLimit.CredentialScope;
-    // REST spends `core` and GraphQL its own quota, each with its own reserve. Every REST path
-    // this reads today is `core`; a `search/` read would need its own resource here. A refusal
-    // still pauses the whole host, the key PullRequestService records its own backoff under.
+    // REST and GraphQL spend separate reserves; future search/ requests would need the search resource.
+    // Refusals still pause the host used by PullRequestService's backoff.
     const resource = input.graphql === true ? "graphql" : "core";
     const key = { provider: SourceControlProviderKind.make("github"), host };
     const run = Effect.gen(function* () {
@@ -405,8 +380,7 @@ export const make = Effect.gen(function* () {
             }),
           ),
         );
-      // One deadline covers the headers and the body: a host that answers headers and then stalls
-      // must not hold a slot of the shared gate for undici's own five-minute body timeout.
+      // One deadline covers headers and body so stalled streams cannot occupy the gate for undici's five minutes.
       const { response, collected } = yield* Effect.gen(function* () {
         const response: HttpClientResponse.HttpClientResponse = yield* httpClient
           .execute(
@@ -419,8 +393,7 @@ export const make = Effect.gen(function* () {
             ),
           )
           .pipe(
-            // `GitHubApi.send` is the request's span. The client's own span would add `url.full`
-            // and `url.query`, which can carry SHAs and branch names, so it is off for GitHub.
+            // Disable client tracing: url.full/url.query could expose branch names or SHAs.
             Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
           );
         const collected = yield* collectUint8StreamText({
@@ -576,10 +549,7 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(GitHubApi, make);
 
-/**
- * The transport with the credential, quota reserve and rate-limit pause it reads through. An
- * application builds this once so every GitHub reader shares one view of each quota per host.
- */
+/** Build once so all GitHub readers share credential, quota, and host-pause state. */
 export const layerWithDependencies = layer.pipe(
   Layer.provideMerge(GitHubCredentials.layer),
   Layer.provideMerge(GitHubQuota.layer),

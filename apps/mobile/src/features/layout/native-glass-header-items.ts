@@ -9,10 +9,8 @@ type NativeGlassHeaderItem = {
 };
 
 /**
- * iOS 26/27 Mail-style header controls need the native glass button
- * shared background configuration when they are not part of a larger toolbar.
- * Do not enable `glassEffect` for normal bar-button items: react-native-screens
- * renders that as a custom UIButton, which creates a second skinny capsule.
+ * Shared backgrounds provide native glass without glassEffect, which makes
+ * react-native-screens render a custom UIButton with a second skinny capsule.
  */
 export function withNativeGlassHeaderItem<T extends NativeGlassHeaderItem>(
   item: T,

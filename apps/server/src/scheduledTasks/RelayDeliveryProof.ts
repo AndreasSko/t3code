@@ -1,11 +1,4 @@
-/**
- * Whether a webhook request really came through this environment's relay.
- *
- * The relay's delivery id, receive time and trace context arrive as plain
- * headers, and the webhook URL can also be called directly, so they are only
- * trusted alongside a proof the relay signed with its mint key. A request
- * without a valid proof is handled as a direct request.
- */
+/** Relay metadata is trusted only with a signed proof; the webhook URL also accepts direct requests. */
 import { RelayHookDeliveryProofPayload } from "@t3tools/contracts/relay";
 import {
   normalizeRelayIssuer,

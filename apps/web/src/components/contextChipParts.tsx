@@ -19,7 +19,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { usePullRequestPreviewTarget } from "~/lib/openPullRequestLink";
 
-/** ContextChip kind for a pull request context in each display state. */
 export const PULL_REQUEST_CHIP_KINDS = {
   open: "pr-open",
   draft: "pr-draft",
@@ -61,7 +60,6 @@ export function ContextChipShell({
   );
 }
 
-/** A chip that opens its details in a popover; the chip itself is the trigger. */
 export function ContextChipPopover(props: {
   kind: ContextChipKind;
   icon: ReactNode;
@@ -177,7 +175,6 @@ export function ImageChipButton({
 }: Omit<ComponentProps<typeof ContextChip>, "kind" | "render"> & {
   name: string;
   previewUrl: string | undefined;
-  /** Every attachment chip reports its size; images are no exception. */
   size: string;
   suffix?: string | null;
 }) {

@@ -7,8 +7,7 @@ export function revealInFileExplorerLabel(platform: string): string {
   return "Reveal in Files";
 }
 
-/** Same wording keyed by an environment's reported OS rather than a
-    navigator platform string, for actions that reveal on the server machine. */
+/** Use the environment's reported OS for actions performed on its machine. */
 export function revealInFileExplorerLabelForOs(os: ExecutionEnvironmentPlatformOs): string {
   if (os === "darwin") return "Reveal in Finder";
   if (os === "windows") return "Reveal in File Explorer";

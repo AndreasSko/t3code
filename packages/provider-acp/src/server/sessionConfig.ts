@@ -4,14 +4,8 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 import type { AcpSessionModeState } from "./runtimeModel.ts";
 
 /**
- * Maps ACP session configuration and session modes onto T3's provider option
- * descriptors so the existing model-options UI can drive them.
- *
- * Model selection stays on the dedicated model picker: `category: "model"`
- * options are excluded here because they already surface as models. Session
- * modes advertised through the modes API (rather than a config option) are
- * folded into one synthetic descriptor that the ACP adapter routes to
- * `session/set_mode`.
+ * Exclude model options for the dedicated picker; synthetic modes route
+ * to session/set_mode when the agent lacks a native config option.
  */
 
 /** Synthetic descriptor ID for agents that expose modes outside config options. */

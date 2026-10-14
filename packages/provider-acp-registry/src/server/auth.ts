@@ -281,8 +281,7 @@ export const makeAcpRegistryAuth = Effect.fn("makeAcpRegistryAuth")(function* (o
           if (method.type === "terminal") {
             yield* Scope.close(runtimeScope, Exit.void);
             yield* runTerminal(resolved, method, context).pipe(Effect.scoped);
-            // Terminal login is a separate invocation. Reconnect after it exits so
-            // the ACP process reads the credentials its login command persisted.
+            // Terminal login persists credentials in a separate process; reconnect so ACP reads them.
             const verifiedRuntime = yield* makeRuntime(resolved.spawn);
             yield* context.verifying;
             yield* verifiedRuntime

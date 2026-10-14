@@ -39,11 +39,7 @@ export interface SourceControlRefSelector {
 
 const MAX_ERROR_TRANSPORT_VALUE_LENGTH = 256;
 
-/**
- * Sanitizes user-provided source-control identifiers before attaching them to
- * contract errors. This is intentionally narrower than request validation: it
- * only strips URL secrets and bounds diagnostic values sent over transport.
- */
+/** Strip URL secrets and bound identifiers in transported errors; this does not validate requests. */
 export function transportSafeSourceControlErrorValue(value: string): string {
   let printable = "";
   for (const character of value) {
@@ -60,9 +56,7 @@ export function transportSafeSourceControlErrorValue(value: string): string {
     url.search = "";
     url.hash = "";
     safe = url.toString();
-  } catch {
-    // Plain repository and change-request identifiers are not URLs.
-  }
+  } catch {}
 
   return safe.slice(0, MAX_ERROR_TRANSPORT_VALUE_LENGTH);
 }
@@ -94,7 +88,6 @@ export function sourceControlRefFromInput(input: {
   return input.source ?? parseSourceControlOwnerRef(input.headSelector);
 }
 
-/** The repository path a remote URL names (`owner/name`, or deeper for nested groups). */
 export function repositoryPathFromRemoteUrl(url: string | null): string | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) {
@@ -113,12 +106,8 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
-    /**
-     * How to look up a branch's change requests: which head selectors to ask about, and how many
-     * results to read per selector. The caller checks the owner against what comes back, so a
-     * host that cannot search `owner:branch` can drop those selectors without losing anything.
-     * Absent asks about every selector, reading 1 for the open lookup and 20 for any state.
-     */
+    /** Optional head selectors/limits; callers still verify the returned owner.
+     * Defaults: all selectors, one open result, twenty for any state. */
     readonly headBranchProbe?: (input: {
       readonly headSelectors: ReadonlyArray<string>;
       readonly state: "open" | "all";
@@ -136,11 +125,8 @@ export class SourceControlProvider extends Context.Service<
      * more than that (Forgejo's HTTP installation mount). Absent means the whole path.
      */
     readonly repositoryNameFromRemoteUrl?: (url: string) => string | null;
-    /**
-     * Fills in what a repository identity read from git cannot know, such as the browser URL of
-     * a host the remote URL does not name. `resolveContext` asks the registry which host (and
-     * base URL) serves a remote. Only consulted for identities this host may own.
-     */
+    /** Refine identities using hosting-account context unavailable from git,
+     * only for repositories this provider may own. */
     readonly refineRepositoryIdentity?: (input: {
       readonly identity: RepositoryIdentity;
       readonly resolveContext: (input: {
@@ -148,7 +134,6 @@ export class SourceControlProvider extends Context.Service<
         readonly context: SourceControlProviderContext;
       }) => Effect.Effect<SourceControlProviderContext | null, SourceControlProviderError>;
     }) => Effect.Effect<RepositoryIdentity, SourceControlProviderError>;
-    /** Optional capability for issue and change-request subjects. */
     readonly resolveLink?: ResolveSourceControlLink;
     readonly listChangeRequests: (input: {
       readonly cwd: string;

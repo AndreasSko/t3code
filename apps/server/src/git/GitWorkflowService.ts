@@ -40,11 +40,7 @@ export class GitWorkflowService extends Context.Service<
       readonly cwd: string;
       readonly refName: string;
     }) => Effect.Effect<boolean, GitCommandError>;
-    /**
-     * Whether a ref in any namespace ends in this name: a local branch, a
-     * remote-tracking branch of any remote, a tag. Git falls back to these
-     * when a branch name is not a revision by itself.
-     */
+    /** Check suffix names across branch, remote, and tag namespaces used by Git revision fallback. */
     readonly hasRefNamed: (input: {
       readonly cwd: string;
       readonly refName: string;

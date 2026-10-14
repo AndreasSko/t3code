@@ -193,7 +193,6 @@ export const runGitHubStackAction = Effect.fn("runGitHubStackAction")(function* 
       host: input.host,
       operation: "runGitHubStackAction",
       allowReserve: true,
-      // `open` is non-empty here, so there is always a document.
       ...aliasedGraphQlDocument({
         operation: "query",
         alias: "pr",

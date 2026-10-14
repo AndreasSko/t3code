@@ -61,10 +61,8 @@ async function resolvedPayloadsForFiles(): Promise<ReadonlyArray<ResolvedSharePa
   try {
     return await getResolvedSharedPayloadsAsync();
   } catch (error) {
-    // iOS already gives the containing app a copied file:// URL, so raw
-    // payloads remain usable. Android normally resolves content:// into a
-    // private cache file; its modern File API can still read the raw URI when
-    // resolution fails.
+    // Raw iOS file URLs remain usable; Expo's File API can also read Android
+    // content URLs when cache resolution fails.
     console.warn("[incoming-share] could not resolve shared file metadata", error);
     return [];
   }
@@ -98,10 +96,8 @@ async function removeOwnedFile(uri: string): Promise<void> {
   }
   try {
     const { File, Paths } = await import("expo-file-system");
-    // Only delete files in directories this app owns: its documents and cache
-    // sandbox and its share-extension App Group container. An iOS
-    // open-in-place share points at the sender's own storage; deleting that
-    // URI would destroy the user's document.
+    // Restrict cleanup to app-owned roots; iOS open-in-place URLs can point to
+    // the sender's storage and deleting them would destroy the user's document.
     const ownedRootUris = [
       Paths.document.uri,
       Paths.cache.uri,
@@ -142,9 +138,8 @@ async function removeReplayedPayloadFiles(payloads: ReadonlyArray<SharePayload>)
   await Promise.all([...uris].map(removeOwnedFile));
 }
 
-// Keep one operation queue across provider remounts (including development
-// Strict Mode remounts) so two app lifecycle notifications cannot ingest the
-// same native handoff independently.
+// Share one queue across provider/Strict Mode remounts so lifecycle notifications
+// cannot ingest the same native handoff independently.
 const incomingShareInbox = new IncomingShareInbox({
   loadDrafts: loadIncomingShareDrafts,
   writeDraft: writeIncomingShareDraft,

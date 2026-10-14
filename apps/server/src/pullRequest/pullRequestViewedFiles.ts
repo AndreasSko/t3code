@@ -1,8 +1,3 @@
-/**
- * The marks a reader has ticked off, for a host that keeps none of its own, and the held record of
- * what the head has of those files. The revisions cache is filed here because this is its only
- * consumer: when a second one appears, export `makeFileRevisions` and split it into its own file.
- */
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -22,20 +17,12 @@ import type {
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import type { PullRequestError, SupportedProject } from "./PullRequestService.ts";
 
-/**
- * How long the head's version of a file is believed, and how long a held answer stands while the
- * next one is fetched. This is the host call behind the **Changed** badge alone, so a held answer
- * costs a badge that is a minute behind rather than a stale tick.
- */
+/** Stale revisions affect only the Changed badge; viewed marks keep their original baselines. */
 const FILE_REVISIONS_CACHE_TTL = Duration.seconds(60);
 const FILE_REVISIONS_STALE_WINDOW = Duration.minutes(10);
 export const FILE_REVISIONS_CACHE_CAPACITY = 64;
 
-/**
- * How many paths one scope's entry carries. Bounds a single scope, not how many scopes are held:
- * a reader ticking one file after another renews the same scope and grows it without limit
- * otherwise.
- */
+/** Bound paths per scope because successive marks can grow one continuously renewed entry. */
 export const MAX_FILE_REVISION_PATHS = 1_000;
 
 interface FileRevisionsDependencies {
@@ -49,11 +36,7 @@ interface FileRevisionsDependencies {
 
 const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
   const { runFork, refEpoch, fileRevisionsEpoch, toPullRequestError } = dependencies;
-  /**
-   * What the head has of the files a reader has marked, held between reads. The entry tracks what
-   * has been asked as well as what was heard, since a path missing from an answer keeps whatever
-   * version was last given for it rather than being cleared.
-   */
+  /** Track unanswered paths too; a missing revision preserves the last known version. */
   interface HeldFileRevisions {
     readonly at: number;
     readonly asked: ReadonlySet<string>;
@@ -62,12 +45,8 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
   const heldFileRevisions = new Map<string, HeldFileRevisions>();
   const refreshingFileRevisions = new Set<string>();
 
-  /**
-   * Carries the reference's epoch, so whatever moved the head strands what was held (or in
-   * flight) against the old one. Spelled from the project rather than the reference, since a
-   * reference arrives however the client spelled it while the epoch is bumped against the
-   * remote's own spelling.
-   */
+  /** Epochs strand cached and in-flight results after head changes. Use the project's remote
+   * spelling because invalidation uses it, while the reference may use a client spelling. */
   const fileRevisionsKey = (project: SupportedProject, ref: PullRequestRef) =>
     [
       refEpoch({ ...ref, host: project.host, repository: project.repository }),
@@ -77,13 +56,8 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
       ref.number,
     ].join(" ");
 
-  /**
-   * `paths` are what was asked about, and are held as answered for whether the host had a version
-   * for them or not: that is what stops the same question being asked again. A `complete` answer
-   * adds every other path it carries, since a host that read the whole change to answer for one
-   * file has already paid for all of them, and the tick after this one names a file nothing has
-   * asked about yet.
-   */
+  /** Remember unanswered paths to avoid repeat requests; cache a complete answer's extra
+   * paths because the host has already paid to read the whole change. */
   const recordFileRevisions = (
     key: string,
     paths: ReadonlyArray<string>,
@@ -91,20 +65,17 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
   ) =>
     Effect.map(Clock.currentTimeMillis, (at) => {
       const held = heldFileRevisions.get(key);
-      // Past the stale window the old entry is not worth merging into: it would carry paths
-      // nobody has asked about since, at revisions the head has long moved off.
+      // Do not carry old paths and revisions beyond the stale window.
       const carried =
         held !== undefined && at - held.at <= Duration.toMillis(FILE_REVISIONS_STALE_WINDOW)
           ? held
           : null;
       const revisions = new Map(carried?.revisions ?? []);
       const asked = new Set(carried?.asked ?? []);
-      // The paths asked for go last, so a whole-change answer wider than the cap is trimmed down
-      // to the reader's own files rather than over them.
+      // Put requested paths last so the cap preserves them ahead of extra whole-change results.
       const learned = answer.complete === true ? [...answer.revisions.keys(), ...paths] : paths;
       for (const path of learned) {
-        // Reinserted rather than added, so what a full entry drops below is the path nobody has
-        // asked about in the longest rather than one just asked for.
+        // Reinsertion makes eviction drop the least recently requested path.
         asked.delete(path);
         asked.add(path);
         const revision = answer.revisions.get(path);
@@ -133,25 +104,18 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
       return revisions;
     });
 
-  /** A held entry that covers every path asked for and is still worth answering from. */
   const heldFileRevisionsFor = (key: string, paths: ReadonlyArray<string>, now: number) => {
     const held = heldFileRevisions.get(key);
     if (held === undefined) return null;
-    // Put back at the end on every read, so the scope a reader is working through is not the one
-    // evicted by a listing walking scopes nobody has open.
+    // Reads renew LRU position so unopened scopes are evicted first.
     heldFileRevisions.delete(key);
     heldFileRevisions.set(key, held);
     if (now - held.at > Duration.toMillis(FILE_REVISIONS_STALE_WINDOW)) return null;
     return paths.every((path) => held.asked.has(path)) ? held : null;
   };
 
-  /**
-   * What the head has of these files, or null where the host cannot say (not an error: the marks
-   * just stop reporting staleness). `held` answers from a stale value and refetches off the
-   * critical path, since a badge a moment behind beats a page that won't paint until the host
-   * answers; `fresh` is for the press itself, which must not store a revision the head already
-   * moved off.
-   */
+  /** `held` serves stale badges and refreshes off the critical path; `fresh` ensures a mark's
+   * baseline is current. A host unable to report revisions disables staleness, not marks. */
   const fileRevisionsOf = (
     project: SupportedProject,
     ref: PullRequestRef,
@@ -211,18 +175,13 @@ export interface Dependencies extends FileRevisionsDependencies {
   ) => Effect.Effect<string | null, PullRequestError>;
 }
 
-// A plain factory rather than a `Context.Service` (against the preference in
-// `.repos/effect-smol/LLMS.md`): the held revisions, refresh set, and write gates are only correct
-// at one instance per service, and a layer provided at two points would give two of each behind
-// one epoch counter.
+// A factory keeps caches and write gates at one instance per service; separate layers
+// could create independent copies sharing one epoch counter.
 export const make = (dependencies: Dependencies) => {
   const { filesViewedStore, requireProject, requiredViewerOf, toPullRequestError } = dependencies;
   const { fileRevisionsOf } = makeFileRevisions(dependencies);
-  /**
-   * Which change request's marks, and whose. Provider and host lead the key because the same
-   * repository can exist on more than one install; the reader is part of it because a host's own
-   * record is per-account. A host that names no reader is one reader, not none.
-   */
+  /** Scope by provider, host, and reader because repositories can exist on multiple installs
+   * and host marks are per-account. A null viewer is one shared reader. */
   const filesViewedScope = (project: SupportedProject, number: number, viewer: string | null) => ({
     provider: project.api.kind,
     host: project.host,
@@ -238,12 +197,8 @@ export const make = (dependencies: Dependencies) => {
       cause,
     });
 
-  /**
-   * The marks this environment keeps for a host that keeps none of its own. A file the head
-   * still has at the revision it was cleared at is cleared; one the head has moved on from is
-   * reported as changed. Revisions are asked for the marked paths alone, so a reader who has
-   * marked nothing costs no host call.
-   */
+  /** Compare marks against the current head; request revisions only for marked paths
+   * so readers with no marks incur no host call. */
   const environmentFilesViewed = (
     project: SupportedProject,
     ref: PullRequestRef,
@@ -255,8 +210,7 @@ export const make = (dependencies: Dependencies) => {
         .pipe(Effect.mapError(toFilesViewedStoreError("filesViewed")));
       const marks = held.files;
       if (marks.length === 0) return { files: [], truncated: held.truncated };
-      // A host that won't say what its head has costs the marks their staleness (`fileRevisionsOf`
-      // returns null), rather than costing the reader every tick they've made.
+      // Missing host revisions disable staleness without losing the reader's marks.
       const revisions = yield* fileRevisionsOf(
         project,
         ref,
@@ -285,16 +239,11 @@ export const make = (dependencies: Dependencies) => {
                 : ("dismissed" as const),
           };
         }),
-        // The store caps marks per scope; a reader over that cap is told so, like a paginated read.
         truncated: held.truncated,
       };
     });
 
-  /**
-   * One environment-backed write at a time per change request. A tick's host round trip is
-   * slower than an untick's, so unordered presses could finish out of order and leave a stale
-   * tick standing over a later untick.
-   */
+  /** Serialize writes: marking fetches a baseline and may finish after a later unmark. */
   const filesViewedGates = new Map<
     string,
     { readonly gate: Semaphore.Semaphore; pending: number }
@@ -305,9 +254,8 @@ export const make = (dependencies: Dependencies) => {
     number: number,
     write: Effect.Effect<void, PullRequestError>,
   ) =>
-    // Suspended rather than generated, so finding the gate, putting it in and taking a place in
-    // its queue are one step: yielding for `Semaphore.make` between the lookup and the insert
-    // lets two presses each make a gate of their own and neither wait on the other.
+    // Allocate and enqueue without yielding; an asynchronous gate creation could let
+    // concurrent presses create separate gates and bypass serialization.
     Effect.suspend(() => {
       const key = `${project.project.id} ${project.remote} ${number}`;
       const held = filesViewedGates.get(key);
@@ -334,15 +282,12 @@ export const make = (dependencies: Dependencies) => {
   ): Effect.Effect<void, PullRequestError> =>
     Effect.gen(function* () {
       const viewer = yield* requiredViewerOf(project, "setFilesViewed");
-      // Only the files being cleared need a revision. An unticked one is about to lose its row,
-      // and what the head has of it changes nothing about deleting it.
       const cleared = input.files.filter((file) => file.viewed).map((file) => file.path);
       const revisions =
         cleared.length === 0
           ? null
           : yield* fileRevisionsOf(project, input, cleared, "setFilesViewed", "fresh").pipe(
-              // A host that won't say what its head has costs the press its baseline, not the
-              // press itself: the mark is stored with none and holds until pressed again.
+              // Keep marks usable without a baseline if the host cannot report revisions.
               Effect.catch((error) =>
                 Effect.logWarning("recording viewed files without what the head has of them", {
                   operation: "setFilesViewed",
@@ -354,9 +299,8 @@ export const make = (dependencies: Dependencies) => {
       yield* filesViewedStore
         .set({
           ...filesViewedScope(project, input.number, viewer),
-          // A path left out of the answer stores with no baseline, not the empty revision, since
-          // the empty revision is itself an answer and would misreport the file once it turns
-          // out to have a version after all.
+          // Missing answers use null; an empty revision means a known deletion and would
+          // falsely mark the file as changed when its revision becomes available.
           files: input.files.map((file) => ({
             path: file.path,
             revision: revisions?.get(file.path) ?? null,

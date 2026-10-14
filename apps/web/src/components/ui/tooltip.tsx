@@ -85,9 +85,8 @@ function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
 }
 
 /**
- * Treats the native titlebar strip as off-screen, so a tooltip that would open
- * under the window controls flips to its other side. Rendered inside the
- * portal so only open tooltips track the titlebar.
+ * Exclude the native titlebar from tooltip placement; keep tracking inside the portal so only open tooltips
+ * subscribe.
  */
 function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
@@ -132,7 +131,6 @@ function TooltipPopup({
             variant === "glass"
               ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
               : "border bg-popover not-dark:bg-clip-padding shadow-md/5",
-            // One wrap width for prose; code dumps get more room and break anywhere.
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
               : "max-w-80 wrap-anywhere whitespace-normal leading-snug",

@@ -200,7 +200,6 @@ const makeHandler = (browser: ServerBrowser.ServerBrowser["Service"]) =>
     );
   });
 
-/** Which host setup a launch failure is missing, and the command that fixes it. */
 const hostSetup = (cause: unknown): PreviewStreamHostSetup | undefined =>
   isSandboxError(cause)
     ? { need: "sandbox", command: cause.setupCommand }

@@ -59,10 +59,8 @@ import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
-// How long a successful discovery probe stays valid. Periodic health
-// refreshes reuse it instead of spawning a fresh disposable ACP session;
-// failed or unauthenticated probes are never cached so a completed sign-in
-// is detected on the next refresh.
+// Cache only successful discovery to avoid spawning on health refresh;
+// failures and unauthenticated results must retry to detect completed sign-in.
 const PROBE_SUCCESS_TTL_MS = 15 * 60 * 1_000;
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
@@ -94,8 +92,6 @@ function modelsFromDiscovery(
   customModels: ReadonlyArray<string>,
 ): ReadonlyArray<ServerProviderModel> {
   const discovered = discovery?.models ?? [];
-  // Discovered session config options and modes ride on every model so the
-  // composer's generic option controls can drive them per thread.
   const capabilities =
     discovery === undefined || discovery.configOptions.length === 0
       ? EMPTY_CAPABILITIES
@@ -211,9 +207,7 @@ function baseSnapshot(
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     ...(iconUrl ? { iconUrl } : {}),
     continuation: { groupKey: input.continuationKey },
-    // The registry driver rejects every application text-generation operation,
-    // so selectors must not offer these instances for commit, PR, branch, or
-    // title generation.
+    // Rejects application text generation, so exclude these instances from its selectors.
     supportsTextGeneration: false,
     enabled: input.settings.enabled,
     installed: input.installed,
@@ -338,9 +332,7 @@ export function buildCheckedAcpRegistrySnapshot(
       : {}),
     installed: readiness.installed,
     version: readiness.version,
-    // A failed discovery probe on a ready installation is a warning, not an
-    // outage: the agent binary is present and a real turn may still work
-    // (for example after the user completes authentication).
+    // A failed probe is a warning when the binary is ready: real turns may work after sign-in.
     status: probeFailed ? "warning" : readiness.status,
     auth: input.probe
       ? {
@@ -458,7 +450,6 @@ export const checkAcpRegistryProviderReadiness = Effect.fn(
 
 export type AcpRegistryDriverEnv = AcpRegistryAdapterV2DriverEnv | ProviderHost.ProviderHost;
 
-/** Canonical provider-instance wrapper for ACP Registry orchestration adapters. */
 export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryDriverEnv> = {
   driverKind: DRIVER_KIND,
   metadata: {
@@ -733,8 +724,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         ),
       );
 
-      // The management probes read the coordinator via serviceOption, so it is
-      // provided only when this driver instance actually has one.
+      // Provide the optional coordinator only when this driver instance has one.
       const provideAcpManagementServices = <A, E>(
         effect: Effect.Effect<
           A,

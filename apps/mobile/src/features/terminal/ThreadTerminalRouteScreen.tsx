@@ -377,7 +377,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const lastBufferReplayKeyRef = useRef<string | null>(null);
   const sentInitialInputKeyRef = useRef<string | null>(null);
   const [readyBufferReplayKey, setReadyBufferReplayKey] = useState<string | null>(null);
-  /** Default grid is always valid for attach; onResize refines cols/rows. Requiring a cached size blocked bootstrap for new terminal routes. */
+  /** The default grid permits attachment before native measurement; onResize refines it. */
   const [hasMeasuredSurface, setHasMeasuredSurface] = useState(true);
   const [pendingModifierState, setPendingModifierState] = useState<{
     readonly terminalId: string;
@@ -838,7 +838,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     });
   }, [pasteSession, terminalId, writeInput]);
 
-  /** Sends a key through the armed toolbar modifier, if any, and disarms it. */
   const writeModifiedInput = useCallback(
     (data: string) => {
       if (pendingModifier === null) {
@@ -943,8 +942,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   }, [navigation, params.environmentId, params.threadId]);
 
   const navigateAwayAfterExit = useCallback(() => {
-    // With other shells still live, fall through to the previous one instead
-    // of dropping the user back on the thread.
     const fallbackTerminalId = previousLiveTerminalId({
       sessions: terminalMenuSessions,
       exitedTerminalId: terminalId,
@@ -963,8 +960,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       navigation.goBack();
       return;
     }
-    // Deep-linked/root mounts have nothing to pop; land on the thread
-    // instead of stranding the user on a dead terminal.
+    // Deep-linked mounts have no screen to pop, so replace the ended terminal with its thread.
     if (selectedThread) {
       navigation.dispatch(
         StackActions.replace("Thread", {
@@ -1019,7 +1015,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         navigateAwayAfterExit();
         return;
       }
-      // Leave a background terminal screen when it is focused again.
       pendingExitNavigationRef.current = terminalKey;
     },
   });

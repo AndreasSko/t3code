@@ -78,10 +78,8 @@ function pullRequestMatchesProject(
 }
 
 /**
- * A recent user message stays queued until a run adopts its timestamp.
- * Absolute age bounds client clock skew in both directions and stops stale
- * pre-adoption data from blocking the thread forever. A failed run start
- * clears the block immediately (mirrors the v1 session "error" rule).
+ * User-message timestamps block until a run adopts them; absolute age bounds clock skew
+ * and stale pre-adoption state. Failed starts clear the block immediately.
  */
 export function threadHasQueuedTurnStart(
   thread: Pick<
@@ -107,11 +105,8 @@ export function threadHasQueuedTurnStart(
   ].every((value) => value === null || value < messageAtMs);
 }
 
-/**
- * A merged or closed pull request settles the thread unless the user wrote to
- * it afterwards. Runs that background work, a PR watch, or another agent
- * started do not count, so they cannot hold a merged thread open.
- */
+// Terminal PRs settle unless the user wrote later; automatic wakes do not
+// count as new user work and cannot keep the thread open.
 function pullRequestSettles(
   thread: Pick<
     ProjectionStore.ProjectionSettlementCandidate,
@@ -164,13 +159,8 @@ export function isAutoSettlementCandidate(
 }
 
 /**
- * Whether a thread is parked on its snooze: its wake time is in the future and
- * it has not raised its hand with a pending request, a fresh failure, or work
- * that completed after the snooze. Server twin of the client's
- * `effectiveSnoozed`, so agents and the sidebar agree on what is snoozed. One
- * difference: a failure counts as fresh when its run completed after the
- * snooze, like `isAutoSettlementCandidate`. The client compares the shell's
- * update time, so a rename can wake a failed thread there but not here.
+ * Pending input, fresh failure, or completion can wake a snooze before its timer.
+ * Unlike client effectiveSnoozed, failures use run completion time so renames cannot wake them.
  */
 export function isSnoozed(
   thread: Pick<
@@ -325,16 +315,13 @@ export const make = Effect.gen(function* () {
     if (!autoSettlementConfigured(settings)) {
       return;
     }
-    // A sweep for one thread reads only that thread's candidate row.
     const threads = yield* projections.getSettlementCandidates(threadId);
     if (threads.length === 0) return;
     const projectShells = yield* projectStore.listShells();
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const projects = new Map(projectShells.map((project) => [project.id, project]));
-    // A merge event re-sweeps every candidate, not just the threads linked to
-    // the merged pull request: most threads carry no link and settle from
-    // their branch lookup, which would otherwise wait for the next minute's
-    // sweep on a possibly stale cached answer.
+    // Merge events resweep all candidates: unlinked threads settle through branch
+    // lookup and would otherwise wait for a periodic sweep with a stale cache.
     const candidates = threads.filter((thread) => isAutoSettlementCandidate(thread, nowMs));
 
     const settleThread = Effect.fn("ThreadSettlementServiceV2.settleThread")(
@@ -406,12 +393,8 @@ export const make = Effect.gen(function* () {
       { concurrency: 8, discard: true },
     );
     if (mergedPullRequest !== null) {
-      // The merge just confirmed a terminal state the lookup caches can still
-      // call open (branch answers live two minutes, the sweep runs every
-      // minute). Drop the swept checkouts' cached answers so the merge settles
-      // its branch threads now instead of on a later sweep. Threads linked to
-      // the merged pull request settle from the event itself below and need no
-      // lookup, so they are absent from this map by construction.
+      // Open branch answers can stay cached for one minute; invalidate on merge so unlinked threads settle now.
+      // Linked threads use the event directly and need no lookup.
       const cwds = [...new Set(lookupCwdByThreadId.values())];
       yield* Effect.forEach(cwds, (cwd) => git.invalidateStatus(cwd), {
         concurrency: 8,
@@ -465,11 +448,8 @@ export const make = Effect.gen(function* () {
       const thread = group[0]!;
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
       if (reference != null) {
-        // The event carries the merged state, so only the threads linked to
-        // that exact pull request settle from it. Every other linked thread
-        // falls through to a fresh summary lookup below: the merge sweep
-        // covers all candidates, and an unrelated merge must never settle
-        // them.
+        // Only threads linked to this exact PR can settle from its merge event;
+        // unrelated linked threads need a fresh lookup.
         const matchesMerge =
           mergedPullRequest !== null &&
           reference.projectId === mergedPullRequest.projectId &&
@@ -565,11 +545,8 @@ export const make = Effect.gen(function* () {
     runSweep(null, threadId),
   );
 
-  // Settling closes the thread's shells that sit at an idle prompt, so they stop
-  // holding the worktree. A terminal running a command (a dev server, an
-  // editor) stays for the user to close. Then the project's settle script runs
-  // in the thread's own worktree; a thread in the shared checkout skips it,
-  // because other threads may still be working there.
+  // Close idle shells only; keep running commands for the user. Run settle scripts
+  // only in isolated worktrees because the shared checkout may still be in use.
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       // A thread re-engaged before this event ran keeps its shells.

@@ -23,10 +23,7 @@ const HighlightedLine = memo(function HighlightedLine({ node }: { node: Highligh
   });
 });
 
-/** Completed line nodes retain their identity in the incremental highlighter.
- * Keep their DOM mounted too: replacing the entire pre makes the browser parse
- * and resolve styles for thousands of unchanged token spans on each update.
- */
+/** Keep completed-line DOM mounted: replacing the pre reparses and restyles thousands of unchanged spans per update. */
 export function HighlightedCodeLines({ root }: { root: HighlightedRoot }) {
   const pre = root.children[0];
   if (pre?.type !== "element" || pre.tagName !== "pre") return toJsxRuntime(root, runtime);

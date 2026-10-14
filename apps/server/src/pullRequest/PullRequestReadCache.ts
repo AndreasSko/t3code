@@ -29,11 +29,7 @@ const CONCURRENT_READS = 512;
 const STORE_ID = "pr-v2";
 // An entry file is the store id followed by the SHA-256 hex digest of its key.
 const ENTRY_FILE_NAME = new RegExp(`^${STORE_ID}[0-9a-f]{64}$`);
-/**
- * Entries expire a minute after they are written, and a write sets the file's
- * mtime. A file untouched for a day is long expired; the day only leaves slack
- * for clock changes. Pruning a live entry would cost one refetch.
- */
+/** One day leaves clock-change slack beyond the one-minute TTL; pruning a live entry only costs a refetch. */
 export const ENTRY_FILE_MAX_AGE = Duration.days(1);
 type ReadError = PullRequestOperationError | PullRequestUnavailableError;
 const revisionCodec = Schema.fromJsonString(
@@ -177,11 +173,7 @@ export const make = Effect.gen(function* () {
   });
 });
 
-/**
- * Deletes entry files in `directory` not written within `ENTRY_FILE_MAX_AGE`.
- * The persisted cache drops an expired entry only when it is read again, so
- * files for PRs nobody reopens would otherwise stay forever.
- */
+/** Expired entries are removed only when read, so unopened PRs need a filesystem sweep. */
 export const pruneExpiredEntryFiles = Effect.fn("PullRequestReadCache.pruneExpiredEntryFiles")(
   function* (directory: string) {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -220,7 +212,6 @@ export const layer = Layer.unwrap(
     return Layer.effect(PullRequestReadCache, make).pipe(
       Layer.provide(
         KeyValueStore.layerFileSystem(directory).pipe(
-          // Prunes once the server is active, then every hour.
           Layer.tap(() =>
             forkParked(
               pruneExpiredEntryFiles(directory).pipe(

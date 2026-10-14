@@ -19,11 +19,7 @@ export const StoredGitHubRoutingPermission = Schema.Struct({
 });
 export type StoredGitHubRoutingPermission = typeof StoredGitHubRoutingPermission.Type;
 
-/**
- * Trust belongs to the saved endpoints, never to an environment id advertised
- * by a server alone. With several routes the key covers all of them, sorted so
- * reordering keeps trust but adding or changing an address revokes it.
- */
+/** Trust covers saved endpoints, sorted so reordering preserves it but address changes revoke it. */
 export function gitHubRoutingConnectionKey(entry: ConnectionCatalogEntry): string | null {
   // Learned routes come and go with the server's addresses and reuse a saved
   // route's credential, so they leave trust where the user put it.

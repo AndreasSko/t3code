@@ -169,10 +169,8 @@ function WorkspaceColumns(
   );
 
   useEffect(() => {
-    // In compact size classes UIKit exposes one column. Selecting a thread
-    // changes the visible column without rebuilding either navigation stack.
-    // The initial column is a native prop, so it is applied before the host
-    // attaches. Commands only handle later navigation changes.
+    // Apply the initial compact column as a native prop before the host attaches;
+    // commands switch columns only for subsequent navigation changes.
     if (layout.usesSplitView || shownCompactColumn.current === compactColumn) return;
     shownCompactColumn.current = compactColumn;
     hostRef.current?.show(compactColumn);

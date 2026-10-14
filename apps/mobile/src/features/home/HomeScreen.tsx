@@ -81,8 +81,6 @@ import { useMaterialFabScroll } from "./MaterialFabScrollContext";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
 
-/* ─── Types ──────────────────────────────────────────────────────────── */
-
 interface HomeScreenProps {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
@@ -132,33 +130,13 @@ interface HomeScreenProps {
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
 }
 
-/* ─── Layout constants ───────────────────────────────────────────────── */
-
-// v2 rows are mixed-height: settled slim rows run ~60dp, single-line cards
-// measured ~74dp on device (252px on the Pixel 10 Pro screenshot), two-line
-// cards ~94dp. The estimate seeds the recycler's initial container count,
-// `ceil((scrollLength + 2 * INITIAL_DRAW_DISTANCE) / estimate)` with the
-// initial draw distance capped at 50, so an estimate at or below the average
-// row height starts the pool at or above the item count for the short lists
-// that LegendList otherwise keeps pooling to exactly its item count — that is
-// what stopped the dev-mode "no unused container available" warning on the
-// seeded short-list device passes. It is a mitigation, not an elimination:
-// after first layout the full drawDistance applies, and a sudden expansion
-// past the pooled headroom (~25+ items appearing at once) still creates a
-// container on demand with the dev-only warning one pass ahead of the
-// measured-height pool expansion. The old tallest-card estimate (~92) fired
-// that warning on every ordinary shelf expand, so the average wins.
+// Measured rows: ~60dp settled, ~74dp one-line, ~94dp two-line; keep the estimate below the mixed average.
+// LegendList caps initial draw distance at 50, so taller estimates underallocate short-list pools.
+// Expanding by ~25+ rows at once can still exhaust headroom and warn before measured-height pool growth.
 const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
-// Rows away from the viewport are cheap dormant frames (see
-// swipe-row-activation), so render further ahead: a fast fling then reaches
-// rows that are already built instead of rows still being rebuilt.
+// Offscreen rows are cheap dormant frames (see swipe-row-activation); render ahead
+// so a fast fling reaches rows that are already built.
 const THREAD_LIST_V2_DRAW_DISTANCE = 1_000;
-/**
- * Top spacing between the list and the Android custom header. The Android
- * header is rendered in-flow above this screen and
- * already consumes the top safe-area inset, so the list only needs breathing
- * room here.
- */
 
 function deriveEmptyState(props: {
   readonly catalogState: WorkspaceState;
@@ -267,8 +245,6 @@ function renderHomeScrollView(props: ScrollViewProps) {
   // the component so those cells remain children of the actual ScrollView.
   return <HomeScrollView {...props} />;
 }
-
-/* ─── Main screen ────────────────────────────────────────────────────── */
 
 export function HomeScreen(props: HomeScreenProps) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
@@ -897,7 +873,6 @@ export function HomeScreen(props: HomeScreenProps) {
       searchQuery: props.searchQuery,
       selectedThreadKey,
       threadSearchMatchByKey,
-      // Rows read it for their reorder menu items.
       workingShelfEnabled,
     }),
     [
@@ -912,7 +887,6 @@ export function HomeScreen(props: HomeScreenProps) {
     ],
   );
 
-  /* Empty states */
   // The signal must ignore the search/environment filters: an active query
   // that matches nothing needs the in-list "No results" state, not the
   // full-page "No threads yet". Settled threads are unarchived live shells,

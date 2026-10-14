@@ -1,14 +1,6 @@
 /**
- * Claude Code subscription usage. Both sources produce windows with the same
- * ids so a turn-driven `rate_limit_event` lands on the row the SDK's
- * `get_usage` read established:
- *
- * - `get_usage` (on demand, during the capabilities probe) reports every
- *   window at once as 0–100 percentages with ISO reset times.
- * - `rate_limit_event` (streamed during a turn) names one window at a time
- *   with a 0–1 utilization fraction and an epoch-seconds reset.
- *
- * @module provider/claudeUsageLimits
+ * Probes use percentages and ISO resets; streamed updates use fractions and epoch seconds.
+ * Both sources must use the same window ids so updates reconcile existing rows.
  */
 import type { SDKControlGetUsageResponse, SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 import type {
@@ -30,12 +22,7 @@ import {
 const SESSION_MINS = 5 * 60;
 const WEEK_MINS = 7 * 24 * 60;
 
-/**
- * The account-wide windows, keyed by the SDK's `rateLimitType`. Model-scoped
- * weeklies are additive on top of these: the CLI reports them under
- * `rate_limits.model_scoped[]` on `get_usage` and streams the overage-included
- * model bucket (Fable today) as `seven_day_overage_included`.
- */
+/** Model-scoped weeklies are additive; get_usage carries them in rate_limits.model_scoped. */
 const WINDOWS: Readonly<
   Record<string, Pick<ServerProviderUsageWindow, "kind" | "label" | "windowDurationMins">>
 > = {
@@ -44,11 +31,8 @@ const WINDOWS: Readonly<
 };
 
 /**
- * The streamed event names the overage-included bucket by type
- * (`seven_day_overage_included`), while `get_usage` names it by the model's
- * `display_name`. Which model that is changes over time, so the probe records
- * the name it saw and the event mapper reuses it; the mid-turn update then
- * lands on the row the probe drew instead of opening a second one.
+ * Events name the overage-included bucket by type; probes name it by model display_name.
+ * Reuse the probed display_name so streamed events update the existing row.
  */
 const OVERAGE_INCLUDED_EVENT_TYPE = "seven_day_overage_included";
 
@@ -79,10 +63,6 @@ function scopedWindow(
   };
 }
 
-/**
- * `model_scoped` shipped in the CLI after the SDK typings we pin, so it is
- * read structurally until the `.d.ts` catches up.
- */
 interface ModelScopedWindow {
   readonly display_name: string;
   readonly utilization: number | null;
@@ -127,9 +107,8 @@ function makeWindow(
 }
 
 /**
- * Utilization is a 0–1 fraction on the streamed event. An overage-included
- * event before any probe has named the bucket is dropped: guessing a name
- * would draw a row the next probe cannot reconcile.
+ * Streamed utilization is a 0–1 fraction; drop overage events before a probe names their bucket.
+ * Guessing a name would create a row the next probe cannot reconcile.
  */
 export function claudeRateLimitEventToUpdate(
   info: SDKRateLimitInfo,
@@ -150,10 +129,7 @@ export function claudeRateLimitEventToUpdate(
   return undefined;
 }
 
-/**
- * Percentages on the `get_usage` response are already 0–100. Also yields the
- * scoped-bucket names the response carried, for the event mapper to reuse.
- */
+/** get_usage reports 0–100 percentages; scoped names must be reused by the event mapper. */
 export function claudeUsageResponseToLimits(input: {
   readonly response: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
   readonly checkedAt: string;
@@ -189,7 +165,6 @@ export function claudeUsageResponseToLimits(input: {
   };
 }
 
-/** Probe-side helper: map the response and remember the scoped names for events. */
 export const recordClaudeUsageResponse = (
   namesRef: Ref.Ref<ClaudeScopedLimitNames>,
   input: Parameters<typeof claudeUsageResponseToLimits>[0],

@@ -141,13 +141,11 @@ export const AgentRpcs = RpcGroup.make(
   SetSessionConfigOptionRpc,
 );
 
-// Registry agents transition independently. The compatibility groups accept
-// both protocol generations on the wire while the public client normalizes
-// them into one provider-neutral surface after initialize negotiates v1 or v2.
+// Accept both ACP generations on the wire; the public client normalizes
+// them after initialize negotiates the generation.
 const CompatInitializeRpc = Rpc.make(AGENT_METHODS.initialize, {
-  // The negotiation request intentionally carries both v1 and v2 capability
-  // field names. A union encoder would select one branch and discard the
-  // other generation's fields before they reach the agent.
+  // Use Unknown so initialize sends both generations' capability names;
+  // a union encoder would discard the other branch's fields.
   payload: Schema.Unknown,
   success: Schema.Union([AcpSchema.InitializeResponse, AcpSchemaV1.InitializeResponse]),
   error: AcpSchema.Error,

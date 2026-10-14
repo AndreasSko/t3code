@@ -51,9 +51,7 @@ export function deriveThreadRelationshipGraph(input: {
 }): ThreadRelationshipGraph {
   const threadsById = new Map<ThreadId, OrchestrationV2ThreadShell>();
   for (const thread of input.threads) {
-    // Callers order shells from most to least authoritative. In particular,
-    // live shells precede archived snapshots, which may still contain a stale
-    // copy during archive refresh.
+    // Callers supply authoritative shells first; live rows must beat stale archive copies.
     if (!threadsById.has(thread.id)) {
       threadsById.set(thread.id, thread);
     }
@@ -187,7 +185,6 @@ export function immediateThreadRelationships(
   return rows;
 }
 
-/** True when `edge` reaches `currentThreadId` from its parent or owning agent. */
 export function isParentThreadRelationship(
   edge: ThreadRelationshipEdge,
   currentThreadId: ThreadId,
@@ -216,20 +213,8 @@ function threadCreatedAtMillis(node: ThreadRelationshipNode | undefined): number
   return Number.isFinite(millis) ? millis : null;
 }
 
-/**
- * Orders the web thread-details Lineage rows for display.
- *
- * Web-specific by design: the panel pins the parent row first and a distinct
- * merge-back target second so their actions stay where the user expects, and
- * only then falls back to newest-created-first. Mobile does not share that
- * exception, so this is not the canonical relationship order and should not be
- * reused as one.
- *
- * Ordering below the pins is `createdAt` descending, which is immutable, so
- * rows never move when messages or status changes arrive on a related thread.
- * Threads whose shell is missing (or whose `createdAt` did not decode) sink to
- * the bottom. Ties break by thread id ascending so the order is total.
- */
+/** Web-only order pins parent and merge target, then uses immutable creation time descending.
+ * Missing shells sink and ids break ties; mobile does not share the pinning rule. */
 export function orderWebThreadLineageRows(input: {
   readonly graph: ThreadRelationshipGraph;
   readonly rows: ReadonlyArray<ThreadRelationshipWalkRow>;

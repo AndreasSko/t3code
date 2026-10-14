@@ -57,7 +57,6 @@ interface ResolvedTarget {
   readonly url: string;
 }
 
-/** The project's host and provider supply defaults for a repository-and-number input. */
 function projectHostAndProvider(project: OrchestrationProjectShell | undefined): {
   readonly host: string | null;
   readonly kind: SourceControlProviderKind | null;
@@ -71,12 +70,7 @@ function projectHostAndProvider(project: OrchestrationProjectShell | undefined):
   };
 }
 
-/**
- * Turns whichever shape the agent passed into one host-level identity. A URL
- * wins outright; otherwise the repository and number are completed with the
- * thread's project host, which is where an agent working in that checkout
- * almost always opened the pull request.
- */
+// Prefer URL identity; otherwise fill repository/number with the caller project's host.
 const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   input: PullRequestTargetInput,
   project: OrchestrationProjectShell | undefined,
@@ -142,7 +136,6 @@ function entryOf(
   };
 }
 
-/** What the tools report from a thread shell; exported so the shape is testable without a layer. */
 export function listThreadPullRequests(
   thread: Pick<OrchestrationV2ThreadShell, "pullRequests">,
 ): ListThreadPullRequestsResult {
@@ -158,11 +151,8 @@ export function listThreadPullRequests(
   };
 }
 
-/**
- * The project a pull request is read through: the caller's own when its checkout is that
- * repository, else the first project here whose checkout is. Host reads are scoped to a project,
- * so a repository with no checkout in this environment cannot be guided from it.
- */
+// Host reads require a checkout project; prefer the caller's matching
+// repository, then another matching project. No checkout means no guide.
 function projectForPullRequest(
   projects: ReadonlyArray<OrchestrationProjectShell>,
   target: { readonly host: string; readonly repository: string },
@@ -262,10 +252,7 @@ const make = Effect.gen(function* () {
         ? Effect.failCause(cause as Cause.Cause<never>)
         : Effect.fail(new Failure({ cause }));
 
-  /**
-   * Starts or stops a watch. One command links an unlinked pull request and watches it, and the
-   * result reports the state the thread holds afterwards.
-   */
+  // Link and watch in one command so the reported state matches the stored result.
   const setWatching = Effect.fn("PullRequestsToolkit.setWatching")(function* (
     input: PullRequestTargetInput,
     watching: boolean,
@@ -281,8 +268,8 @@ const make = Effect.gen(function* () {
       return yield* new PullRequestWatchFromSubagentError();
     }
     const before = watchedLink(thread);
-    // A merged pull request cannot reopen. A closed one can, and its saved state may be stale,
-    // so the watch starts and its first read ends it if the host still says closed.
+    // Merged PRs cannot reopen; closed snapshots may be stale, so let the
+    // watch's first host read confirm whether to stop.
     if (watching && before?.snapshot?.state === "merged") {
       return yield* new PullRequestNotOpenError({ state: "merged" });
     }
@@ -309,10 +296,7 @@ const make = Effect.gen(function* () {
     };
   });
 
-  /**
-   * Resolves each requested pull request and the project it is read through. The caller's own
-   * project wins where it is a checkout of that repository; with no thread, any project here may.
-   */
+  // Prefer the caller's matching repository project; OAuth callers may use any matching project.
   const locateAll = Effect.fn("PullRequestsToolkit.locateAll")(function* (
     targets: ReadonlyArray<Omit<PullRequestTargetInput, "threadId">>,
   ) {
@@ -344,7 +328,6 @@ const make = Effect.gen(function* () {
     );
   });
 
-  /** The service reads a pull request through one project's checkout and credentials. */
   const guideReference = (
     project: OrchestrationProjectShell,
     target: { readonly host: string; readonly repository: string; readonly number: number },
@@ -355,7 +338,6 @@ const make = Effect.gen(function* () {
     number: target.number,
   });
 
-  /** A host or service error, said as its own detail rather than its operation's wrapper. */
   const guideFailureDetail = (error: { readonly message: string }) =>
     "detail" in error && typeof error.detail === "string" ? error.detail : error.message;
 

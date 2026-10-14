@@ -22,10 +22,7 @@ export function subagentGroupSummary(
   };
 }
 
-/**
- * Counts a group's states in the order a reader scans them: what is still
- * running first, then outcomes, using the agents panel's words.
- */
+/** Counts running states before outcomes, using agents-panel labels. */
 export function summarizeSubagentStatuses(
   statuses: ReadonlyArray<OrchestrationV2TurnItemStatus>,
 ): string {

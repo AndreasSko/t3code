@@ -23,11 +23,7 @@ import type {
 import { toSortableTimestamp } from "../../lib/threadSort";
 import type { PullRequestListSort } from "./pullRequestListPreferences";
 
-/**
- * A listed change request with the environment that read it. Nothing on a row says which machine
- * it came from, and the page unions every connected one — so acting on a row, refreshing it, or
- * opening its detail all need the tag the listing itself does not carry.
- */
+/** Tag rows with their source environment so actions and detail reads target the correct machine. */
 export interface EnvironmentPullRequestEntry extends PullRequestListEntry {
   readonly environmentId: EnvironmentId;
 }
@@ -58,15 +54,9 @@ export interface PullRequestLabelFacet extends PullRequestLabel {
   readonly count: number;
 }
 
-/**
- * The signed-in account per host. Keyed `"<environmentId> <host>"` once a listing spans more than
- * one environment: two machines can both reach github.com signed in as different people, and a
- * single host-keyed record would let whichever answered last decide who "I" am — which is how
- * every row of somebody's own work came to be filed under Others.
- */
+/** Key viewers by environment and host because machines can use different accounts on one host. */
 export type PullRequestViewers = PullRequestListResult["viewers"];
 
-/** A row plus the environment that read it, where the caller has one to give. */
 type ScopedEntry = PullRequestListEntry & { readonly environmentId?: string };
 
 const pullRequestViewerKey = (entry: ScopedEntry): string =>
@@ -136,10 +126,7 @@ export function collectPullRequestListFacets(
   };
 }
 
-/**
- * The signed-in login for the host a row came from, or null where none was given. Shared by
- * authorship matching here and by `author:me` resolution wherever a row's own viewer is needed.
- */
+/** Signed-in account for this row's host, shared by authorship and author:me matching. */
 export function pullRequestEntryViewer(
   entry: ScopedEntry,
   viewers: PullRequestViewers,
@@ -149,11 +136,7 @@ export function pullRequestEntryViewer(
   return normalize(viewers[pullRequestViewerKey(entry)] ?? viewers[entry.host]);
 }
 
-/**
- * Authorship is per host, not per provider kind: the same list can hold change requests from
- * GitHub, GitLab and a GitHub Enterprise install, and the account that owns one says nothing
- * about the others.
- */
+/** Match accounts per host; one provider kind can span distinct enterprise identities. */
 function isAuthoredByViewer(entry: ScopedEntry, viewers: PullRequestViewers): boolean {
   const viewer = pullRequestEntryViewer(entry, viewers);
   return viewer !== null && normalize(entry.author?.login) === viewer;
@@ -175,11 +158,8 @@ const CHECKS_VALUES: Record<string, PullRequestListFilters["checks"]> = {
   failing: "failing",
 };
 
-/**
- * One token of a typed query: a run of non-space characters in which a quoted stretch counts as
- * part of the token, so `label:"needs design"` stays whole. An unbalanced quote is dropped rather
- * than swallowing the rest of the line.
- */
+/** Keep quoted query stretches inside tokens, including label:"needs design";
+ * unmatched quotes cannot swallow the remainder. */
 const QUERY_TOKEN = /(?:[^\s"]|"[^"]*")+/g;
 /** The contract's own ceilings on a qualifier: this many names, each this long. */
 const MAX_QUALIFIER_VALUES = 10;
@@ -189,10 +169,8 @@ function qualifierValue(raw: string): string {
   return raw.replaceAll('"', "").trim();
 }
 
-/** A qualifier's value as the list it may be: split on commas, each name unquoted on its own. */
 function splitQualifierList(raw: string): string[] {
-  // Quoting names one whole label however many commas it holds: `label:"needs,triage"` asks for
-  // the label written that way, not for either half of it.
+  // Quoted label names can contain commas without becoming separate labels.
   if (/^\s*"[^"]*"\s*$/.test(raw)) {
     const whole = qualifierValue(raw);
     return whole.length === 0 ? [] : [whole];
@@ -203,10 +181,7 @@ function splitQualifierList(raw: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-/**
- * A typed query is written by hand, and the contract bounds what a qualifier may carry — so what
- * is typed past those bounds is cut here rather than refused by the request that carries it.
- */
+/** Trim hand-typed qualifiers to contract bounds before sending a request. */
 function boundedNames(names: ReadonlyArray<string>): string[] {
   return names
     .slice(0, MAX_QUALIFIER_VALUES)
@@ -214,20 +189,8 @@ function boundedNames(names: ReadonlyArray<string>): string[] {
     .filter((name) => name.length > 0);
 }
 
-/**
- * A typed query split into the qualifiers the hosts can act on and the text that is left. Written
- * GitHub's way — `label:foo`, `-label:"needs design"`, `author:octocat`, `draft:true`,
- * `review:approved`, `status:success` — because a project's labels are its own and a menu cannot
- * list them.
- *
- * A key this does not know is read as a label of that whole name: repositories namespace their
- * labels with a colon — `size:XXL`, `area:web`, `vouch:trusted` — and someone typing one means
- * the label, not a description that happens to contain it. `-size:XXL` excludes the same way.
- *
- * Quoting is the way back to plain text: `"size:XXL"` is searched for as written, which is what
- * makes a literal search for a colon still possible. A known key whose value it does not take is
- * text too, so a search for "status:" itself is still findable.
- */
+/** Unknown keys mean namespaced labels; quoting restores literal text search.
+ * Known keys with unsupported values also remain plain text. */
 export function parsePullRequestQuery(raw: string): {
   readonly text: string;
   readonly filters: PullRequestListFilters;
@@ -245,8 +208,7 @@ export function parsePullRequestQuery(raw: string): {
     const negated = qualifier?.[1] === "-";
     switch (value.length === 0 ? "" : (qualifier?.[2]?.toLowerCase() ?? "")) {
       case "label": {
-        // GitHub's own OR: `label:a,b` is one qualifier satisfied by either name. Negated, the
-        // comma excludes each — a row carrying any of them goes.
+        // Commas OR included labels but exclude every named label when negated.
         const names = boundedNames(splitQualifierList(qualifier?.[3] ?? ""));
         if (names.length === 0) break;
         if (negated) excludedLabels.push(...names);
@@ -277,12 +239,9 @@ export function parsePullRequestQuery(raw: string): {
       case "":
         break;
       default:
-        // An unknown key, read as the namespaced label it almost always is. A pasted link is
-        // not one — `https://…` would otherwise become a label named after its own scheme.
+        // Unknown keys are namespaced labels; URL schemes must stay plain text.
         if (!value.startsWith("/")) {
-          // The key names the namespace, so the bare parts of `size:S,XS` are both sizes. A part
-          // that already carries a colon names its whole label — `size:S,size:XS` is the same
-          // pair written out, and prefixing it again would ask for `size:size:XS`.
+          // Prefix unqualified comma values with the namespace; already qualified names stay whole.
           const names = boundedNames(
             splitQualifierList(qualifier?.[3] ?? "").map((name) =>
               name.includes(":") ? name : `${qualifier?.[2] ?? ""}:${name}`,
@@ -320,10 +279,7 @@ export function matchesPullRequestQuery(entry: PullRequestListEntry, query: stri
     .includes(normalizedQuery);
 }
 
-/**
- * The server returns the involvement superset for a state, so switching between the Reviewing
- * and Authored tabs never waits on the network.
- */
+/** The server returns an involvement superset so tab switching needs no network request. */
 export function filterPullRequestsByInvolvement<Entry extends ScopedEntry>(
   entries: ReadonlyArray<Entry>,
   viewers: PullRequestViewers,
@@ -338,19 +294,8 @@ export function filterPullRequestsByInvolvement<Entry extends ScopedEntry>(
   return entries;
 }
 
-/**
- * The rows already read, kept only where the filters now being asked about would keep them.
- *
- * Every combination of filters is its own question to the hosts, and asking a new one is no
- * reason to blank the page: what has been read is narrowed here and stays until the answer for
- * the new question replaces it. So this may only ever drop rows — a merged pull request cannot
- * sit under "Open" for the round trip — and what it leaves is a subset of the answer rather than
- * the answer itself.
- *
- * Only the filters a row can be judged by from its own fields. Involvement is left out because
- * it needs to know who is signed in on each host, and the search text because searching is the
- * hosts' own answer; both are narrowed where that knowledge already lives.
- */
+/** Narrow existing rows while new host answers arrive; only drop rows,
+ * using fields available locally. Resolve involvement and search where their context exists. */
 export function narrowPullRequestsToFilters<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   filters: {
@@ -367,16 +312,7 @@ export function narrowPullRequestsToFilters<Entry extends PullRequestListEntry>(
   );
 }
 
-/**
- * The further narrowings over rows that have already arrived, for the hosts that could not apply
- * them themselves and for the moment before an answer that did lands.
- *
- * `checks` is absent because no listed row carries its check state: that one filter is the
- * host's alone, and a row a host did not narrow stays rather than being guessed at.
- *
- * `viewer` is the row's own host's signed-in login, so `author:me` resolves against it rather
- * than being compared as the literal name "me". Optional, and left unresolved without one.
- */
+/** Resolve author:me against this row's viewer; check filters stay on the host. */
 export function matchesPullRequestFilters(
   entry: PullRequestListEntry,
   filters: PullRequestListFilters,
@@ -398,10 +334,7 @@ export function matchesPullRequestFilters(
   );
 }
 
-/**
- * Only relationships the list data actually carries: no "previously reviewed" bucket is
- * inferred, because the listing has no review history.
- */
+/** List data has no review history, so do not infer previously-reviewed involvement. */
 export function groupPullRequestsByInvolvement<Entry extends ScopedEntry>(
   entries: ReadonlyArray<Entry>,
   viewers: PullRequestViewers,
@@ -425,11 +358,7 @@ export function groupPullRequestsByInvolvement<Entry extends ScopedEntry>(
     .map((key) => ({ key, label: GROUP_LABELS[key], entries: buckets[key] }));
 }
 
-/**
- * Repository plus number is unique on one host, so the host makes the key unique overall — and
- * the environment on top of that, because two connected machines can hold the same repository and
- * would otherwise contribute two rows under one key.
- */
+/** Include environment, host, repository, and number so rows from separate machines stay unique. */
 export function pullRequestEntryKey(entry: ScopedEntry): string {
   const scope = entry.environmentId === undefined ? "" : `${entry.environmentId}:`;
   return `${scope}${entry.host}:${entry.repository}#${entry.number}`;
@@ -521,11 +450,8 @@ export function pullRequestStatsBatches(
   });
 }
 
-/**
- * Selects the next immutable stats batches. Size sorting needs every loaded row, while the other
- * modes only need rows near the viewport. Normal reads skip active and cached rows; an explicit
- * refresh asks for the selected rows again.
- */
+/** Size sort needs all loaded stats; other modes read near-viewport rows.
+ * Skip active/cached batches except during explicit refresh. */
 export function pullRequestStatsRequestBatches({
   entriesByKey,
   candidateKeys,
@@ -588,21 +514,14 @@ export function retainVisiblePullRequestStatsBatches(
   });
 }
 
-/**
- * The priority groups built from the hosts' own answers rather than re-partitioned from the
- * paginated feed. The feed is sliced by recency, so an older authored or review-requested row
- * can be missing from its first page and arrive with a later one; grouping the loaded pages
- * would then move it above rows already read. Here the partitions come whole from their own
- * server-filtered reads, the feed fills "Others" in its own order, and a continuation can only
- * append — a row it carries that a partition already holds is dropped rather than moved.
- */
+/** Read priority partitions whole so older authored/review-requested rows
+ * cannot reorder an already-read feed when later pages arrive. */
 export function partitionPullRequestsWithPriority<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   authored: ReadonlyArray<Entry>,
   reviewRequested: ReadonlyArray<Entry>,
 ): ReadonlyArray<PullRequestGroup<Entry>> {
   const authoredByKey = new Map(authored.map((entry) => [pullRequestEntryKey(entry), entry]));
-  // A row can be both authored and review-requested; authored wins, as the local grouping has it.
   const reviewByKey = new Map(
     reviewRequested.flatMap((entry) => {
       const key = pullRequestEntryKey(entry);
@@ -612,7 +531,6 @@ export function partitionPullRequestsWithPriority<Entry extends PullRequestListE
   const others: Entry[] = [];
   for (const entry of entries) {
     const key = pullRequestEntryKey(entry);
-    // The feed's copy of a partitioned row is at least as fresh — it replaces in place.
     if (authoredByKey.has(key)) {
       authoredByKey.set(key, entry);
     } else if (reviewByKey.has(key)) {
@@ -638,12 +556,7 @@ export type PullRequestDiffStats = ReadonlyMap<
   { readonly additions: number; readonly deletions: number }
 >;
 
-/**
- * The line counts held so far, with a new batch merged on. The stats read is keyed by the rows
- * on screen, so adding or removing one row is a fresh query with nothing in it yet; replacing
- * the map would blank every count already showing for the round trip. Merging by row identity
- * keeps them until their replacements arrive.
- */
+/** Merge stats by row identity so new query batches cannot blank counts already shown. */
 export function mergePullRequestDiffStats(
   previous: PullRequestDiffStats,
   stats: ReadonlyArray<{
@@ -672,13 +585,8 @@ export const pullRequestDiffStatKey = (row: {
   readonly number: number;
 }) => `${row.environmentId} ${row.projectId} ${row.number}`;
 
-/**
- * Every connected environment's listing, read as one list.
- *
- * `nextCursors` is keyed by environment rather than by repository: a cursor only means anything
- * to the host that issued it, and two machines can hold the same repository. `viewers` is not —
- * a host names one account, and the same host reached from two machines is the same account.
- */
+/** Continuation cursors are environment-scoped because machines can share
+ * repositories; viewer accounts are scoped by both environment and host. */
 export interface MergedPullRequestList {
   /** Keyed `"<environmentId> <host>"`, so one host's two accounts stay two accounts. */
   readonly viewers: PullRequestViewers;
@@ -687,19 +595,12 @@ export interface MergedPullRequestList {
   readonly errors: ReadonlyArray<EnvironmentPullRequestError>;
   readonly truncated: boolean;
   readonly nextCursors: Readonly<Record<string, PullRequestListCursors>>;
-  /**
-   * The environments with rows still on their hosts. Those with a cursor are continued from it;
-   * the rest can only be reached by asking them for a longer page, and are named here so that
-   * asking still happens once every other environment has run out of cursors.
-   */
+  /** Environments without cursors need longer-page requests after cursor continuations run out. */
   readonly truncatedEnvironments: ReadonlyArray<string>;
 }
 
-/**
- * The environments' answers folded into one. A host reached from more than one environment is one
- * row in the switcher, readable if any environment could read it and searched on the host only if
- * every one of them did — a host answering unnarrowed anywhere still needs the local pass.
- */
+/** Merge hosts as readable if any environment can read them; skip local
+ * text filtering only if every environment searched that host. */
 export function mergePullRequestLists(
   answers: ReadonlyArray<readonly [EnvironmentId, PullRequestListResult]>,
 ): MergedPullRequestList | null {
@@ -748,27 +649,18 @@ export function mergePullRequestLists(
   };
 }
 
-/** One page is what the list itself starts with, and all a cold start needs to look warm. */
 const SNAPSHOT_MAX_ENTRIES = 99;
 
 type SnapshotStorage = Pick<Storage, "getItem" | "setItem">;
 
-/**
- * Keyed by the whole set of environments the list was read from: connecting or dropping one
- * changes which rows belong on the page, and a snapshot taken from a different set would
- * hydrate rows no longer being read.
- */
+/** Environment-set changes invalidate snapshots so removed machines cannot leave stale rows. */
 export const pullRequestEnvironmentSetKey = (environmentIds: ReadonlyArray<string>): string =>
   [...environmentIds].sort((left, right) => left.localeCompare(right)).join(",");
 
 const snapshotStorageKey = (environmentSetKey: string) =>
   `t3.pullRequests.list:${environmentSetKey}`;
 
-/**
- * The priority groups' own server-filtered answers, carried with the feed. An authored pull
- * request older than the feed's first page lives only in these, so a snapshot without them
- * cold-starts into an Authored group missing exactly the rows that made it worth having.
- */
+/** Preserve priority partitions because older authored rows may not appear in the feed first page. */
 export interface PullRequestPartitionsSnapshot {
   readonly authored: ReadonlyArray<EnvironmentPullRequestEntry>;
   readonly reviewing: ReadonlyArray<EnvironmentPullRequestEntry>;
@@ -780,12 +672,8 @@ export interface PullRequestListSnapshot {
   readonly partitions?: PullRequestPartitionsSnapshot | undefined;
 }
 
-/**
- * Decoded with the contract's own schema rather than trusted from a cast: storage is writable
- * by anything in the origin and by any past version of this app, and one malformed row would
- * otherwise crash the list on every reload until the key is cleared. A snapshot from before a
- * schema change is rejected the same way, which is exactly the cold start it would have broken.
- */
+/** Validate writable storage against current contracts so malformed or old
+ * snapshots cannot crash the list on every reload. */
 const EnvironmentPullRequestEntrySchema = Schema.Struct({
   ...PullRequestListEntry.fields,
   environmentId: EnvironmentId,
@@ -817,13 +705,7 @@ const decodeSnapshot = Schema.decodeUnknownOption(
   }),
 );
 
-/**
- * The last list answered for this environment, brought back across a reload. The registry the
- * queries live in is recreated with the renderer, so without this a revisit cold-starts into
- * skeletons even though almost every row is unchanged; hydrated, the stale rows render at once
- * and the live read reconciles them in place by key. Errors are not carried — a failure is
- * never cached, and yesterday's is not this morning's.
- */
+/** Render stored rows immediately while live reads reconcile by key; never cache errors. */
 export function readPullRequestListSnapshot(
   storage: SnapshotStorage | undefined,
   environmentSetKey: string,
@@ -851,11 +733,9 @@ export function writePullRequestListSnapshot(
         data: {
           ...snapshot.data,
           entries: snapshot.data.entries.slice(0, SNAPSHOT_MAX_ENTRIES),
-          // A failure is never cached and yesterday's is not this morning's; a cursor names a
-          // position in a listing the host has long since forgotten.
+          // Old errors and host cursors cannot be trusted across reloads.
           errors: [],
           nextCursors: {},
-          // Where a listing stopped is as stale as the cursor that named it.
           truncatedEnvironments: [],
         },
         ...(snapshot.partitions === undefined
@@ -873,16 +753,8 @@ export function writePullRequestListSnapshot(
   }
 }
 
-/**
- * The project scope to actually ask for. A `projectId` in the URL outlives the environment it
- * came from, and one from elsewhere narrows the listing to nothing — an empty page with no
- * visible filter explaining it, since the switcher has no such project to show as selected. So
- * an id the environment does not have is dropped.
- *
- * Until `projectsKnown`, the id is kept rather than dropped: an environment that has not
- * reported yet is not the same as one without the project, and dropping first would show every
- * project's pull requests for a moment before narrowing back down.
- */
+/** Drop foreign project ids only after projects are known; dropping during
+ * connection would flash unscoped rows before narrowing back down. */
 export function resolveProjectScope<Id extends string>(
   projectId: Id | undefined,
   projects: ReadonlyArray<{ readonly id: string }>,
@@ -892,12 +764,7 @@ export function resolveProjectScope<Id extends string>(
   return projects.some((project) => project.id === projectId) ? projectId : undefined;
 }
 
-/**
- * The project an id names, on the server that owns it. A project id is only unique within its own
- * environment, so an id alone can name two projects on two connected machines: with a server in
- * hand the answer is exact, and without one it is only given where a single environment has that
- * id — narrowing to the wrong machine reads an empty list nobody asked for.
- */
+/** Project ids are environment-local; without a server, resolve only unambiguous ids. */
 export function findScopedProject<
   Project extends { readonly id: string; readonly environmentId: string },
 >(
@@ -913,14 +780,8 @@ export function findScopedProject<
   return matches.find((project) => project.environmentId === environmentId);
 }
 
-/**
- * Which environments a listing should ask, once the project scope is known. Scoping to a project
- * scopes to the server that owns it, saving every other server a read that could only answer with
- * nothing. Where an id is ambiguous — two servers holding the same project id, with no server
- * named — only the servers that actually hold that id are asked: a server without it may still
- * hold an unrelated project of its own under the same string, and asking it would return that
- * project's rows rather than an honest empty answer.
- */
+/** Query only environments holding the scoped project; ambiguous ids query
+ * all holders rather than unrelated projects on other servers. */
 export function resolveQueryEnvironmentIds<Id extends string>(
   environmentIds: ReadonlyArray<Id>,
   projects: ReadonlyArray<{ readonly id: string; readonly environmentId: Id }>,
@@ -931,8 +792,7 @@ export function resolveQueryEnvironmentIds<Id extends string>(
   if (scopedProject !== undefined) {
     return environmentIds.filter((environmentId) => environmentId === scopedProject.environmentId);
   }
-  // Before the servers have said what they hold, an id nothing matches is an id nothing has been
-  // asked about yet — reading none of them would show an empty page for a project that is there.
+  // Unreported project catalogs must not be mistaken for missing projects.
   if (scopedProjectId === undefined || !projectsKnown) return environmentIds;
   const holders = new Set(
     projects
@@ -942,14 +802,8 @@ export function resolveQueryEnvironmentIds<Id extends string>(
   return environmentIds.filter((environmentId) => holders.has(environmentId));
 }
 
-/**
- * The server a saved selection names, before its project is looked up against it. Still
- * connecting is not the same as gone: a server the workspace already knows about is kept named
- * here even while it has nothing to answer with yet, so the lookup that follows finds nothing
- * under it rather than falling through to a different server's project of the same id. Only a
- * name outside the workspace's whole catalog falls back to the page's own scope, which is what
- * lets a link to a server since removed still resolve by project id alone.
- */
+/** Keep known connecting servers scoped so identical project ids cannot
+ * resolve to another machine; fall back only for servers removed from the catalog. */
 export function resolveSelectedEnvironmentId<Id extends string>(
   namedEnvironmentId: Id | undefined,
   knownEnvironmentIds: ReadonlySet<Id>,
@@ -959,30 +813,18 @@ export function resolveSelectedEnvironmentId<Id extends string>(
   return knownEnvironmentIds.has(namedEnvironmentId) ? namedEnvironmentId : fallbackEnvironmentId;
 }
 
-/**
- * How well a row answers the text that was searched for, as a number to order by.
- *
- * Every host searches more than a row shows — GitHub reads bodies and commit messages, GitLab
- * and Bitbucket read descriptions — so a result can be a real match with nothing on the row to
- * show for it. Ordering those by recency alone is what puts an apparently unrelated pull request
- * between two obvious ones. They are still results, so they are still shown; they are shown last,
- * under the rows whose own words matched.
- *
- * The scale is deliberately coarse. It sorts rows into "this is the one", "this mentions it" and
- * "the host says so", which is as fine a judgement as the row's own fields support.
- */
+/** Rank visible matches above hidden host-text matches without discarding
+ * valid results; use coarse tiers justified by the row fields. */
 export function scorePullRequestMatch(entry: PullRequestListEntry, query: string): number {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return 0;
   const number = needle.replace(/^#/u, "");
-  // Asking for a number is asking for one pull request, and it is the answer or it is not.
   if (/^\d+$/u.test(number)) return String(entry.number) === number ? 100 : 0;
 
   const title = entry.title.toLowerCase();
   const terms = needle.split(/\s+/u).filter((term) => term.length > 0);
   if (title === needle) return 90;
   if (title.includes(needle)) return 80;
-  // Every word, in any order: "wizard welcome" is still about the welcome wizard.
   if (terms.length > 1 && terms.every((term) => title.includes(term))) return 70;
   if (entry.headBranch.toLowerCase().includes(needle)) return 60;
   if ((entry.author?.login ?? "").toLowerCase().includes(needle)) return 50;
@@ -992,10 +834,7 @@ export function scorePullRequestMatch(entry: PullRequestListEntry, query: string
   return 10;
 }
 
-/**
- * Search results in the order they answer the question, most convincing first, and by recency
- * among equals. Without a search, preserve the host order for the caller's browse-time ranking.
- */
+/** Rank by match score then recency; preserve browse-time host order without a query. */
 export function rankPullRequestMatches<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   query: string,
@@ -1007,14 +846,8 @@ export function rankPullRequestMatches<Entry extends PullRequestListEntry>(
   });
 }
 
-/**
- * The default review queue: work that is green and approved, then green work still waiting on a
- * verdict, then everything else still open. Drafts stay in that third tier because their author
- * has not made them mergeable yet. Finished work follows open work when all states are visible. A
- * known conflict is never ready, whatever its checks, review or state say, so it stays at the
- * bottom. Within each tier, smaller measured diffs come first, then unknown sizes. Recency
- * breaks ties between equally sized diffs.
- */
+/** Rank green approved work, then green waiting work, then other open work;
+ * conflicts go last. Within tiers prefer smaller measured diffs, then recency. */
 export function rankPullRequestsByMergeReadiness<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   hasMeasuredSize: (entry: Entry) => boolean = (entry) => entry.additions + entry.deletions > 0,
@@ -1073,7 +906,6 @@ export function rankPullRequestsBlockedOnReviewer<Entry extends PullRequestListE
   return rankByTierThenRecency(entries, (entry) => (entry.state === "open" ? 0 : 1));
 }
 
-/** Keeps authored work first while applying the selected ordering inside every involvement group. */
 export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   groups: ReadonlyArray<PullRequestGroup<Entry>>,
   sort: PullRequestListSort,
@@ -1127,11 +959,7 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   );
 }
 
-/**
- * A row with the line counts that arrived after it did. Only where the host left them out — a
- * listing that carried them is not second-guessed — and only where they have arrived, since a row
- * draws perfectly well without them in the meantime.
- */
+/** Supplement only omitted host counts and retain unknown values until stats arrive. */
 export function withDiffStat<
   Entry extends PullRequestListEntry & { readonly environmentId: string },
 >(
@@ -1143,19 +971,13 @@ export function withDiffStat<
   return stat === undefined ? entry : { ...entry, ...stat };
 }
 
-/**
- * What a row should say the moment an action is sent, before any host has answered. The host
- * is the record and a later read replaces this, but the reader pressed the button and should
- * see the row answer at once: a closed pull request leaves an "open" list on the click, not
- * after the reads that follow.
- */
+/** Reflect actions immediately while waiting for authoritative host state. */
 export interface PullRequestListOverride {
   readonly state: PullRequestState;
   readonly isDraft?: boolean;
   readonly updatedAt: string;
   /** Which action wrote it, so a failure takes back its own note and not a later one's. */
   readonly token: number;
-  /** When it was written, in the reader's clock. */
   readonly at: number;
 }
 
@@ -1182,7 +1004,6 @@ export function pullRequestOverrideAfterAction(
   }
 }
 
-/** The rows with their pending answers written over them, and the ones the list's state filter no longer holds dropped. */
 export function applyPullRequestOverrides<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   overrides: ReadonlyMap<string, PullRequestListOverride>,
@@ -1199,11 +1020,7 @@ export function applyPullRequestOverrides<Entry extends PullRequestListEntry>(
   return overrides.size === 0 && out.length === entries.length ? entries : out;
 }
 
-/**
- * A fresh answer with the rows it did not change handed back as the objects already held, so a
- * memoized row whose data is the same does not render again. Every refresh otherwise rebuilds
- * every entry, and a hundred rows repaint for the one that moved.
- */
+/** Reuse unchanged row objects so refreshes do not rerender every memoized row. */
 export function reusePullRequestEntries<Entry extends PullRequestListEntry>(
   previous: ReadonlyArray<Entry>,
   next: ReadonlyArray<Entry>,
@@ -1230,15 +1047,8 @@ export function reusePullRequestEntries<Entry extends PullRequestListEntry>(
 /** How long a read that disagrees is taken for a stale one rather than for news. */
 const PULL_REQUEST_OVERRIDE_TRUST_MS = 60_000;
 
-/**
- * The overrides an answer has confirmed, dropped; the rest kept. A read that started before
- * the action can land after it and still say the old thing, so an override is not cleared
- * because an answer arrived but because the answer agrees: the row is there in the state the
- * override said. A row that is absent says nothing — the authored and reviewing groups are read
- * apart from the feed, and a page is only a page — so absence never confirms. A row present in
- * another state is taken for a stale read for a minute, and for the host's news after that,
- * which is how a pull request reopened elsewhere comes back.
- */
+/** Confirm overrides only with agreeing rows; absent paginated rows prove
+ * nothing. Trust disagreeing reads as host news after one minute, not indefinitely. */
 export function settlePullRequestOverrides<Entry extends PullRequestListEntry>(
   overrides: ReadonlyMap<string, PullRequestListOverride>,
   answered: ReadonlyArray<Entry>,
@@ -1263,14 +1073,9 @@ export function settlePullRequestOverrides<Entry extends PullRequestListEntry>(
   return kept.size === overrides.size ? overrides : kept;
 }
 
-/** The row actions speed mode offers, in the order they are drawn. */
 export type PullRequestQuickAction = "close" | "merge" | "ready" | "reopen";
 
-/**
- * Which actions each host can take on a listed row, before any row's detail is read. Hosts are
- * matched by the host summary; a server that does not report actions per host only ever offered
- * these on GitHub, so that is what it keeps getting.
- */
+/** Servers lacking per-host actions retain GitHub-only listing actions. */
 export function pullRequestHostActions(
   providers: ReadonlyArray<PullRequestListResult["providers"][number]>,
 ): (
@@ -1289,7 +1094,6 @@ export function pullRequestHostActions(
     byHost.get(entry.host.toLowerCase()) ?? (entry.provider === "github" ? legacy : none);
 }
 
-/** The quick actions a row offers: what its state allows, narrowed to what its host can do. */
 export function pullRequestQuickActions(
   entry: Pick<EnvironmentPullRequestEntry, "state" | "isDraft">,
   hostActions: ReadonlySet<PullRequestAction>,

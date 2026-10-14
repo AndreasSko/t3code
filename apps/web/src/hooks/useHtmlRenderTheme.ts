@@ -16,7 +16,6 @@ import {
 import { useClientSettings } from "./useSettings";
 import { useTheme } from "./useTheme";
 
-/** The palette `applyTheme` paints for a preference, or the stock look when no theme applies. */
 function resolveActiveThemeColors(
   theme: ThemePreference,
   halves: ThemeHalves | null,

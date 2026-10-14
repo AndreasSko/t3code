@@ -132,10 +132,7 @@ export const spawnAndCollect = (binaryPath: string, command: ChildProcess.Comman
     return result;
   }).pipe(Effect.scoped);
 
-/**
- * Return the first semantic version found in CLI output, or null. Accepts a
- * leading "v" (for example `opencode v2.0.3`).
- */
+/** Return the first semantic version or null, accepting a leading v. */
 export function parseGenericCliVersion(output: string): string | null {
   // "opencode v2.0.3"-style output: the optional "v" has to be consumed first,
   // since "v2" itself contains no word boundary.
@@ -144,11 +141,8 @@ export function parseGenericCliVersion(output: string): string | null {
 }
 
 /**
- * Append the user's custom models after the built-ins. A custom entry that
- * declares its own capabilities keeps them; a bare slug gets the driver's
- * default set. A named entry whose slug matches a built-in renames that
- * built-in instead (for example `{ "slug": "gpt-5.5", "name": "GPT" }` in
- * `settings.json`); other fields on such an entry are ignored.
+ * Custom models retain declared capabilities or use driver defaults;
+ * a named built-in slug overrides only its name.
  */
 export function providerModelsFromSettings(
   builtInModels: ReadonlyArray<ServerProviderModel>,

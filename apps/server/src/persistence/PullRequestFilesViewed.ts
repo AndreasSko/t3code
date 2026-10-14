@@ -14,10 +14,8 @@ import {
 } from "./Errors.ts";
 
 /**
- * Which change request, on which host, for which reader. The host is part of it because the same
- * `group/project` exists on gitlab.com and on a self-managed instance, and the reader because
- * signing in as somebody else must not inherit their ticks. A host that will not say who the
- * reader is leaves it empty, which is one reader rather than none.
+ * Host and reader isolate marks across self-managed hosts and account changes.
+ * An unidentified reader uses the empty string as one shared reader scope.
  */
 export const PullRequestFilesViewedScope = Schema.Struct({
   provider: SourceControlProviderKind,
@@ -28,17 +26,11 @@ export const PullRequestFilesViewedScope = Schema.Struct({
 });
 export type PullRequestFilesViewedScope = typeof PullRequestFilesViewedScope.Type;
 
-/** A file this reader cleared, and what it was when they cleared it. */
 export const PullRequestFileViewedMark = Schema.Struct({
   path: Schema.String,
   /**
-   * The host's own name for that version of the file, opaque here. Empty where the host said it
-   * had none to give, which is an answer rather than a gap: a file with no version at the head is
-   * one the change request deletes. Null where the host could not say at all, which is no baseline
-   * rather than an empty one, and such a mark stays cleared until a press replaces it.
-   *
-   * This null is the only one this environment invents; the other two are in
-   * `docs/internals/pull-request-file-revisions.md`.
+   * The opaque host revision is empty for a deleted file; null means no baseline and stays cleared until replaced.
+   * Other revision nulls are described in `docs/internals/pull-request-file-revisions.md`.
    */
   revision: Schema.NullOr(Schema.String),
 });
@@ -46,30 +38,19 @@ export type PullRequestFileViewedMark = typeof PullRequestFileViewedMark.Type;
 
 export interface SetPullRequestFilesViewedInput extends PullRequestFilesViewedScope {
   readonly files: ReadonlyArray<PullRequestFileViewedMark & { readonly viewed: boolean }>;
-  /** When the presses landed, as an ISO instant. */
+  /** ISO instant when the reader marked the files. */
   readonly viewedAt: string;
 }
 
-/**
- * How many marks one read of this store carries. Every one of them is a path held in a set and a
- * map for as long as the caller holds the read, so an unbounded read of a change request with
- * thousands of marks in it is paid for again per scope the caller is holding. Matched to what the
- * GitHub reader walks in one go, past what anyone reviews in a sitting.
- */
+/** Bound per-scope path sets/maps; match the GitHub reader's 500-file window. */
 export const MAX_FILES_VIEWED_ROWS = 500;
 
-/** The marks for one scope, and whether the store had more of them than it carried. */
 export interface PullRequestFilesViewedPage {
   readonly files: ReadonlyArray<PullRequestFileViewedMark>;
   readonly truncated: boolean;
 }
 
-/**
- * The marks this environment keeps for hosts that keep none of their own.
- *
- * Only cleared files are rows. Unticking deletes rather than writing a "not viewed" row, so the
- * table holds what a reader has done and not what they have merely scrolled past.
- */
+/** Store only cleared files; deleting unchecked marks prevents growth from files merely scrolled past. */
 export class PullRequestFilesViewedRepository extends Context.Service<
   PullRequestFilesViewedRepository,
   {
@@ -112,9 +93,7 @@ const make = Effect.gen(function* () {
   });
 
   return PullRequestFilesViewedRepository.of({
-    // Ordered by path and read one row past the ceiling, so the same marks come back on every
-    // read rather than a window that shuffles, and having more than were carried is known rather
-    // than guessed at from a full page.
+    // Stable path ordering prevents shuffled windows; the extra row proves truncation.
     list: (input) =>
       listRows(input).pipe(
         Effect.map((rows) => ({
@@ -124,13 +103,9 @@ const make = Effect.gen(function* () {
         Effect.mapError(toSqlOrDecodeError("listPullRequestFilesViewed", "PullRequestFileViewed")),
       ),
 
-    // One statement per file rather than one for the batch: the batch is what a reader ticked in
-    // the last few hundred milliseconds, so it is a handful of rows on a local database, and a
-    // mixed batch of clears and un-clears has no single statement anyway.
+    // Small local batches mix clears and un-clears, so use one statement per file.
     set: (input) =>
-      // One transaction for the batch. A press is a handful of files, and a failure part way
-      // through would otherwise leave some of them cleared and the rest not, which the reader
-      // sees on the next read as marks they never made.
+      // One transaction prevents partial batches from appearing as marks the reader never made.
       sql
         .withTransaction(
           Effect.forEach(

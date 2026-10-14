@@ -1,11 +1,4 @@
-/**
- * PiDriver — v1 `ProviderDriver` for the Pi coding agent, composing the
- * orchestrator-v2 adapter (`PiAdapterV2`), the snapshot/probe layer
- * (`PiProvider`), and Pi-backed text generation.
- *
- * Pi state (sessions, settings, extensions, auth) lives in the user's own
- * `~/.pi/agent`, so continuation identity uses the default instance grouping.
- */
+/** Pi state lives in the user's ~/.pi/agent, so continuations share the default instance grouping. */
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import { PiSettings } from "../settings.ts";
 import * as Effect from "effect/Effect";

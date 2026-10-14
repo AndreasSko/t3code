@@ -91,9 +91,8 @@ export const make = Effect.gen(function* () {
 
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;
-    // Electron removes spaces from this name to build the native User-Agent
-    // product token, but leaves parentheses intact. Keep the runtime name valid
-    // without rewriting preview sessions (which breaks Turnstile, #7110).
+    // Electron leaves parentheses in its User-Agent product token; keep the runtime
+    // name valid without rewriting preview sessions, which breaks Turnstile (#7110).
     yield* electronApp.setName(
       `${environment.branding.baseName} ${environment.branding.stageLabel}`,
     );
@@ -107,9 +106,8 @@ export const make = Effect.gen(function* () {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
     }
 
-    // Unpackaged runs only. A packaged bundle already carries its icon in
-    // Info.plist, so setting the dock tile again changes nothing except to
-    // overwrite a custom icon the user attached to the app themselves.
+    // Packaged Info.plist already supplies the Dock icon; setting it again would
+    // overwrite a custom icon the user attached to the app.
     if (environment.platform === "darwin" && !environment.isPackaged) {
       const iconPaths = yield* assets.iconPaths;
       yield* Option.match(iconPaths.png, {

@@ -1,13 +1,4 @@
-/**
- * PiProvider — snapshot/probe layer for the Pi coding agent.
- *
- * Health is probed with `pi --version`. Models, the user's default model, and
- * the user's commands (extension slash commands, prompt templates, skills)
- * are discovered through a short-lived ephemeral RPC session
- * (`pi --mode rpc --no-session`), so everything the user configured in
- * `~/.pi/agent` — custom providers, models.json entries, extensions, skills —
- * shows up in T3 without any hardcoded catalog.
- */
+/** Discover models and commands through ephemeral RPC so the user's Pi configuration remains authoritative. */
 import {
   type CustomModelSetting,
   type ServerProvider,
@@ -70,11 +61,7 @@ const PI_PRESENTATION = {
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const PI_RPC_DISCOVERY_TIMEOUT_MS = 15_000;
-/**
- * get_entries arrived in 0.80.3 and agent_settled landed in source at 0.80.4.
- * Version 0.80.5 was the first published package containing both hooks. T3
- * needs them for rollback boundaries and reliable turn terminalization.
- */
+/** Pi 0.80.5 first published both get_entries and agent_settled, required for rollback and turn settlement. */
 export const MINIMUM_PI_VERSION = "0.80.5";
 
 /** Deferring to the user's own settings.json default model. */

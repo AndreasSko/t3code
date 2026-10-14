@@ -137,13 +137,11 @@ function CommentLocation({
   );
 }
 
-/** "CHANGES_REQUESTED" reads as "Changes requested": one capital, the host's underscores gone. */
 function reviewStateLabel(state: string): string {
   const words = state.toLowerCase().replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** What every remark in the conversation needs to be rewritten where it sits. */
 interface CommentEditing {
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
@@ -155,10 +153,7 @@ interface CommentEditing {
   readonly onSave: (comment: PullRequestComment, body: string) => void;
 }
 
-/**
- * A remark's words, and the pencil that swaps them for the editor. The pencil is revealed by
- * hovering the remark, like the reaction bar's own, so the parent must carry `group`.
- */
+/** The parent must carry group for the hover-revealed edit button. */
 function CommentBody({
   comment,
   editing,
@@ -213,7 +208,6 @@ function CollapsedComment({
   comment: PullRequestComment;
   editing: CommentEditing;
   label: string;
-  /** Null where the remark is nothing but its verdict, which a dismissal usually is. */
   body: string | null;
   reactionBar: ReactNode;
   detail: PullRequestDetailView;
@@ -259,8 +253,7 @@ function CollapsedComment({
         <CollapsiblePanel>
           {open ? (
             <div className="px-3 pb-3">
-              {/* A dismissal carries no more words than an approval does, and an empty markdown
-                  block reads as a card somebody forgot to fill in. */}
+              {}
               {body === null && !editing.canEdit(comment) ? null : (
                 <CommentBody className="mt-2" comment={comment} editing={editing} />
               )}
@@ -320,8 +313,7 @@ function Section({
           sectionTop: section.getBoundingClientRect().top,
           headingTop: heading.getBoundingClientRect().top,
         });
-        // Synchronous with the press: React commits the collapsed height before the browser
-        // paints, so the reader sees the heading they pressed stay put rather than a jump first.
+        // Correct scroll before paint so collapsing cannot visibly move the pressed heading.
         if (target !== null) scroller.scrollTop = target;
       }
     }
@@ -334,9 +326,7 @@ function Section({
       render={<section aria-label={title} />}
       data-pull-request-summary-section
     >
-      {/* The heading rides the top of the scroll box the way a diff's file header does, so a
-          section can be collapsed from wherever its body has been read to rather than only from
-          where it started. Opaque, because the rows it covers scroll beneath it. */}
+      {/* Sticky headings keep collapse reachable; opaque backgrounds cover scrolling rows. */}
       <div
         ref={headingRef}
         className="sticky top-0 z-10 flex w-full items-center bg-background pr-4"
@@ -360,17 +350,10 @@ function Section({
   );
 }
 
-/**
- * What a first render of the conversation carries. A pull request with two hundred comments is
- * two hundred markdown documents, and the ones worth arriving for are the recent ones.
- */
+/** Mount only the 10 most recent comments initially; large reviews would otherwise render hundreds of Markdown documents. */
 const COMMENT_PAGE = 10;
 
-/**
- * Which kinds of comment the conversation shows. Kept per browser rather than per pull request:
- * whether a reader wants bot reports and finished threads in front of them is a habit, not a
- * property of one change.
- */
+/** Remember conversation filters per browser because they express a reading preference. */
 const COMMENT_FILTER_STORAGE_KEY = "t3code:pull-request-comment-filter:v1";
 const CommentFilterSchema = Schema.Struct({ bots: Schema.Boolean, resolved: Schema.Boolean });
 const DEFAULT_COMMENT_FILTER: typeof CommentFilterSchema.Type = { bots: false, resolved: false };
@@ -399,7 +382,6 @@ export function PullRequestSummaryTab({
   activityPending: boolean;
   checksStale?: boolean;
   activityError: string | null;
-  /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
   fixCheckLabel?: string;
@@ -407,8 +389,7 @@ export function PullRequestSummaryTab({
   onRefresh: () => void;
   onRefreshChecks?: () => void;
 }) {
-  // Keyed by the pull request, so opening another one starts at the end of its conversation
-  // rather than wherever the last one had been read back to.
+  // Reset conversation windows per PR so the next one opens at its recent end.
   const [shown, setShown] = useState({ url: detail.url, count: COMMENT_PAGE });
   const shownComments = shown.url === detail.url ? shown.count : COMMENT_PAGE;
   const [commentFilter, setCommentFilter] = useLocalStorage(
@@ -416,9 +397,7 @@ export function PullRequestSummaryTab({
     DEFAULT_COMMENT_FILTER,
     CommentFilterSchema,
   );
-  // A comment that already lives on a review thread is that thread: the thread carries the line
-  // and side the bare comment has lost, and a resolved one is finished work nobody should be
-  // invited to fix again — the same call the whole-review hand-off makes.
+  // Prefer review-thread context: bare comments lose line/side and resolved threads need no fix.
   const threadByCommentId = new Map(
     detail.reviewThreads.flatMap((thread) =>
       thread.comments.map((comment) => [comment.id, thread] as const),
@@ -434,11 +413,9 @@ export function PullRequestSummaryTab({
     (comment) =>
       (commentFilter.bots || !isBot(comment)) && (commentFilter.resolved || !isFinished(comment)),
   );
-  // The one count the filter shows. Per-kind counts would overlap, since a resolved bot comment
-  // is both kinds and needs both shown.
+  // Per-kind counts overlap because resolved bot comments belong to both categories.
   const filteredOutCount = detail.comments.length - filteredComments.length;
-  // Windowed by recency regardless of display order: expanding always reaches further back in
-  // time, whether the newest comment currently reads first or last.
+  // Recency determines the window independently of display order.
   const recentComments = filteredComments.slice(
     Math.max(0, filteredComments.length - shownComments),
   );
@@ -460,17 +437,13 @@ export function PullRequestSummaryTab({
   // Read from the whole conversation, not the window shown below it: a verdict older than the
   // visible comments still stands.
   const reviewOutcomes = latestPullRequestReviewOutcomes(detail.comments, detail.commits);
-  // Hosts do not promise one casing for a login across two fields of the same response, and
-  // none of them lets `Octocat` and `octocat` be two people — so matching on the literal string
-  // would show one reviewer twice and drop the verdict off both.
+  // Hosts vary login casing; case-sensitive matching duplicates reviewers and loses verdicts.
   const outcomeByLogin = new Map(
     reviewOutcomes.flatMap((entry) =>
       entry.actor ? [[reviewerKey(entry.actor.login), entry] as const] : [],
     ),
   );
-  // Everyone whose face belongs on this row: the people a review was asked of, then anyone who
-  // ruled without being on that list. A host drops a reviewer from the requested set once they
-  // have reviewed, and their verdict is the thing this row now exists to show.
+  // Include verdict authors because hosts remove reviewers from the requested set after review.
   const reviewerEntries = [
     ...detail.reviewers.map((actor) => ({
       key: actor.login,
@@ -506,14 +479,11 @@ export function PullRequestSummaryTab({
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {
     reportFailure: false,
   });
-  // Keyed by the pull request, like the comment window above it, so an editor left open never
-  // reappears over the next pull request's description.
+  // Scope description editors by PR so an open editor cannot follow a panel switch.
   const [bodyScope, setBodyScope] = useState<string | null>(null);
   const [bodySaving, setBodySaving] = useState(false);
-  // The remark being rewritten, named with the pull request it belongs to: a comment id is the
-  // host's own, and two hosts — or two pull requests on Azure DevOps, which numbers a remark
-  // inside its thread — hand out the same one. Without the pull request beside it, opening a
-  // different one would leave its like-numbered remark sitting open in an editor.
+  // Host-local comment ids can collide across PRs, including Azure thread-local
+  // ids; scope editors by PR too.
   const [commentScope, setCommentScope] = useState<{
     readonly pullRequest: string;
     readonly commentId: string;
@@ -544,8 +514,7 @@ export function PullRequestSummaryTab({
     onEdit: (comment) =>
       setCommentScope(comment === null ? null : { pullRequest: detail.url, commentId: comment.id }),
     onSave: async (comment, body) => {
-      // A review's own summary is not a kind any host rewrites, which is why no pencil is ever
-      // offered on one; the check is here because the comment's own type still allows it.
+      // Hosts cannot rewrite review summaries through comment mutations.
       if (commentSaving || comment.kind === "review") return;
       setCommentSaving(true);
       const result = await updateComment({
@@ -595,9 +564,7 @@ export function PullRequestSummaryTab({
       (comment.kind !== "review" && comment.kind !== "review-comment") || outcome === "approved"
         ? null
         : thread === undefined
-          ? // Nor is a remark with nothing in it: offering to hand an empty review
-            // to a thread promises work it does not describe.
-            body === null
+          ? body === null
             ? null
             : { kind: "comment", comment }
           : { kind: "thread", thread };
@@ -615,8 +582,7 @@ export function PullRequestSummaryTab({
     return (
       <article
         key={`${detail.url}:${comment.id}`}
-        // Offscreen comments skip style, layout and paint. Bot comments carry pages of
-        // highlighted code, and the conversation is below the description either way.
+        // Bot Markdown can be large; skip offscreen style, layout, and paint.
         className="group rounded-lg border border-border/60 bg-background [contain-intrinsic-block-size:160px] [content-visibility:auto]"
       >
         <div className="flex flex-wrap items-start gap-2 rounded-t-lg bg-muted/25 px-3 py-2.5">
@@ -628,8 +594,7 @@ export function PullRequestSummaryTab({
               <span>{reviewStateLabel(comment.reviewState)}</span>
             ) : null}
           </div>
-          {/* Review remarks only. A plain conversation comment is talk, not a finding,
-                      and offering to fix one would promise more than it says. */}
+          {}
           {onFixFinding && finding ? (
             <Button
               size="xs"
@@ -647,10 +612,7 @@ export function PullRequestSummaryTab({
         <div className="px-3">
           <CommentLocation comment={comment} thread={thread} />
         </div>
-        {/* A verdict usually carries no words, and an empty markdown block reads as
-                          a card somebody forgot to fill in — the badge above already said it.
-                          Kept where this reader may rewrite the remark: the pencil lives in here,
-                          and hiding the block would take away the only way back to it. */}
+        {/* Empty verdicts still need their body wrapper when it holds the edit control. */}
         {body === null && !commentEditing.canEdit(comment) ? null : (
           <CommentBody className="px-3 py-3" comment={comment} editing={commentEditing} />
         )}
@@ -676,20 +638,14 @@ export function PullRequestSummaryTab({
                         : login;
                     return (
                       <Tooltip key={entry.key}>
-                        {/* A verdict rides the face that earned it rather than a row of its own:
-                            the ring sits outside the one that separates overlapping avatars, so
-                            it reads at a glance without adding anything to scroll past. */}
+                        {}
                         <TooltipTrigger
                           render={
                             <span
                               className={cn(
                                 "relative rounded-full hover:z-10",
-                                // The verdict replaces the separator rather than ringing it. Both
-                                // occupy the same 2px immediately outside a 16px avatar, so the
-                                // colour costs no size: anything drawn further out would be a
-                                // halo wide enough to eclipse the neighbour this stack overlaps
-                                // by 4px. Painted by this wrapper because a child's box-shadow
-                                // covers its parent's, never the other way round.
+                                // Use the existing 2px separator to avoid covering avatars overlapping by 4px.
+                                // Paint on the wrapper because child shadows cover parent shadows.
                                 entry.outcome
                                   ? pullRequestReviewOutcomeRingClassName(
                                       entry.outcome,
@@ -705,8 +661,7 @@ export function PullRequestSummaryTab({
                             tooltip={false}
                             variant="avatar"
                           />
-                          {/* Colour alone says nothing to a reader who cannot see it, and the
-                              login beside this is already in the accessible name. */}
+                          {/* Expose verdict meaning to readers who cannot see its color. */}
                           {entry.outcome ? (
                             <span className="sr-only">
                               {entry.stale
@@ -729,11 +684,7 @@ export function PullRequestSummaryTab({
                   })}
                 </span>
               )}
-              {/* Shown wherever the host can take a review request at all, and disabled with the
-                  reason where this account may not make one: a control that vanishes teaches
-                  nobody why, and "you need write access" is the answer to the question a reader
-                  actually has. Azure DevOps is the exception — it takes a reviewer but will not
-                  say who could be one, so there is nothing to open. */}
+              {/* Azure DevOps cannot list reviewer candidates, so there is no picker to open. */}
               {detail.capabilities.reviewers.request &&
               detail.capabilities.reviewers.listCandidates ? (
                 <PullRequestReviewerPicker
@@ -744,8 +695,7 @@ export function PullRequestSummaryTab({
               ) : null}
             </span>
           </MetaRow>
-          {/* The row is shown empty only where a label could be put on it from here; on a host
-              with none to offer, an empty row is a row about nothing. */}
+          {}
           {detail.labels.length > 0 || detail.capabilities.labels === true ? (
             <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
@@ -778,7 +728,6 @@ export function PullRequestSummaryTab({
         <div className="group">
           {bodyScope === detail.url ? (
             <PullRequestMarkdownEditor
-              // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
               cwd={detail.workspaceRoot}
@@ -846,8 +795,7 @@ export function PullRequestSummaryTab({
                     {pullRequestCheckStatusLabel(check)}
                   </span>
                 </button>
-                {/* Only where there is something to fix. A passing check has no failure to
-                      reproduce, and the button would be an invitation to waste a thread. */}
+                {}
                 {onFixFinding && failing ? (
                   <Button
                     size="xs"

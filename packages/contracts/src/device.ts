@@ -1,17 +1,4 @@
-/**
- * Device - Schemas for first-class iOS Simulator and Android Emulator support.
- *
- * The server owns device discovery, the streaming helper (expo-device-hub),
- * and the agent driver (agent-device). Clients render the live screen from the
- * server-proxied stream, and agents reach devices through the `device_*` MCP
- * tools plus the `agent-device` CLI the server preconfigures for them.
- *
- * Devices live on a *host*. Only the local host (the machine the server runs
- * on) exists today; the host id is carried everywhere so SSH and cloud hosts
- * can be added without changing the client contract.
- *
- * @module Device
- */
+/** Server-owned device hosts proxy streams to clients and configure agent-device access for agents. */
 import { Schema } from "effect";
 
 import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -22,7 +9,7 @@ export type DevicePlatform = typeof DevicePlatform.Type;
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type DeviceHostId = typeof DeviceHostId.Type;
 
-/** The server machine. Always present; other host kinds are future work. */
+/** The environment server's local device host. */
 export const LOCAL_DEVICE_HOST_ID = "local" as DeviceHostId;
 
 /** SSH aliases and key paths are resolved on the environment server. */
@@ -62,11 +49,7 @@ export const DeviceSummary = Schema.Struct({
 });
 export type DeviceSummary = typeof DeviceSummary.Type;
 
-/**
- * What the host can do right now. Platforms missing their toolchain are
- * reported rather than hidden so the picker and the agent can explain why a
- * platform is absent instead of showing an empty list.
- */
+/** Report missing platform toolchains explicitly so empty inventory can explain its cause. */
 export const DevicePlatformAvailability = Schema.Struct({
   platform: DevicePlatform,
   available: Schema.Boolean,
@@ -99,11 +82,7 @@ export const DeviceHostSummary = Schema.Struct({
 });
 export type DeviceHostSummary = typeof DeviceHostSummary.Type;
 
-/**
- * Lifecycle of the helper processes on a host. Tools are installed on first
- * use, so a fresh install spends a while in `installing` before any device can
- * stream; the UI shows that instead of an empty picker.
- */
+/** First-use tool installation stays visible while helper processes become ready. */
 export const DeviceHostStatus = Schema.Literals([
   "disabled",
   "idle",
@@ -114,10 +93,7 @@ export const DeviceHostStatus = Schema.Literals([
 ]);
 export type DeviceHostStatus = typeof DeviceHostStatus.Type;
 
-/**
- * A device a thread is looking at. One session per (thread, device); the same
- * device may be open in several threads, since the stream is shared.
- */
+/** One session per thread/device; streams are shared when several threads open the same device. */
 export const DeviceSession = Schema.Struct({
   threadId: ThreadId,
   hostId: DeviceHostId,
@@ -198,18 +174,10 @@ export const DeviceShutdownInput = Schema.Struct({
 });
 export type DeviceShutdownInput = typeof DeviceShutdownInput.Type;
 
-// Device settings and actions. Each setting names the platforms that support
-// it; the panel hides the rest. Values are normalized across platforms where
-// both have the concept (appearance, text size) and platform-specific where
-// only one does.
-
 export const DeviceAppearance = Schema.Literals(["light", "dark"]);
 export type DeviceAppearance = typeof DeviceAppearance.Type;
 
-/**
- * iOS content-size categories map onto twelve steps; Android `font_scale`
- * is continuous. Four shared steps cover what people actually reach for.
- */
+// iOS has twelve discrete content sizes and Android a continuous font_scale; expose four shared steps.
 export const DeviceTextSize = Schema.Literals(["small", "default", "large", "extra-large"]);
 export type DeviceTextSize = typeof DeviceTextSize.Type;
 
@@ -466,9 +434,6 @@ export const DeviceError = Schema.Union([
   DeviceActionUnavailableError,
 ]);
 export type DeviceError = typeof DeviceError.Type;
-
-// MCP tool shapes. Kept next to the RPC shapes so the tool surface and the
-// panel describe devices the same way.
 
 export const DeviceToolListResult = Schema.Struct({
   hostStatuses: DeviceServiceState.fields.hostStatuses,

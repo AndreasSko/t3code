@@ -62,14 +62,8 @@ interface Utf8Chunk {
   readonly byteLength: number;
 }
 
-/**
- * Split a string into chunks of at most `maxBytes` UTF-8 bytes without cutting
- * a code point in half. The retained-output budget always supplies a positive
- * size. Only new output is encoded on live updates.
- *
- * A chunk that fits whole is returned as the original string, so the common
- * small-write path pays one encode and no decode.
- */
+// maxBytes must be positive; split only new output without cutting code points.
+// Whole chunks reuse the original string after one encode and avoid a decode.
 function splitStringByUtf8Bytes(data: string, maxBytes: number): ReadonlyArray<Utf8Chunk> {
   if (data.length === 0) return [];
 
@@ -153,10 +147,7 @@ function splitOutputChunks(
   };
 }
 
-/**
- * Merge adjacent chunks without changing their string positions. A reader can
- * still append the unread suffix when its cursor falls inside a merged chunk.
- */
+// Compaction must preserve positions so cursors within merged chunks still append only unread suffixes.
 function compactRetainedChunks(chunks: ReadonlyArray<TerminalOutputChunk>) {
   const compacted: TerminalOutputChunk[] = [];
   for (const chunk of chunks) {

@@ -1,9 +1,3 @@
-/**
- * Usage history for Codex: the rollout format of `<home>/sessions/**.jsonl`
- * and where each instance's shared home keeps them.
- *
- * @module provider/Drivers/codexUsage
- */
 import type { CodexSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
@@ -23,15 +17,8 @@ import type { UsageTokenTotals } from "@t3tools/contracts";
 import { resolveCodexHomeLayout } from "./CodexHomeLayout.ts";
 
 /**
- * Rolling state for a single Codex rollout file.
- *
- * Codex `token_count` events carry no model or service tier, so both are
- * carried forward: the model from the most recent `turn_context`, the tier from
- * the most recent `thread_settings_applied`. Sessions that switch either
- * mid-run attribute correctly from the switch onward.
- *
- * Persisted in the scan cache at each resume point. The field order is the
- * stored JSON's, so keep it stable.
+ * token_count omits model and tier, so carry both forward from context events.
+ * Scan state is persisted at resume points; keep the serialized field order stable.
  */
 export const CodexScanState = Schema.Struct({
   model: Schema.mutableKey(Schema.String),
@@ -57,16 +44,9 @@ export function initialCodexScanState(): CodexScanState {
   };
 }
 
-/**
- * A forked or subagent rollout opens with the parent's full history copied in,
- * every line re-stamped to the fork instant. Those copies are written in one
- * synchronous burst (observed gaps 0-40ms), while the child's first genuine
- * usage event only lands after a real model turn (observed 5s+). One second of
- * separation splits the two cleanly; `ccusage` uses the same threshold.
- */
+/** Copied parent history arrives in a 0-40ms burst; genuine child usage takes 5s+, so 1s separates them. */
 const FORK_COPY_MAX_GAP_MS = 1000;
 
-/** Whether a `session_meta` payload marks the rollout as a fork or subagent. */
 function isForkedSessionMeta(payload: Record<string, unknown>): boolean {
   if (typeof payload["forked_from_id"] === "string") return true;
   const source = payload["source"];
@@ -78,14 +58,7 @@ function isForkedSessionMeta(payload: Record<string, unknown>): boolean {
   return typeof (spawn as Record<string, unknown>)["parent_thread_id"] === "string";
 }
 
-/**
- * Feeds one line of a Codex rollout into `state`, returning a record when the
- * line was a usage event.
- *
- * Deltas come from `last_token_usage`. Summing those across a session
- * reconciles with the session's final `total_token_usage`, provided
- * consecutive duplicate events are dropped, which this does.
- */
+/** Mutates scan state; last_token_usage deltas reconcile with total_token_usage only after deduplication. */
 export function parseCodexLine(line: string, state: CodexScanState): UsageRecord | null {
   let parsed: unknown;
   try {
@@ -142,10 +115,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   if (typeof last !== "object" || last === null) return null;
   const lastRecord = last as Record<string, unknown>;
 
-  // Only an event that is otherwise eligible may consume the duplicate
-  // signature. A token_count arriving before its turn_context (no model yet)
-  // must not poison it, or the re-emitted copy after the model is known would
-  // be skipped as a duplicate and those tokens never counted.
+  // Usage before turn_context must not consume the signature or its later valid copy would be lost.
   const timestampMs = parseTimestampMs(record["timestamp"]);
   if (timestampMs === null) return null;
   if (state.model.length === 0) return null;
@@ -156,9 +126,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   if (signature === state.lastUsageSignature) return null;
   state.lastUsageSignature = signature;
 
-  // In a forked rollout the copied parent history was already counted from the
-  // parent's own file. Drop the leading burst; the first usage event separated
-  // from its predecessor by a real turn's worth of time ends it for good.
+  // Copied parent history is already counted from the parent file; suppress its leading burst.
   if (state.suppressingForkCopies) {
     if (timestampMs - state.forkCopyAnchorMs < FORK_COPY_MAX_GAP_MS) {
       state.forkCopyAnchorMs = timestampMs;
@@ -199,11 +167,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   };
 }
 
-/**
- * Maps a Codex `service_tier` to its billing speed. Codex omits the field when
- * no tier was requested, which bills as standard, as do `default` and
- * `standard`. `fast` is accepted as an alias of `priority`.
- */
+/** Missing, default and standard tiers bill as standard; fast aliases priority. */
 function codexSpeed(serviceTier: unknown): UsageSpeed {
   if (serviceTier === "priority" || serviceTier === "fast") return "fast";
   if (serviceTier === "ultrafast") return "ultrafast";
@@ -214,7 +178,6 @@ const orEmpty = (record: UsageRecord | null): readonly UsageRecord[] =>
   record === null ? [] : [record];
 
 export const codexUsageFormat: TranscriptUsageFormat<CodexScanState> = {
-  // Keeps the fields the reducer reads as well as the usage itself.
   selectFields: {
     type: true,
     timestamp: true,

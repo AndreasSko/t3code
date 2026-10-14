@@ -5,12 +5,8 @@ import type { ReactNode } from "react";
 import { ManagedRelayAuthProvider } from "../../cloud/managedAuth";
 import { clerkAppearance } from "./clerkAppearance";
 
-/**
- * Electron half of the managed-auth boundary. The Electron provider statically
- * bundles the full clerk-js runtime, so this module must only ever load
- * lazily, and only inside the desktop shell — importing it eagerly would put
- * clerk-js back into every client's startup graph.
- */
+/** Load only inside the desktop shell: eager imports would bundle the full
+ * clerk-js runtime into every client startup. */
 export default function ElectronManagedAuthShell({
   publishableKey,
   children,

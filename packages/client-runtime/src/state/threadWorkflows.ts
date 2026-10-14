@@ -40,11 +40,7 @@ export function resolveActiveThreadRun(projection: Pick<Projection, "runs">): Ru
   return projection.runs.findLast((run) => ACTIVE_RUN_STATUSES.has(run.status)) ?? null;
 }
 
-/**
- * A successfully finished provider turn remains in `waiting` while its
- * checkpoint is captured. Keep that newest turn available for merge-back
- * instead of falling through to an older fully checkpointed run.
- */
+/** Include successful waiting runs during checkpoint capture instead of choosing an older merge-back run. */
 export function resolveLatestMergeBackRun(projection: Projection): Run | null {
   const latestProviderFinishedRun = projection.runs.reduce<Run | null>(
     (latest, run) =>
@@ -171,9 +167,7 @@ export function canForkProjectedAssistantItem(input: {
     return false;
   }
   if (input.capabilities === undefined) {
-    // Historical and inherited rows may outlive their provider-session record.
-    // Keep the portable server-side fallback available when capability evidence
-    // is absent; a known incapable provider is rejected below.
+    // Historical rows may lack provider capability evidence; preserve portable fallback unless known unsupported.
     return true;
   }
   const capabilities = input.capabilities;

@@ -1,10 +1,7 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
-/**
- * Series and table order. The chart stacks providers from the bottom in this
- * order, so it also fixes which band sits on top of the bars.
- */
+/** Bottom-first chart stack and table order. */
 export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "codex",
   "claude",
@@ -25,10 +22,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   pi: "Pi",
 };
 
-/**
- * Claude's brand orange holds in both themes; Codex and Grok are neutrals and
- * must flip with the theme or their bars vanish against the matching background.
- */
+/** Flip Codex and Grok's neutral colors with the theme so their bars remain visible. */
 export function useProviderColors(): Record<UsageProviderKind, string> {
   const { themeAppearance: scheme } = useAppearancePreferences();
   return {

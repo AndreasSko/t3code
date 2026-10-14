@@ -844,7 +844,6 @@ function toFeedActivity(
       (readPaths
         ? readPaths.length > 0 || turnItemNeedsDetailFetch(item)
         : turnItemHasDetail(item) || workEntry.questionAnswer !== undefined),
-    // Read rows show their paths, then the fetched file contents.
     fetchesDetail: turnItemNeedsDetailFetch(item),
     getFullDetail,
     getCopyText,
@@ -1051,11 +1050,7 @@ export function failedFeedRunIds(
   return failed;
 }
 
-/**
- * A prompt without a run (a provider-native subagent, or a turn imported from
- * V1) folds its response like a run. `runlessWorkActive` keeps the latest
- * runless response open; V2 work must not reopen imported turns.
- */
+/** Keep only the latest active runless response open; starting a run must not reopen imported turns. */
 function deriveThreadFeedRunFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestRun: ThreadFeedLatestRun | null,
@@ -1084,9 +1079,7 @@ function deriveThreadFeedRunFolds(
     RunId,
     { entries: ThreadFeedEntry[]; startBoundary: string | null }
   >();
-  // Fold state is keyed by run, so each runless prompt lends its response a
-  // stable key of its own. Decide per prompt, not per thread: a V1 thread's
-  // first V2 run must not unfold every imported turn above it.
+  // Key runless folds per prompt so a new run cannot unfold every imported turn.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingUserBoundary: string | null = null;
@@ -1170,8 +1163,7 @@ function deriveThreadFeedRunFolds(
                   activity.prominent ||
                   activity.projectedItem.item.type === "notification" ||
                   activity.projectedItem.item.type === "handoff" ||
-                  // A child still working outlives its settled launching run;
-                  // its group stays visible while any member is live.
+                  // Live children can outlast their launching run, so their group must stay visible.
                   isLiveSubagentTurnItem(activity.projectedItem.item),
               )
             ),
@@ -1747,11 +1739,7 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
-/**
- * Projects the server-authored visible sequence into mobile row presentation.
- * It deliberately preserves the incoming order and never rebuilds chat from
- * separate message, plan, or work-entry collections.
- */
+/** Preserve the server-authored visible order; separate message and work collections cannot rebuild it. */
 export function buildThreadFeed(
   visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
   options?: {
@@ -1793,8 +1781,7 @@ export function buildThreadFeed(
     if (turnItemIsWorkspacePreparation(item)) continue;
     if (item.type === "todo_list" || item.type === "checkpoint") continue;
     if (item.type === "user_message" && foldedAnswerMessageIds.has(item.messageId)) continue;
-    // Match the web timeline: only the terminal interrupt result is useful to
-    // users; the preceding request is transient bookkeeping.
+    // Interrupt requests are transient bookkeeping; only the terminal result belongs in the feed.
     if (item.type === "run_interrupt_request") {
       continue;
     }
@@ -1805,7 +1792,6 @@ export function buildThreadFeed(
       continue;
     }
     const createdAt = DateTime.formatIso(item.startedAt ?? item.updatedAt);
-    // A running or failed render stays an ordinary work row.
     const render =
       item.type === "dynamic_tool" && item.status === "completed"
         ? htmlRenderFromToolItem(item)

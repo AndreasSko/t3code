@@ -10,9 +10,8 @@ function collectUiRuntimeGarbage() {
 }
 
 /**
- * React Native only collects the main JS runtime on an iOS memory warning. The
- * worklets UI runtime is a separate Hermes heap that holds native shadow nodes and
- * serializables alive until its own GC runs, so collect it on the same warning.
+ * React Native's iOS memory warnings collect only the main JS heap.
+ * Collect worklets' separate Hermes heap to release retained shadow nodes and serializables.
  */
 export function useUiRuntimeMemoryWarningGc() {
   useEffect(() => {

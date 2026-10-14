@@ -29,10 +29,7 @@ const PIVOT_Z = DEPTH / 2 + 0.005;
 const SPINE_RADIUS = PIVOT_Z + DEPTH / 2 - 0.002;
 /** Width over height of the unfolded inner display until a live frame reports its own. */
 export const DEFAULT_FOLD_INNER_ASPECT = 2076 / 2152;
-/**
- * Unfolded inner displays are near square in either orientation. Cover displays are
- * phone shaped (about 0.4-0.5, or 2-2.6 when rotated), so they never retune the body.
- */
+// Inner displays stay near square; cover ratios (~0.4-0.5, or 2-2.6 rotated) must not retune the unfolded body.
 export const isFoldInnerAspect = (aspect: number) =>
   Number.isFinite(aspect) && aspect > 0.75 && aspect < 1.5;
 
@@ -87,10 +84,7 @@ function coverPath(halfWidth: number) {
   return roundedRectPath(halfWidth - INSET * 2 - 0.02, HEIGHT - INSET * 2 - 0.04, 0.07);
 }
 
-/**
- * A procedural book-style foldable: one fixed half, one half rotating around a shared hinge.
- * The inner display keeps the raw framebuffer's native aspect, portrait or landscape.
- */
+/** Preserves the inner framebuffer's native aspect through a book-style fold. */
 export function createAndroidFoldScene(
   texture: Texture,
   layout: PhoneDisplayLayout,
@@ -302,7 +296,6 @@ export function createAndroidFoldScene(
   flash.position.set(0.185, 0.045, plateFront + 0.0005);
   rearCamera.add(flash);
 
-  // Power and volume keys sit on the fixed half's outer edge.
   for (const [y, length] of [
     [0.52, 0.16],
     [0.2, 0.3],

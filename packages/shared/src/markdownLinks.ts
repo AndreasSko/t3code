@@ -267,11 +267,7 @@ function looksLikePosixFilesystemPath(path: string): boolean {
   return EXTENSIONLESS_FILE_NAMES.has(basename) || FILE_EXTENSION_PATTERN.test(basename);
 }
 
-/**
- * Decides whether a decoded link destination is a file path rather than a route
- * or prose. Only a `:line` suffix the author wrote counts as evidence; a `#L`
- * anchor never turns `/chat/settings` into a file.
- */
+/** Only an authored :line suffix is file evidence; #L must not promote app routes. */
 function looksLikeFilePath(path: string, authoredPath: string): boolean {
   if (isWindowsAbsolutePath(path) || RELATIVE_PATH_PREFIX_PATTERN.test(path)) return true;
   if (path.startsWith("/")) return looksLikePosixFilesystemPath(authoredPath);
@@ -397,11 +393,7 @@ export function extractMarkdownLinkHrefs(markdown: string): string[] {
   return hrefs;
 }
 
-/**
- * `baseDir` anchors relative links; it defaults to the workspace root and is the
- * file's own directory when rendering a markdown file. `cwd` stays the workspace
- * root so the result still knows whether the target is inside it.
- */
+/** Resolve relative links from baseDir (the markdown file's directory), defaulting to cwd. */
 export function resolveMarkdownFileLinkTarget(
   href: string | undefined,
   cwd?: string,

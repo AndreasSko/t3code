@@ -42,11 +42,7 @@ export function threadSearchMatchKey(
   return JSON.stringify([match.environmentId, match.threadId]);
 }
 
-/**
- * Combines one search query atom per environment. Invalid search keys, failed
- * requests, and disconnected environments contribute no content matches,
- * preserving local title search as the compatibility fallback.
- */
+/** Failed, disconnected, and invalid-key searches leave local title search as the fallback. */
 export function createThreadSearchResultsAtomFamily<E>(options: {
   readonly getSearchAtom: (
     environmentId: EnvironmentId,

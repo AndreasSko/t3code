@@ -9,11 +9,7 @@ export interface EnvironmentThreadState {
   readonly data: Option.Option<OrchestrationV2ThreadProjection>;
   readonly status: EnvironmentThreadStatus;
   readonly error: Option.Option<string>;
-  /**
-   * Progressive history cursor for bounded hydration. Absent/cleared on full
-   * snapshot paths. Errors here are thread/history-local and must not be
-   * promoted into the environment disconnect path.
-   */
+  /** Progressive-history errors stay thread-local; full snapshots clear this metadata. */
   readonly history: ThreadHistoryMeta;
 }
 

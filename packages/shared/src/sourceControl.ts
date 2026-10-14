@@ -192,10 +192,7 @@ function isGitLabHost(host: string): boolean {
 }
 
 function isAzureDevOpsHost(host: string): boolean {
-  // `ssh.dev.azure.com` is the default Azure DevOps SSH clone host
-  // (git@ssh.dev.azure.com:v3/org/project/repo), so match any `*.dev.azure.com`
-  // subdomain, not just the bare `dev.azure.com`. Legacy hosts stay under
-  // `.visualstudio.com` (including `vs-ssh.visualstudio.com`).
+  // Azure DevOps SSH uses ssh.dev.azure.com and legacy *.visualstudio.com hosts.
   return (
     host === "dev.azure.com" ||
     host.endsWith(".dev.azure.com") ||
@@ -282,19 +279,8 @@ export function detectSourceControlProviderFromRemoteUrl(
   };
 }
 
-/**
- * The provider-native repository selector. `displayName` is the full path below the host, which
- * is what nested GitLab groups need; owner/name is the two-segment fallback for identities
- * recorded before that field existed.
- *
- * Azure DevOps is the exception: `az repos pr list --repository` takes a repository name, and
- * takes the organisation and project from the checkout it detects — so the recorded
- * `org/project/_git/repo` path is refused outright and the whole repository reads as
- * unavailable. Its name is the last segment, which is what this hands over.
- *
- * One function because everything downstream is keyed by what it answers: the rows' own
- * `repository`, the per-repository cursors, and the detail and diff reads a row leads to.
- */
+/** Use displayName for nested GitLab groups. Azure DevOps needs only the final repository name:
+ * `az repos` infers organization and project from the checkout. */
 export function sourceControlRepositorySelector(
   identity:
     | Pick<RepositoryIdentity, "provider" | "displayName" | "owner" | "name">

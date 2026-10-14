@@ -19,11 +19,7 @@ export interface SidebarProjectSnapshot extends Project {
   displayName: string;
   groupedProjectCount: number;
   environmentPresence: EnvironmentPresence;
-  // True iff every non-primary member of this group lives in a
-  // desktop-local environment. The sidebar uses this
-  // to differentiate "lives on this machine but in a sandbox" from
-  // "lives on a real remote" so the project header can pick a
-  // local-device treatment instead of the generic remote treatment.
+  // Distinguish desktop-local sandbox members from remote machines for the project header's device treatment.
   allRemoteMembersAreDesktopLocal: boolean;
   allRemoteMembersAreWsl: boolean;
   memberProjects: readonly SidebarProjectGroupMember[];
@@ -116,10 +112,7 @@ export function buildSidebarProjectSnapshots(input: {
   groupScratchProjects?: boolean;
   primaryEnvironmentId: EnvironmentId | null;
   resolveEnvironmentLabel: (environmentId: EnvironmentId) => string | null;
-  // Returns true when an env id maps to a desktop-local saved-env
-  // record. Defaults to "false for every
-  // env" so callers that don't care about the distinction get the
-  // legacy behavior.
+  // Defaults false for callers that do not distinguish desktop-local environments.
   isDesktopLocalEnvironment?: (environmentId: EnvironmentId) => boolean;
   isWslEnvironment?: (environmentId: EnvironmentId) => boolean;
 }): SidebarProjectSnapshot[] {

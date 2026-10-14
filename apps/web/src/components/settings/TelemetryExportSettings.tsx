@@ -52,7 +52,6 @@ export function TelemetryExportSettings() {
       </SettingsSection>
     );
   }
-  // Mounts per environment so its saved endpoints are the ones checked on open.
   return <TelemetryExportForm key={environment.environmentId} />;
 }
 
@@ -70,7 +69,6 @@ function TelemetryExportForm() {
   // Servers from before endpoint checks keep the editor without Test.
   const canCheck =
     canEdit && environment?.serverConfig?.environment.capabilities.otlpEndpointCheck === true;
-  // Saved endpoints open as pending; the effect below sends their checks.
   const [checks, setChecks] = useState<Partial<Record<SignalKey, EndpointCheck>>>(() =>
     Object.fromEntries(
       SIGNALS.filter(({ key }) => isHttpUrl(saved[key])).map(({ key }) => [
@@ -105,7 +103,6 @@ function TelemetryExportForm() {
     void sendCheck(key, signal, url);
   };
 
-  // Sends checks still pending, such as the saved endpoints' when the form opens.
   const sendPendingChecks = useEffectEvent(() => {
     for (const { key, signal } of SIGNALS) {
       const check = checks[key];

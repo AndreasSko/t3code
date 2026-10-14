@@ -262,13 +262,9 @@ export const bufferLiveStream = <A extends object, E, R>(
     }),
   );
 
-/**
- * Subscribe and start draining before reading the high-water mark. A blocked
- * catch-up query or an unacknowledged replay batch must not strand an unbounded
- * PubSub subscription. Raw replay/live events share one budget here; projected
- * RPC delivery has its own budget, so the two stages retain at most twice the
- * configured item and byte limits.
- */
+// Drain live events before reading the high-water mark so blocked replay cannot
+// retain unbounded PubSub events. Replay/live retention and RPC delivery have
+// separate budgets, retaining at most twice the configured item and byte limits.
 type ReplayLiveInput<A extends { readonly sequence: number }, E, R> = {
   readonly subscribe: Effect.Effect<PubSub.Subscription<A>, never, Scope.Scope>;
   readonly latestSequence: Effect.Effect<number, E, R>;

@@ -39,10 +39,7 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly forceBrowser: boolean;
 }
 
-/**
- * Opens a terminal hyperlink where the "Open links in" setting says, unless a
- * Cmd/Ctrl-click explicitly requests the system browser.
- */
+/** Honor Open links in unless Cmd/Ctrl-click requests the system browser. */
 export async function openTerminalLinkInPreview<E>(
   input: OpenTerminalLinkInPreviewInput<E>,
 ): Promise<void> {
@@ -71,8 +68,7 @@ export async function openTerminalLinkInPreview<E>(
     input: {
       threadId: input.threadRef.threadId,
       url: input.url,
-      // Same reason as `openUrlInPreview`: this path handles its own result
-      // mapping, so the configured defaults are applied explicitly.
+      // Apply defaults explicitly because this path maps its own result instead of using openUrlInPreview.
       viewport: browserDefaultOpenViewport(defaults),
       profileId: browserDefaultOpenProfileId(defaults),
       ...(runtime === undefined ? {} : { runtime }),

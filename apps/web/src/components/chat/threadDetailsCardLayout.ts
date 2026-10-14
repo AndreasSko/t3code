@@ -15,10 +15,6 @@ export function resolveThreadDetailsCardDensity(
   return "essential";
 }
 
-/**
- * The card pins to the top right while a readable chat lane fits beside it.
- * The chat canvas decides whether chat moves over to make room.
- */
 export function resolveThreadDetailsCardLayout({
   container,
   lane,

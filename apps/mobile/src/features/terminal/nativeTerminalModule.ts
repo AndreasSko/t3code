@@ -79,11 +79,7 @@ export function resolveNativeTerminalSurfaceView(): ComponentType<NativeTerminal
   return cachedNativeTerminalSurfaceView ?? null;
 }
 
-/**
- * Revision of the native hardware-keyboard handling compiled into the installed binary,
- * or `null` when the binary predates the revision constant (or the module is missing).
- * Used in terminal debug logs to detect stale native builds.
- */
+/** Returns the installed hardware-key revision, or null for missing/stale native modules; used in debug logs. */
 export function getNativeTerminalHardwareKeyRevision(): number | null {
   try {
     if (typeof requireOptionalNativeModule !== "function") {

@@ -54,7 +54,6 @@ const RELEASE_INDEX_TIMEOUT = Duration.seconds(30);
 // a channel genuinely has nothing published.
 const RELEASE_INDEX_MAX_PAGES = 10;
 
-/** Asks GitHub for the newest published version on a channel, page by page. */
 const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(function* (
   channel: CliReleaseChannel,
 ) {
@@ -88,7 +87,6 @@ const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(function* (
   return yield* new CliUpdateError({ reason: `No published ${channel} release was found.` });
 });
 
-/** Whether a launcher target lives inside `<baseDir>/runtime/versions`. */
 export function launcherOwnsVersionsDir(
   path: Path.Path,
   versionsDir: string,
@@ -98,17 +96,10 @@ export function launcherOwnsVersionsDir(
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-/**
- * The launcher the install scripts leave behind: a symlink at `<bin>/t3` on
- * POSIX, a `t3.cmd` shim on Windows. `t3 update` repoints it so the next `t3`
- * invocation is the new version. Only a launcher that already points into
- * this home's `runtime/versions` tree is touched; a plain copy of the
- * executable, or a launcher for some other install, is left alone.
- */
+/** Repoint only launchers owned by this home's runtime/versions; preserve other installs and copies. */
 export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function* (input: {
   /** Path the current process was started through, if known. */
   readonly launchedAs: string | undefined;
-  /** `<baseDir>/runtime/versions` of the home being updated. */
   readonly versionsDir: string;
   readonly targetEntryPath: string;
 }) {
@@ -120,10 +111,8 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
     launcherOwnsVersionsDir(path, input.versionsDir, candidate);
 
   if (platform === "win32") {
-    // The shim runs the executable by absolute path, so the executable sees
-    // itself as argv0; the shim is the `t3.cmd` next to it only when launched
-    // from an install script's bin directory. Find it by searching the
-    // directories that would resolve `t3` on this shell's PATH.
+    // Windows shims invoke absolute executable paths, hiding the launcher from
+    // argv0; find the matching t3.cmd on PATH.
     const shimPath = yield* findWindowsShim(input.launchedAs);
     if (shimPath === undefined) return Option.none<string>();
     const current = yield* fs.readFileString(shimPath).pipe(Effect.option);
@@ -154,12 +143,8 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
   return Option.some(input.launchedAs);
 });
 
-/**
- * The path the executable was started through. Node keeps the shell's
- * spelling in argv0: a launcher symlink or `./t3` resolves against the
- * working directory, while a bare `t3` was found on PATH and has to be
- * looked up there again, or the launcher symlink is never seen.
- */
+/** Node preserves argv0 spelling; resolve relative paths against cwd
+ * and bare commands on PATH to retain the launcher symlink. */
 export const resolveLauncherPath = Effect.gen(function* () {
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
@@ -181,11 +166,7 @@ export const resolveLauncherPath = Effect.gen(function* () {
   return undefined;
 });
 
-/**
- * On Windows a `.cmd` shim is what PATH resolves, but the executable it runs
- * only ever sees its own path. Walk PATH for a `t3.cmd` whose target is the
- * running executable; that is the launcher the install script wrote.
- */
+/** Windows exposes only the executable path; find its matching t3.cmd launcher on PATH. */
 export const findWindowsShim = Effect.fn("cli.update.find_windows_shim")(function* (
   executablePath: string,
 ) {
@@ -267,16 +248,8 @@ export const updateCommand = Command.make("update", {
   ),
 );
 
-/**
- * A `t3 serve` or `t3` someone started by hand, as opposed to the one the
- * background service supervises. The server records its pid on startup; a
- * stale file from a crashed server is ignored by checking the pid is alive.
- *
- * Servers from before `serviceManaged` was recorded cannot be told apart by
- * the file alone, so the launcher-supervised case is also recognised by
- * lineage: a service server's parent is the launcher, and on Linux that
- * launcher runs inside the unit's cgroup.
- */
+// Ignore dead PIDs. When serviceManaged is absent, recognize service servers
+// by launcher parentage on macOS or unit cgroup on Linux.
 const findForegroundServer = Effect.fn("cli.update.find_foreground_server")(function* (input: {
   readonly serverRuntimeStatePath: string;
   readonly serviceInstalled: boolean;
@@ -355,10 +328,8 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);
 
-  // Preview is a maintainers' dogfooding train: it is cut by hand from
-  // unmerged branches, receives no fixes, and is never offered to anyone.
-  // Reaching it from stable or nightly takes an explicit ask and an explicit
-  // acknowledgement; the flag alone is not enough from a script.
+  // Preview releases are unsupported maintainer builds; entering the channel
+  // requires interactive acknowledgement, not only a script flag.
   const currentChannel = cliReleaseChannelOf(currentVersion);
   if (targetChannel === "preview" && currentChannel !== "preview") {
     yield* Console.log(
@@ -387,9 +358,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   // Work out everything that will be touched before touching anything, so the
   // user sees one plan and one question rather than a surprise restart.
   const status = yield* service.status;
-  // The unit name is per user, not per T3 home. Only touch the service when it
-  // serves the home this update targets; otherwise it belongs to another
-  // install on this machine and restarting it would take that server down.
+  // Service names are per user, so update only the unit serving this T3 home.
   const servesThisHome =
     status.installedBaseDir !== undefined &&
     path.resolve(status.installedBaseDir) === path.resolve(input.baseDir);
@@ -398,18 +367,12 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     serverRuntimeStatePath: input.serverRuntimeStatePath,
     serviceInstalled,
   });
-  // What this machine runs is the executable behind the launcher and, when a
-  // service is installed for this home, the version that service runs. Either
-  // being stale is an update to do, and the newest of the two is what the
-  // downgrade check protects.
+  // Protect the newest executable/service version against downgrade; either
+  // being stale requires an update.
   const serviceVersion = serviceInstalled ? status.installedVersion : undefined;
   const executableCurrent = targetVersion === currentVersion;
-  // A service whose recorded version is missing or unreadable is not known
-  // to be current, so it gets the update rather than being skipped. Nor is
-  // one on the right version that is stopped, disabled, or still running the
-  // version before it (an earlier update where the restart was declined):
-  // `status.current` covers all of that when the target is this executable,
-  // and the problem list is what can be judged for any other target.
+  // Missing versions, unhealthy units, and pending restarts are not current
+  // even when the recorded version matches.
   const restartPending = status.problems?.includes("restart-pending") === true;
   const serviceCurrent =
     !serviceInstalled ||
@@ -531,12 +494,8 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     targetEntryPath: runtime.entryPath,
   });
 
-  // The service switch runs in this process against the target version: the
-  // downloaded runtime has already proven it runs (the `--version` check
-  // above), and doing it here rather than through the target's own CLI means
-  // a downgrade to a version without today's commands still works. The unit
-  // is rewritten either way so a later `t3 service restart` lands on the new
-  // version; only the restart itself waits for the user's answer.
+  // Switch through this CLI so downgrades work even without the target's commands.
+  // Rewrite the unit for later restarts; only restarting awaits the user's answer.
   let serviceUpdated = false;
   if (serviceInstalled && !serviceCurrent) {
     yield* Console.log(

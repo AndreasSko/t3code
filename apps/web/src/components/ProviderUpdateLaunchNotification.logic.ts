@@ -38,13 +38,7 @@ export interface ProviderUpdateToastView {
   readonly dismissAfterVisibleMs?: number;
 }
 
-/**
- * Terminal update phases — outcomes that are safe to persist as a one-shot row
- * result. A non-terminal ("initial"/"running") snapshot never re-polls itself,
- * so storing one pins an update row's spinner indefinitely once its pending flag
- * expires; such phases must be dropped in favor of the live per-environment
- * provider state instead of being persisted.
- */
+/** Persist only terminal phases: stored snapshots never re-poll and would otherwise pin row spinners. */
 export function isTerminalProviderUpdatePhase(phase: ProviderUpdateToastPhase): boolean {
   return phase === "succeeded" || phase === "failed" || phase === "unchanged";
 }
@@ -331,7 +325,6 @@ export function getProviderUpdateProgressToastView(input: {
   return getProviderUpdateRunningToastView(input.providerCount);
 }
 
-/** One provider update sent by the cross-machine "Update all", with its result. */
 export interface ProviderUpdateRun {
   readonly environmentId: EnvironmentId;
   readonly machineLabel: string;
@@ -619,23 +612,7 @@ function getFailedProviderUpdateDescription(providers: ReadonlyArray<ServerProvi
   return `${formatProviderList(providers)} failed to update. Check provider settings for details.`;
 }
 
-// ===========================================================================
-// Multi-environment provider updates
-//
-// With a desktop-local secondary backend present (the WSL backend alongside the
-// Windows primary), a provider update is applied across every local backend.
-// Each environment owns its own provider instances, so candidates and progress
-// are computed per environment and the dispatch targets that environment's
-// connection. These helpers are pure; the dispatch itself runs through the
-// `serverEnvironment.updateProvider` atom command in the components.
-// ===========================================================================
-
-/**
- * The settled result of dispatching a provider update to one local backend.
- * `provider` is the post-update snapshot of the targeted instance returned by
- * that backend (null when the backend did not report the targeted instance,
- * e.g. it does not have it installed).
- */
+/** provider is the targeted instance's post-update snapshot, or null if the backend did not report it. */
 export interface LocalProviderUpdateOutcome {
   readonly environmentId: EnvironmentId;
   readonly isPrimary: boolean;
@@ -644,8 +621,6 @@ export interface LocalProviderUpdateOutcome {
   readonly provider: ServerProvider | null;
 }
 
-// Worst-case ordering across backends: a failed copy outranks an unchanged one,
-// which outranks a still-running one, which outranks a succeeded one.
 const PROVIDER_UPDATE_STATUS_SEVERITY: Record<string, number> = {
   succeeded: 1,
   queued: 2,
@@ -668,14 +643,7 @@ export function firstRejectedProviderUpdateMessage(
   return rejected.reason instanceof Error ? rejected.reason.message : "Provider update failed.";
 }
 
-/**
- * Reduce per-backend update outcomes to one representative snapshot per driver,
- * keeping the worst-case status across every local backend. Because the same
- * driver has a distinct instance id per environment, a secondary backend (e.g.
- * WSL) that *resolved* with a failed or unchanged provider would otherwise be
- * filtered out (its instance id is not the primary's) or collapsed behind the
- * primary's success — this surfaces it instead.
- */
+/** Keep each driver's worst status: secondary instance ids differ and must not hide failures behind primary success. */
 export function collectProviderUpdateOutcomeSnapshots(
   results: ReadonlyArray<PromiseSettledResult<LocalProviderUpdateOutcome>>,
 ): ServerProvider[] {
@@ -696,12 +664,7 @@ export function collectProviderUpdateOutcomeSnapshots(
   return [...worstByDriver.values()];
 }
 
-/**
- * A human label that distinguishes local environments by platform (so the
- * popover shows "Windows" / "WSL" rather than the account name twice). WSL is
- * identified by its backend instance id; everything else falls back to the
- * reported OS, then the environment's own label.
- */
+/** Use platform labels to distinguish machines instead of repeating the account name. */
 export function deriveEnvironmentDisplayLabel(input: {
   readonly isWsl: boolean;
   readonly wslDistro: string | null;
@@ -723,7 +686,6 @@ export function deriveEnvironmentDisplayLabel(input: {
   }
 }
 
-/** Connection state of a local environment, normalized across primary/secondary sources. */
 export type EnvironmentUpdateConnectionState = "connecting" | "ready" | "disconnected" | "error";
 
 export interface LocalEnvironmentProvidersInput {
@@ -738,19 +700,11 @@ export interface LocalEnvironmentUpdateGroup {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly isPrimary: boolean;
-  /** True while this environment's backend is still connecting (e.g. WSL booting). */
   readonly isSettling: boolean;
-  /** Outdated, one-click-updatable providers in this environment. */
   readonly candidates: ProviderUpdateCandidate[];
-  /** Full provider list for this environment, used to derive live update progress. */
   readonly providers: ReadonlyArray<ServerProvider>;
 }
 
-/**
- * Build one update group per local environment, pairing each environment's
- * outdated one-click candidates with its own provider list, and report whether
- * any environment is still settling (so the caller can defer the popover).
- */
 export function buildLocalEnvironmentUpdateGroups(
   environments: ReadonlyArray<LocalEnvironmentProvidersInput>,
 ): { groups: LocalEnvironmentUpdateGroup[]; isAnySettling: boolean } {
@@ -770,18 +724,13 @@ export function buildLocalEnvironmentUpdateGroups(
   return { groups, isAnySettling };
 }
 
-/** Groups that actually have a one-click update available, in display order (primary first). */
 export function environmentGroupsWithUpdates(
   groups: ReadonlyArray<LocalEnvironmentUpdateGroup>,
 ): LocalEnvironmentUpdateGroup[] {
   return groups.filter((group) => group.candidates.length > 0);
 }
 
-/**
- * Stable key over the set of (environment, driver, latest version) updates on
- * offer, so the popover is shown once per distinct set and re-shown when it
- * changes.
- */
+/** Notify once per distinct offered update set, then allow notification when that set changes. */
 export function localEnvironmentUpdateNotificationKey(
   groups: ReadonlyArray<LocalEnvironmentUpdateGroup>,
 ): string | null {
@@ -810,17 +759,8 @@ function environmentProviderNames(group: LocalEnvironmentUpdateGroup): string {
     .join(", ");
 }
 
-/**
- * Resolve one environment row's display from every available signal, in
- * priority order: a transport rejection, then the dispatch's own *terminal*
- * result payload (reliable even when a secondary backend's config does not
- * re-sync), then live server state (reliable even when the dispatch RPC is lost
- * to a reconnect), then the optimistic pending spinner, then the idle state.
- *
- * A non-terminal result snapshot ("running") is intentionally skipped rather
- * than treated as authoritative, so live server state can still drive the row
- * to its terminal status instead of pinning it on "Updating…".
- */
+/** Terminal RPC results can survive missing config sync; live state survives lost RPCs.
+ * Skip nonterminal stored results so the live state can resolve the spinner. */
 export function resolveEnvironmentUpdateRowStatus(input: {
   readonly group: LocalEnvironmentUpdateGroup;
   readonly error: string | undefined;
@@ -839,7 +779,6 @@ export function resolveEnvironmentUpdateRowStatus(input: {
         return { kind: "failed", text: input.result.description };
       case "unchanged":
         return { kind: "unchanged", text: input.result.description };
-      // "running" / "initial": non-terminal snapshot — fall through to live state.
     }
   }
   if (input.pill) {
@@ -854,9 +793,6 @@ export function resolveEnvironmentUpdateRowStatus(input: {
         return { kind: "loading", text: "Updating…" };
     }
   }
-  // A non-terminal result snapshot or the optimistic pending flag means an
-  // update is still in flight — keep showing the spinner rather than reverting
-  // to the Update button as if nothing happened.
   if (input.result || input.isPending) {
     return { kind: "loading", text: "Updating…" };
   }

@@ -36,10 +36,7 @@ const decodeWorkflowRuns = Schema.decodeUnknownOption(
 
 export type KnownWorkflowRun = typeof WorkflowRunSchema.Type;
 
-/**
- * Every `pull_request` workflow run of one head, as the revalidator just confirmed them against
- * GitHub. A read running under it filters these rather than asking for the runs again.
- */
+/** Reuse runs the revalidator already confirmed for this head instead of re-listing them. */
 export const KnownWorkflowRuns = Context.Reference<{
   readonly headSha: string;
   readonly runs: ReadonlyArray<KnownWorkflowRun>;
@@ -89,7 +86,6 @@ export const makeChecksRevalidator = Effect.gen(function* () {
               operation: "revalidateChecks",
               status,
             });
-          /** Whether the endpoint has a next page, or null where the host cannot say. */
           const get = (endpoint: string, head = false) =>
             Effect.gen(function* () {
               const previous = entry.validators.get(endpoint);

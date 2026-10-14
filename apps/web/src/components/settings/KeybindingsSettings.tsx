@@ -209,7 +209,6 @@ function defaultWhenGroup(operator: BooleanOperator = "and"): KeybindingWhenNode
   };
 }
 
-/** Warning glyph whose explanation lives in a tooltip; the one owner of that affordance here. */
 function WarningTooltipIcon({
   label,
   focusable = true,
@@ -712,7 +711,6 @@ function rowKeybindingTarget(row: KeybindingRow): ServerRemoveKeybindingInput {
   };
 }
 
-/** Draft state and actions for editing one existing binding; layouts decide how to render it. */
 function useKeybindingRowEditor({
   row,
   allRows,
@@ -784,7 +782,6 @@ type KeybindingRowProps = KeybindingRowActions & {
   anchorId?: string | undefined;
 };
 
-/** Shortcut pill that turns into a capture input when clicked, plus Save once the draft changes. */
 function KeybindingKeyControl({
   row,
   editor,
@@ -843,7 +840,6 @@ function KeybindingKeyControl({
   );
 }
 
-/** Quiet inline trigger showing the when clause; opens the expression builder. */
 function WhenClauseControl({
   label,
   expression,
@@ -977,7 +973,6 @@ function KeybindingRowWhen({
   );
 }
 
-/** Row actions that stay hidden until the row is hovered or holds focus. */
 function KeybindingHoverRowMenu(props: {
   row: KeybindingRow;
   isSaving: boolean;
@@ -991,7 +986,6 @@ function KeybindingHoverRowMenu(props: {
   );
 }
 
-/** One binding as a settings row: pills flush right, actions fading in beside them on hover. */
 function KeybindingSettingsRow(props: KeybindingRowProps) {
   const { row, isSaving, anchorId, allRows, variables, onSave, onReset, onRemove } = props;
   const editor = useKeybindingRowEditor({ row, allRows, onSave });
@@ -1023,7 +1017,6 @@ function KeybindingSettingsRow(props: KeybindingRowProps) {
   );
 }
 
-/** Draft state for a binding that does not exist yet. */
 function useNewKeybindingDraft({
   allRows,
   onSave,
@@ -1199,7 +1192,6 @@ function NewKeybindingCancelIcon({
   );
 }
 
-/** Add-binding form shaped like the binding rows below it. */
 function NewKeybindingSettingsRow(props: NewKeybindingProps) {
   const { commandOptions, allRows, variables, isSaving, onSave, onCancel } = props;
   const draft = useNewKeybindingDraft({ allRows, onSave });
@@ -1239,7 +1231,6 @@ interface KeybindingsGroupsProps extends KeybindingRowActions {
   savingCommand: KeybindingCommand | null;
 }
 
-/** One titled section per command area, each holding its binding rows. */
 function KeybindingsGroups(props: KeybindingsGroupsProps) {
   const { groups, anchorIds, savingCommand, ...rowActions } = props;
   return groups.map((group) => (
@@ -1257,7 +1248,6 @@ function KeybindingsGroups(props: KeybindingsGroupsProps) {
   ));
 }
 
-/** Shown in the browser build only; the desktop app receives every shortcut. */
 function BrowserKeybindingNotice() {
   // The label carries the whole sentence so assistive tech reads it without
   // opening the tooltip.
@@ -1280,9 +1270,7 @@ function BrowserKeybindingNotice() {
 }
 
 export function KeybindingsSettingsPanel() {
-  // The representative environment supplies the displayed bindings; edits
-  // fan out to every connected environment in the selection, so one
-  // shortcut change reaches each machine the user runs T3 Code on.
+  // Show representative bindings while fanning edits out to every connected selected environment.
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
   const canOpenKeybindingsFile = useEnvironmentScope(
     primaryEnvironment?.environmentId ?? null,
@@ -1326,8 +1314,7 @@ export function KeybindingsSettingsPanel() {
     }
     return ids;
   }, [rows]);
-  // The search-target context is provided by this panel's own page container,
-  // so the jump target is read from the route hash here.
+  // The page owns its search-target context; read settings-search jumps from the route hash.
   const searchTargetId = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
   const [handledSearchTargetId, setHandledSearchTargetId] = useState(searchTargetId);
 

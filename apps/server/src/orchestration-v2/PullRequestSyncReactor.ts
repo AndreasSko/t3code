@@ -118,7 +118,6 @@ function skipReason(cause: Cause.Cause<unknown>): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** When a host read failed because the host is rate limited, the time that pause ends. */
 function rateLimitRetryAt(cause: Cause.Cause<unknown>): number | undefined {
   let error: unknown = Cause.squash(cause);
   while (error instanceof Error) {
@@ -132,12 +131,8 @@ function isUnsettled(thread: ProjectionStore.ProjectionThreadPullRequests): bool
   return thread.settledOverride !== "settled" && thread.settledAt === null;
 }
 
-/**
- * Keeps every thread ↔ pull request link's host snapshot current. One sweep a minute reads
- * only the active threads that have links, groups visible links by pull request so the host
- * is asked once per PR no matter how many threads share it, and writes back only what
- * changed. Native stacks the host reports are auto-linked to the thread as `source: "stack"`.
- */
+// Group links by pull request so each sweep reads the host once per PR;
+// write changed snapshots and auto-link host-reported stack layers.
 export class PullRequestSyncReactor extends Context.Service<
   PullRequestSyncReactor,
   {
@@ -350,7 +345,6 @@ export const make = Effect.gen(function* () {
       );
     });
 
-    // Failed host reads by reason: how many, and the first key that failed that way.
     const skips = new Map<string, { count: number; readonly key: string }>();
     const readGroup = (key: string, entries: ReadonlyArray<LinkEntry>, pauseKey: string) =>
       syncGroup(key, entries).pipe(
@@ -404,7 +398,6 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.catchCause(logSkipped("pull request sync sweep failed", {}))),
   );
 
-  // Threads whose current run ran a merge or close command, until that run ends.
   const closeCommandThreads = new Set<ThreadId>();
   const refreshOpenLinks = (threadId: ThreadId) =>
     projections.getThreadsWithPullRequests(threadId).pipe(
@@ -450,10 +443,8 @@ export const make = Effect.gen(function* () {
               requestSync,
               { discard: true },
             );
-          // An agent can merge or close its pull request from a shell (`gh pr merge`), which
-          // sends no merge notification. When a run that ran such a command ends, read the
-          // thread's open links fresh, so settlement does not wait for the next sweep and the
-          // cached summary. Other runs add no host reads.
+          // Merge/close shell commands emit no host notification; refresh their thread's
+          // open links on run completion so settlement need not wait for a cached sweep.
           case "turn-item.updated":
             if (
               event.payload.type === "command_execution" &&

@@ -1,7 +1,3 @@
-/**
- * Subagent status helpers shared by web and mobile, and the runtime shape the
- * web agent rows render.
- */
 import { groupBy } from "effect/Array";
 import * as DateTime from "effect/DateTime";
 import type {
@@ -41,7 +37,6 @@ export interface SubagentWorkflowPhase {
   readonly title: string;
 }
 
-// Optional-and-undefined, matching the contract's own optionals.
 export interface SubagentRunHandles {
   readonly runId?: string | undefined;
   readonly scriptPath?: string | undefined;
@@ -93,8 +88,7 @@ export function isTerminalSubagentStatus(status: RuntimeSubagentStatus): boolean
   return TERMINAL_STATUSES.has(status);
 }
 
-/** Active = the user may still need to care while it runs. Idle is settled-ish
- * but resumable; waiting counts as active because it needs the user. */
+/** Waiting is active because it needs the user; idle is resumable but settled. */
 export function isActiveSubagentStatus(status: RuntimeSubagentStatus): boolean {
   return isOrchestrationV2WorkActive(status);
 }
@@ -103,7 +97,6 @@ export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
   return item.type === "subagent" && isOrchestrationV2WorkActive(item.status);
 }
 
-/** A workflow coordinator with its members grouped by phase, as Lineage renders it. */
 export interface SubagentWorkflowGroup {
   readonly workflow: RuntimeSubagent;
   readonly phases: ReadonlyArray<{
@@ -135,19 +128,13 @@ function isoFromEpochMillis(value: number | undefined): string | null {
   return value === undefined ? null : DateTime.formatIso(DateTime.makeUnsafe(value));
 }
 
-/**
- * Expands a coordinator's workflow roster into member rows. Members are
- * synthesized from the coordinator's snapshot rather than read from their own
- * subagent entities, so a parent thread's Lineage can show them without
- * loading the coordinator's child thread; their identity is the coordinator id
- * plus the spawn ordinal.
- */
+// Coordinator snapshots supply member rows without loading child threads;
+// coordinator id plus spawn ordinal defines their identity.
 function workflowMembersToRuntime(
   coordinator: RuntimeSubagent,
   workflow: OrchestrationV2SubagentWorkflow,
 ): ReadonlyArray<RuntimeSubagent> {
   return workflow.agents.map((agent) => {
-    // Every member state but queued is already a runtime status.
     const status =
       (agent.state === "queued" || agent.state === "running") &&
       isTerminalSubagentStatus(coordinator.status)
@@ -196,9 +183,6 @@ function workflowMembersToRuntime(
   });
 }
 
-/**
- * Projects subagents and workflow members into the runtime roster.
- */
 export function projectedSubagentsToRuntime(
   subagents: ReadonlyArray<{
     readonly id: string;
@@ -272,9 +256,7 @@ export function deriveWorkflowGroups(
 
   return workflows.map((workflow) => {
     const workflowMembers = Object.hasOwn(members, workflow.id) ? members[workflow.id]! : [];
-    // Union, not either/or: the declared plan lags the members, because the
-    // provider only admits a phase once something in it starts. Members seed
-    // the map; the declared titles then overwrite whatever they guessed.
+    // Members can precede declared phases; union both and prefer declared titles.
     const phaseTitles = new Map<number, string>();
     for (const member of workflowMembers) {
       if (member.phaseIndex === null) continue;

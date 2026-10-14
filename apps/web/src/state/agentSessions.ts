@@ -6,12 +6,7 @@ import {
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
-/**
- * Scan of Claude Code / Codex home directories on an environment, surfacing
- * project candidates for the welcome wizard's import step. The scan walks the
- * filesystem server-side, so results are cached briefly and refreshed when the
- * import step remounts.
- */
+/** Cache filesystem scans briefly and refresh on import-step remount to avoid repeated server walks. */
 export const agentSessionScan = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:agent-sessions:scan",
   tag: WS_METHODS.agentSessionsScan,

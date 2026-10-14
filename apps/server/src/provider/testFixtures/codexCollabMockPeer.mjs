@@ -1,9 +1,5 @@
-// Minimal codex app-server stand-in, spawned as the Codex binary by the
-// provider readiness probe tests. Answers the handshake and, for session
-// requests, returns REAL captured responses (codexMultiAgentWire.json), then
-// replays a scripted multi-agent notification sequence read from the
-// T3_CODEX_COLLAB_SCRIPT env var (a JSON file path) when the first turn
-// starts. Runs as a plain Node process — stdlib only.
+// Codex binary fixture: handshake plus captured responses from codexMultiAgentWire.json.
+// T3_CODEX_COLLAB_SCRIPT names the notification script replayed at turn start; Node stdlib only.
 import * as NodeFS from "node:fs";
 import * as NodeReadline from "node:readline";
 import * as NodePath from "node:path";
@@ -18,8 +14,6 @@ const script = JSON.parse(NodeFS.readFileSync(process.env.T3_CODEX_COLLAB_SCRIPT
 const write = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let turnStartCount = 0;
 let activeTurn;
-// Server->client requests the runtime must answer (approval prompts), keyed
-// by the numeric JSON-RPC id this peer allocated for them.
 const openServerRequests = new Map();
 const rl = NodeReadline.createInterface({ input: process.stdin });
 rl.on("line", (line) => {
@@ -31,13 +25,8 @@ rl.on("line", (line) => {
   }
   const { id, method } = message;
   if (openServerRequests.has(id)) {
-    // The runtime answered an approval request. Record the response so tests
-    // can assert settlement behavior, then emit serverRequest/resolved as a
-    // deterministic receipt (tests wait on the runtime's event stream rather
-    // than polling the sidecar file). Real codex identifies the resolved
-    // request by its item id — the key the runtime correlates on — so the
-    // receipt exercises the same path that closes the approval card in the
-    // UI.
+    // Emit a deterministic receipt so tests can await settlement on the runtime event stream.
+    // Real Codex resolves approvals by item id; use that key to exercise card closure.
     const request = openServerRequests.get(id);
     openServerRequests.delete(id);
     NodeFS.appendFileSync(
@@ -183,13 +172,11 @@ rl.on("line", (line) => {
     }
     for (const [index, request] of (script.serverRequests ?? []).entries()) {
       if (request.id !== undefined) {
-        // Legacy form: caller-supplied JSON-RPC ids recorded in .responses.
+        // Caller-supplied ids are recorded in .responses.
         write({ jsonrpc: "2.0", id: request.id, method: request.method, params: request.params });
         continue;
       }
-      // Scripted server->client requests (approval prompts). String values in
-      // params may reference "${threadId}" / "${turnId}" placeholders that are
-      // substituted with the ids this peer actually allocated.
+      // Replace scripted ${threadId}/${turnId} placeholders with the peer's allocated ids.
       const requestId = 9000 + index;
       const label = request.label ?? `approval-${requestId}`;
       openServerRequests.set(requestId, { label, itemId: request.params?.itemId });
@@ -213,9 +200,7 @@ rl.on("line", (line) => {
     return;
   }
   if (method === "turn/interrupt") {
-    // Record which thread/turn was interrupted (append-only sidecar file the
-    // test reads) so Stop coverage can assert every live child was reached.
-    // failInterruptFor simulates a dead child whose interrupt errors.
+    // The .interrupts sidecar lets tests verify every live child received Stop.
     const target = message.params?.threadId;
     NodeFS.appendFileSync(
       `${process.env.T3_CODEX_COLLAB_SCRIPT}.interrupts`,
@@ -240,8 +225,7 @@ rl.on("line", (line) => {
       return;
     }
     if (script.hangInterruptFor && script.hangInterruptFor === target) {
-      // Never respond: simulates a wedged child whose RPC neither resolves
-      // nor rejects. The runtime's bounded deadline must move on.
+      // A wedged child's missing RPC reply must hit the runtime's deadline.
       return;
     }
     write({ id, result: {} });

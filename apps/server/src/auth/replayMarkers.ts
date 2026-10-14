@@ -14,22 +14,12 @@ import { DPOP_REPLAY_MARKER_PREFIX } from "./dpop.ts";
 
 const REPLAY_MARKER_PREFIXES = [DPOP_REPLAY_MARKER_PREFIX, ...CLOUD_REPLAY_MARKER_PREFIXES];
 
-/**
- * How long a replay marker stays on disk. A marker only matters while its proof
- * can pass the time check (about 5 minutes for DPoP, 7 for cloud proofs). After
- * that, the time check rejects a replay by itself. The sweep and the time check
- * both use the wall clock, so a pruned marker can let a replay through only if
- * the clock moves back by almost a day, or if the filesystem stamps mtimes almost
- * a day behind. Markers are files, so a restart does not reset them.
- */
+// Proofs pass time checks for about 5m (DPoP) or 7m (cloud, including skew).
+// One-day on-disk markers survive restarts; pruning can admit a replay only
+// if wall-clock rollback or mtime drift approaches a day.
 export const REPLAY_MARKER_MAX_AGE = Duration.days(1);
 
-/**
- * Deletes replay markers whose mtime is older than `REPLAY_MARKER_MAX_AGE`.
- * `ServerSecretStore` saves each secret as `<name>.bin`, so only
- * `<marker prefix>*.bin` names match. Other secrets and the `*.bin.<uuid>.tmp`
- * files that `set` writes are never touched.
- */
+/** Prune only expired marker .bin files; preserve other secrets and in-flight .tmp files. */
 export const pruneExpiredReplayMarkers = Effect.fn("replayMarkers.pruneExpired")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -64,7 +54,6 @@ export const pruneExpiredReplayMarkers = Effect.fn("replayMarkers.pruneExpired")
   }
 });
 
-/** Prunes expired replay markers after server activation, then every hour. */
 export const layer = Layer.effectDiscard(
   forkParked(
     pruneExpiredReplayMarkers().pipe(

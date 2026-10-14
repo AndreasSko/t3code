@@ -40,12 +40,8 @@ function isThreadNotFound(error: unknown): boolean {
   );
 }
 
-/**
- * Serves orchestration V2 snapshots over HTTP so clients can load the
- * (potentially large) shell and thread projections off the socket; gzip
- * compressible and cacheable — and then resume the WebSocket subscription via
- * `afterSequence`.
- */
+// HTTP snapshots keep large projections compressible/cacheable off the socket;
+// clients resume the WebSocket stream with afterSequence.
 export const layer = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "orchestration",
@@ -61,10 +57,8 @@ export const layer = HttpApiBuilder.group(
         Effect.forEach(
           projects,
           (project) =>
-            // Use immediately available enrichment only. Awaiting git-backed
-            // identity resolution can exceed the client shell-snapshot budget
-            // (ProcessRunner allows probes up to one minute). Background workers
-            // plus the WS enrichment subscription fill in repositoryIdentity.
+            // Each git identity probe allows 60 seconds, exceeding the shell snapshot budget.
+            // Use available enrichment now; background workers and WebSocket updates fill it in.
             projectEnrichment.getAvailable(project.workspaceRoot).pipe(
               Effect.map((enrichment) => ({
                 ...project,

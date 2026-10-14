@@ -1,19 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the guarded file read needs open
 // flags (O_NOFOLLOW, O_NONBLOCK) the FileSystem service does not expose.
-/**
- * EnvironmentTheme - palettes this machine publishes for clients to follow.
- *
- * A desktop that retints its apps when the user switches system theme writes
- * `<stateDir>/themes/<id>.json`; this service watches that directory and
- * streams the published set to connected clients so a theme change lands
- * without a restart. The filename is the theme id: it stays stable while the
- * machine rewrites the colors underneath, so `defaultTheme` and a client\'s
- * selection keep pointing at the same theme across recolors. Theming is
- * cosmetic, so every failure here degrades to "not published" rather than
- * propagating.
- *
- * @module EnvironmentTheme
- */
+// Filename ids stay stable across recolors so client selections survive
+// rewrites. Theme failures are cosmetic and degrade to unpublished.
 import * as NodeFS from "node:fs";
 
 import {
@@ -47,23 +35,13 @@ const isEnvironmentThemeId = Schema.is(EnvironmentThemeId);
 
 const THEME_FILE_SUFFIX = ".json";
 
-/**
- * Bounds on what a machine can publish. The directory is local, so this is not
- * a trust boundary -- but an accidental dump of large files there would
- * otherwise be read in full, streamed to every client, and repainted, so the
- * cost of a mistake is capped rather than unbounded.
- */
+// Cap accidental local dumps to bound reads, broadcasts, and client repaints.
 const MAX_THEME_FILES = 32;
 /** Exported so the publish path cannot accept a file the watcher will skip. */
 export const MAX_THEME_FILE_BYTES = 32 * 1024;
-/**
- * The set travels whole in a websocket event to every subscriber, so the sum
- * matters more than any single file. An exported theme runs a few KB, leaving
- * this far above any real directory while keeping a mistake off the wire.
- */
+// The whole set crosses the WebSocket, so cap total bytes as well as individual files.
 const MAX_THEME_TOTAL_BYTES = 192 * 1024;
 
-/** The published set with the sequence number it was observed at. */
 interface PublishedThemes {
   readonly seq: number;
   readonly themes: ReadonlyArray<EnvironmentTheme>;
@@ -72,35 +50,16 @@ interface PublishedThemes {
 export class EnvironmentThemeService extends Context.Service<
   EnvironmentThemeService,
   {
-    /**
-     * The set published right now, read from disk rather than from the
-     * watcher\'s last observation: a client connecting must see what the
-     * machine actually publishes even if it missed a filesystem event.
-     */
+    /** Read disk on connect so a missed filesystem event cannot serve stale themes. */
     readonly current: Effect.Effect<ReadonlyArray<EnvironmentTheme>>;
 
-    /**
-     * The current set followed by every change, with repeats dropped. The
-     * subscription is acquired before the current set is read, so a publish
-     * landing while a client connects is delivered rather than lost.
-     */
+    /** Subscribe before the snapshot read so concurrent publications are not lost. */
     readonly streamChanges: Stream.Stream<ReadonlyArray<EnvironmentTheme>>;
   }
 >()("t3/environmentTheme/EnvironmentThemeService") {}
 
-/**
- * Reads a theme file through one opened handle, so every check binds to the
- * file actually read rather than to a path that may have been swapped since:
- * O_NOFOLLOW rejects a symlink outright (a symlinked themes directory stays
- * usable, a symlinked file inside it does not), O_NONBLOCK keeps a FIFO from
- * blocking the open, and the fstat type and size gate examines the open
- * descriptor. Returns null for anything that is not a small regular file.
- *
- * Windows has neither flag (the constants are undefined, and OR-ing them in
- * is a no-op), so the symlink check there is an lstat before the open. That
- * leaves a window a swap could slip through, which the descriptor-bound
- * checks below then narrow to "a regular file at that path".
- */
+/** Bind size/type checks to one opened handle; NOFOLLOW/NONBLOCK reject symlinks/FIFOs.
+ * Windows lacks those flags, leaving an lstat/open race narrowed by descriptor checks. */
 export const readThemeFileGuarded = (filePath: string, maxBytes: number): string | null => {
   let fd: number;
   try {
@@ -134,12 +93,7 @@ export const readThemeFileGuarded = (filePath: string, maxBytes: number): string
   }
 };
 
-/**
- * Every theme the directory actually publishes. A file that is missing,
- * unreadable, malformed, colorless, or misnamed is simply skipped; the rest of
- * the set is unaffected. The one place that decides what "published" means, so
- * a caller validating an id cannot disagree with the watcher serving it.
- */
+/** Share publication rules with id validation; skip invalid files without dropping the rest. */
 export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
   const fs = yield* FileSystem.FileSystem;
   const entries = yield* fs
@@ -156,9 +110,7 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
     // clients that never chose it, so it is not publishable.
     if (!isEnvironmentThemeId(id) || UNPUBLISHABLE_THEME_IDS.has(id)) continue;
 
-    // Counts files examined, not themes accepted: capping the output would
-    // let a directory of malformed files be opened, read, and decoded in full
-    // on every refresh and every client connect.
+    // Cap files examined so malformed directories cannot cause unbounded reads and decodes.
     examined += 1;
     if (examined > MAX_THEME_FILES) {
       yield* Effect.logWarning("ignoring environment theme files past the limit", {
@@ -193,9 +145,7 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
       continue;
     }
 
-    // Counted only once accepted: the cap bounds what travels to clients, so
-    // a skipped file must not eat the budget of valid themes sorted after it.
-    // Bytes, not string length -- the cap describes wire weight.
+    // Count accepted bytes only: invalid files must not consume later valid themes' wire budget.
     totalBytes += Buffer.byteLength(raw);
     if (totalBytes > MAX_THEME_TOTAL_BYTES) {
       yield* Effect.logWarning("ignoring environment themes past the total size limit", {
@@ -210,34 +160,17 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
   return themes;
 });
 
-/**
- * Reads the directory and folds it into the sequenced state, publishing only
- * a genuine change. Every reader goes through here, so the snapshot a client
- * connects on and the events it then receives come from one ordered source
- * rather than from disk and the queue independently.
- */
+// Refresh snapshots and events through one ordered source to keep client state consistent.
 
 const make = Effect.gen(function* () {
   const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
-  /**
-   * Sliding with capacity 1: every update carries the complete set, so a
-   * subscriber that stops consuming holds at most the newest set rather than
-   * an unbounded backlog. Every observed set carries a sequence number, so a
-   * subscriber can drop queued events that predate the snapshot it started
-   * from. Without it a publish landing between subscribing and reading
-   * replays after the newer value and walks clients backwards onto stale
-   * colors.
-   */
+  // Full sets need only one queued update; sequence numbers discard events
+  // older than the initial snapshot so clients cannot return to stale colors.
   const changes = yield* PubSub.sliding<PublishedThemes>(1);
   const published = yield* Ref.make<PublishedThemes>({ seq: 0, themes: [] });
-  /**
-   * Guards the whole read/compare/publish, not just the state update. The
-   * directory read is async, so two concurrent refreshes can finish out of
-   * order and a slower read of an older set would publish under a higher
-   * sequence -- which the subscriber filter, ordering publications rather than
-   * observations, could not then drop.
-   */
+  // Serialize the full async read/compare/publish so slow older reads cannot
+  // publish later with higher sequence numbers.
   const refreshSemaphore = yield* Semaphore.make(1);
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
@@ -268,13 +201,10 @@ const make = Effect.gen(function* () {
     .makeDirectory(environmentThemesDir, { recursive: true })
     .pipe(Effect.ignoreCause({ log: true }));
 
-  // Debounced for the same reason settings watching is: a theme script emits
-  // several events per save and `fs.watch` can fire before the content is
-  // flushed. Every event triggers a full re-read, so no event needs filtering.
+  // Debounce multiple save events and early fs.watch notifications until content is flushed.
   const watchEvents = fs.watch(environmentThemesDir).pipe(Stream.debounce(Duration.millis(100)));
 
-  // Seeds the dedupe so a watch event that reports no actual change (a touch,
-  // a rewrite with identical contents) does not retint every client.
+  // Seed dedupe to avoid retinting clients on touches or identical rewrites.
   yield* refresh;
   yield* Stream.runForEach(watchEvents, () => refresh.pipe(Effect.ignoreCause({ log: true }))).pipe(
     Effect.ignoreCause({ log: true }),

@@ -9,10 +9,8 @@ const EDITABLE_SELECTOR = [
 ].join(",");
 
 /**
- * Whether a text-editing element owns the keyboard. Shortcuts that share
- * their chord with native editing (mod+z) must yield when this is true.
- * Focus inside an open shadow root counts: a key event's target is retargeted
- * to the shadow host, so the host's focused descendant is what is typed into.
+ * Yield editing chords such as Mod+Z; inspect shadow-root focus because key targets are retargeted to the
+ * host.
  */
 export function isEditableFocused(target: EventTarget | null = document.activeElement): boolean {
   let element = target instanceof Element ? target : null;

@@ -1,18 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * Contained reads of files the Claude harness persisted for a workflow run.
- *
- * Containment rules (lifted from the reviewed #3650 inspection service):
- * - the resolved realpath must live under the configured Claude projects
- *   directory (where the harness persists workflow scripts and transcripts) —
- *   realpath re-containment defeats symlink escapes, including a symlinked
- *   leaf file;
- * - only the caller's expected extension is served;
- * - reads are size-capped rather than failed, with a truncation marker.
- *
- * The client-supplied path is a hint from the workflow's runHandles; it is
- * never trusted beyond these checks.
- */
+// Treat runHandle paths as untrusted: realpath containment defeats symlink escapes.
+// Serve only expected extensions and cap reads with truncation markers.
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -69,10 +57,8 @@ export const readContainedWorkflowFile = Effect.fn("orchestration.readContainedW
       });
     }
 
-    // fd inode vs path inode catches a swapped leaf, not a swapped intermediate
-    // dir; root is 0700 ~/.claude, so that already needs the uid we run as.
-    // Both containment checks fail with their own tagged reason; "read-failed"
-    // is reserved for genuine platform failures with the real cause attached.
+    // Compare fd/path inodes for swapped leaves; intermediate dirs need the uid-owned 0700 root.
+    // Keep tagged containment errors distinct from platform read-failed errors.
     const read = yield* Effect.tryPromise({
       try: async () => {
         const handle = await NodeFSP.open(

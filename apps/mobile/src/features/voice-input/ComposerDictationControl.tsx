@@ -188,7 +188,6 @@ const WaveformBar = memo(function WaveformBar(props: {
 const COMPACT_WAVEFORM_BAR_COUNT = 8;
 const COMPACT_WAVEFORM_BAR_HEIGHT = 14;
 
-/** A fixed-size waveform of the latest samples, for tight spaces like the global dictation pill. */
 export const CompactVoiceWaveform = memo(function CompactVoiceWaveform(props: {
   readonly audioLevels: SharedValue<number[]>;
 }) {
@@ -246,10 +245,7 @@ const VoiceWaveform = memo(function VoiceWaveform(props: {
   );
 });
 
-/**
- * Renders the recording time in the system font: DM Sans has no tabular
- * figures, so `tabular-nums` alone would still let the width jitter.
- */
+/** Use the system font: DM Sans lacks tabular figures, so tabular-nums alone still jitters. */
 export function DictationElapsedTime(props: {
   readonly seconds: number;
   readonly className?: string;

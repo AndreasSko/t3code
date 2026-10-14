@@ -200,11 +200,8 @@ function openCodeCapabilitiesForModel(input: {
   readonly agents: ReadonlyArray<Agent>;
 }): ModelCapabilities {
   const rawVariantValues = Object.keys(input.model.variants ?? {});
-  // When a model advertises no variants, synthesize the standard reasoning
-  // levels so the composer still offers a Reasoning selector (mirrors the
-  // Codex/Grok experience where reasoning is always configurable). The set
-  // covers the common OpenCode variant spectrum; `inferDefaultVariant`
-  // picks the provider-appropriate default (e.g. medium for openai/opencode).
+  // Supply standard reasoning levels when OpenCode advertises no variants,
+  // so the composer still offers a reasoning selector.
   const variantValues =
     rawVariantValues.length > 0 ? rawVariantValues : ["low", "medium", "high", "xhigh"];
   const defaultVariant = inferDefaultVariant(input.providerID, variantValues);
@@ -378,27 +375,17 @@ export const makePendingOpenCodeProvider = (
     });
   });
 
-/** One model an OpenCode 2 server lists, as the status check reads it. */
 export interface OpenCode2Model {
   readonly providerID: string;
   readonly id: string;
   readonly name: string;
-  /**
-   * Name of the provider the model belongs to, when the server names it. One
-   * OpenCode instance fronts several: OpenCode Zen, OpenCode Go, and whatever
-   * the user added themselves.
-   */
   readonly providerName?: string;
   readonly variants: ReadonlyArray<{ readonly id: string }>;
 }
 
 /**
- * One OpenCode instance fronts several providers, and their catalogues
- * overlap: OpenCode Zen and OpenCode Go both list Step 5 Preview Free. Naming
- * the sub-provider is what tells two such rows apart. The label only earns its
- * place when it adds to the instance name the row already shows, which is why a
- * provider called plain "OpenCode" keeps none, and the id stands in while the
- * server has not named its providers yet.
+ * Overlapping provider catalogs need distinct labels; omit a redundant OpenCode label
+ * and use the provider id until the server supplies its name.
  */
 function subProviderLabelFor(input: {
   readonly providerID: string;
@@ -410,12 +397,7 @@ function subProviderLabelFor(input: {
     : label;
 }
 
-/**
- * A server loads its catalog lazily and lists nothing for its first few
- * hundred milliseconds, and a local instance starts a fresh server for each
- * status check. So an empty list is read again for a while, and the last
- * non-empty list stands in if the catalog still has not loaded.
- */
+/** OpenCode loads its catalog lazily; retry empty reads and retain the last non-empty list. */
 export const makeOpenCode2ModelLoader = <E>(
   list: Effect.Effect<ReadonlyArray<OpenCode2Model>, E>,
 ) =>
@@ -434,7 +416,6 @@ export const makeOpenCode2ModelLoader = <E>(
     );
   });
 
-/** A workspace's skills and commands, as an OpenCode 2 server lists them for its directory. */
 export interface OpenCode2Workspace {
   readonly skills: ReadonlyArray<{
     readonly id: string;

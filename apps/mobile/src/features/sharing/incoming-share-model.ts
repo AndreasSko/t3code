@@ -52,11 +52,7 @@ export function decodeIncomingShareDraft(value: unknown): IncomingShareDraft {
   return decodeIncomingShareDraftSync(value);
 }
 
-/**
- * `file:` path with the iOS `/private` prefix stripped, so URIs that reach the
- * same file through the `/var` symlink and through `/private/var` compare
- * equal. Null for anything that is not a `file:` URI.
- */
+/** Treat iOS /var and /private/var symlink paths as one file; null for non-file URIs. */
 function normalizedFileUriPath(uri: string): string | null {
   try {
     const url = new URL(uri);
@@ -64,9 +60,8 @@ function normalizedFileUriPath(uri: string): string | null {
       return null;
     }
     const path = decodeURIComponent(url.pathname);
-    // URL parsing collapses literal ".." segments, but an encoded separator
-    // survives it: "..%2F.." decodes to "../..", which the filesystem would
-    // resolve outside the root the lexical containment check accepted.
+    // Encoded separators bypass URL normalization ("..%2F.." becomes "../..")
+    // and can escape a root accepted by lexical containment checks.
     if (path.split("/").includes("..")) {
       return null;
     }
@@ -77,11 +72,8 @@ function normalizedFileUriPath(uri: string): string | null {
 }
 
 /**
- * Whether a shared `file:` URI points strictly inside one of the directories
- * this app owns (its sandbox and its share-extension App Group container).
- * Share cleanup must never delete anything else: an iOS open-in-place share
- * hands over the sender's own file URL, and deleting it destroys the user's
- * document.
+ * Checks strict containment in app-owned roots. iOS open-in-place shares can
+ * reference the sender's document, which cleanup must never delete.
  */
 export function isShareFileUriUnderOwnedRoots(
   uri: string,
@@ -294,8 +286,7 @@ export async function buildIncomingShareDraft(input: {
       (payload.shareType === "image" ? "image/png" : "application/octet-stream")
     ).toLowerCase();
     if (payload.shareType !== "image") {
-      // The patched native module never emits a blank display name, but keep
-      // the guard: an empty name would fail the attachment name contract.
+      // Guard blank native display names because they violate the attachment name contract.
       const sharedFileName =
         typeof payload.originalName === "string" && payload.originalName.trim().length > 0
           ? payload.originalName
@@ -339,10 +330,8 @@ export async function buildIncomingShareDraft(input: {
         }
         if (persistedFileUri === undefined && input.fileReader.persistFile) {
           persistedFileUri = await input.fileReader.persistFile(uri, name);
-          // An Android content: source can misreport its size while the
-          // stored copy is what uploads, so the copy's measured size is what
-          // the attachment must record. A measured zero means the copy holds
-          // no bytes: reject it, whatever the source claimed.
+          // Android content sources can misreport size; record the stored copy's
+          // measured size because that is what uploads.
           const storedSize = (await input.fileReader.readSize?.(persistedFileUri)) ?? null;
           if (storedSize !== null) {
             sizeBytes = storedSize;
@@ -369,8 +358,7 @@ export async function buildIncomingShareDraft(input: {
         retainedFileUri = persistedFileUri ?? uri;
       } catch (error) {
         warnings.push(error instanceof Error ? error.message : `Could not read '${name}'.`);
-        // A copy persisted before the failure has no attachment referencing
-        // it; release it or it leaks in the app's attachment directory.
+        // Release unreferenced persisted copies to avoid leaking attachment files.
         if (persistedFileUri !== undefined) {
           await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
         }

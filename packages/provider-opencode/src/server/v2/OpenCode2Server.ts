@@ -1,10 +1,4 @@
-/**
- * The OpenCode 2 server behind one provider instance. A 2.x server serves every
- * location from one process, so an instance shares one server across all of its
- * threads and directories.
- *
- * @module provider/opencode2/OpenCode2Server
- */
+/** One OpenCode 2 server serves every thread and directory of a provider instance. */
 import type { OpenCodeClient } from "@opencode/client/effect";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -135,11 +129,8 @@ export const verifyServer = (client: OpenCodeClient) =>
   );
 
 /**
- * One server per provider instance. With a `serverUrl` it connects to that
- * server with the configured password; otherwise it spawns `binaryPath serve`
- * with a generated password through {@link OpenCodeServerOwner}, which shares
- * the process between borrowers and stops it after an idle period. Clients are
- * built once per server; a failed check is not remembered.
+ * Spawned servers are shared between borrowers and stopped after an idle period.
+ * Clients are cached per server; failed verification is retried.
  */
 export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   readonly binaryPath: string;

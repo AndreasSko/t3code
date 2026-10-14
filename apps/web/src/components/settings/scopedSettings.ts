@@ -70,11 +70,7 @@ export function selectScopedSettingsEnvironments<T extends ScopedSettingsEnviron
   return { environments, connectedEnvironments, environment };
 }
 
-/**
- * One (environment, project) pair the scope writes to, with that project's
- * effective settings. Environment scopes have no member and read the
- * environment settings directly.
- */
+/** Project targets carry effective overrides; environment targets have no project member. */
 export interface ScopedSettingsTarget {
   readonly environmentId: EnvironmentId;
   /** The environment's label; a project is the same project on every environment. */
@@ -145,7 +141,6 @@ export function scopedSettingsAreMixed(
 
 export type ScopedSettingSource = ProjectSettingSource | "mixed";
 
-/** Whether the keys are overridden on every target, inherited on every target, or split. */
 export function scopedSettingsSource(
   targets: readonly Pick<ScopedSettingsTarget, "sources">[],
   keys: readonly (keyof ServerSettings)[],
@@ -208,11 +203,7 @@ function projectOverrideWrites(
   return [...writes.values()];
 }
 
-/**
- * Environment scopes write the patch to every connected environment; project
- * and checkout scopes write the scopable keys into each member's override
- * entry on its environment. Client keys always persist locally.
- */
+/** Project scopes write overrides on each member; environment scopes write defaults. Client keys stay local. */
 export function planScopedSettingsPatch(
   scope: ResolvedSettingsScope,
   environments: readonly ScopedSettingsEnvironment[],
@@ -317,7 +308,6 @@ export function planScopedSettingsPatch(
   return { clientPatch, hasClientWrite, serverWrites, unavailableReason };
 }
 
-/** Remove the keys' project overrides so each member inherits its environment value again. */
 export function planScopedSettingsClear(
   scope: ResolvedSettingsScope,
   environments: readonly ScopedSettingsEnvironment[],
@@ -345,11 +335,7 @@ export interface ProjectOverrideEntry {
   readonly projectId: ProjectId;
 }
 
-/**
- * The projects on the selected environments that override `keys`. An
- * environment edit leaves these untouched, so the row can name them and
- * offer to clear them.
- */
+/** Environment edits leave project overrides intact; return them so rows can offer to clear them. */
 export function listProjectOverrides(
   environments: readonly ScopedSettingsEnvironment[],
   keys: readonly (keyof ServerSettings)[],
@@ -367,7 +353,6 @@ export function listProjectOverrides(
   });
 }
 
-/** Drop `keys` from the named project entries so they follow the environment again. */
 export function planProjectOverridesClear(
   environments: readonly ScopedSettingsEnvironment[],
   entries: readonly ProjectOverrideEntry[],
@@ -402,12 +387,7 @@ export function planProjectOverridesClear(
   };
 }
 
-/**
- * Whether a server kept `before` where `value` asked for a change. Objects are
- * compared field by field, so a nested key an older server dropped is caught
- * even when a sibling field saved. A null clears the field; strings may come
- * back trimmed.
- */
+/** Detect dropped writes per nested field; null clears a field and saved strings may be trimmed. */
 function writeWasDropped(value: unknown, before: unknown, saved: unknown): boolean {
   if (value === null) return before != null && Equal.equals(saved, before);
   if (isPlainObject(value) && !Array.isArray(before) && !Array.isArray(saved)) {
@@ -424,10 +404,7 @@ function writeWasDropped(value: unknown, before: unknown, saved: unknown): boole
   return !unchanged && Equal.equals(saved, before);
 }
 
-/**
- * An older server drops keys it does not know, top-level or nested, and still
- * succeeds. Left unreported, the row stays mixed forever.
- */
+/** Older servers silently drop unknown keys; report them so the row does not stay mixed forever. */
 function droppedSettingKeys(write: ScopedServerWrite, saved: ServerSettings | undefined) {
   if (saved === undefined) return [];
   return Object.entries(write.patch).flatMap(([key, value]) =>

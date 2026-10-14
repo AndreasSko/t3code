@@ -3,7 +3,7 @@ import type * as CodexClient from "effect-codex-app-server/client";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as Effect from "effect/Effect";
 
-/** Codex 0.156 replaces count-based rollback with a boundary in paginated history. */
+/** Codex 0.156 rollback requires a boundary from paginated history, not a turn count. */
 export const revertCodexThread = Effect.fn("revertCodexThread")(function* (
   client: Pick<CodexClient.CodexAppServerClient["Service"], "request">,
   threadId: string,

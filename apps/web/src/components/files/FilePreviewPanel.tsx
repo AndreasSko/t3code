@@ -138,7 +138,6 @@ const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
 const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
-// Shared by the read-only and annotated surfaces, so it is generic over annotation metadata.
 type FilePostRender = <LAnnotation>(
   fileContainer: HTMLElement,
   instance: FileInstance<LAnnotation, undefined>,
@@ -210,12 +209,8 @@ function WorkspaceImagePreview(props: {
   );
 }
 
-/**
- * Renders an HTML or PDF file in place from its signed asset URL. HTML runs in
- * a sandboxed frame with an opaque origin, so a page cannot reach the app's
- * session or storage. A file inside the workspace may load sibling assets; a
- * host file outside it is served on its own.
- */
+/** Opaque-origin HTML frames cannot reach app sessions or storage. Workspace
+ * files may load sibling assets; host files outside the workspace are served alone. */
 function WorkspaceBrowserPreview(props: {
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
@@ -407,17 +402,10 @@ function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): 
     ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
 }
 
-/**
- * Frames to keep retrying while the file contents or line metrics are not
- * available yet (fresh mounts hydrate asynchronously).
- */
+/** Retry fresh mounts for up to 30 additional animation frames while contents and line metrics hydrate asynchronously. */
 const REVEAL_MAX_ATTEMPTS = 30;
-/**
- * After scrolling to the target, hold it for a short window so late
- * programmatic scroll resets (editable-editor focus and state restoration)
- * cannot silently snap the file back to the top. Real user input cancels the
- * guard immediately.
- */
+/** Hold the target against late editor-focus or restoration scroll resets;
+ * hold it for 20 animation frames, and cancel on user input. */
 const REVEAL_GUARD_FRAMES = 20;
 const REVEAL_GUARD_TOLERANCE_PX = 2;
 
@@ -570,9 +558,7 @@ function useFileLineReveal(
             return;
           }
 
-          // Contents and line metrics can lag the first post-render on fresh
-          // mounts; clamping against missing contents would scroll to line 1
-          // and wrongly mark the request handled.
+          // Missing fresh-mount contents would clamp to line 1 and wrongly mark the reveal handled.
           const currentContents = instance.file?.contents;
           const line =
             currentContents === undefined ? null : clampFileLine(currentContents, revealLine);
@@ -628,11 +614,8 @@ function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: F
   return lines <= DEFAULT_TOKENIZE_MAX_LENGTH;
 }
 
-/**
- * Pierre highlights an active edit session on the main thread, so each version
- * of the file becomes editable only once it has rendered the worker's
- * highlight. A failed worker highlight falls back to main-thread highlighting.
- */
+/** Wait for worker highlights before editing to avoid main-thread highlighting;
+ * a failed worker falls back to the main thread. */
 function useEditableAfterHighlight(file: FileContents) {
   const workerPool = useWorkerPool();
   const [highlightedFile, setHighlightedFile] = useState<FileContents | null>(null);
@@ -731,8 +714,6 @@ function EditableFileSurface({
     [],
   );
 
-  // Mirrors the draft out to the save queue, the optimistic file query and the
-  // composer's review comments.
   const handleEditChange = useCallback(
     ({
       file,
@@ -1044,7 +1025,6 @@ export default function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
-  // A draft's composer target is its draft id; a thread the server knows is a ref.
   const draft = typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
@@ -1063,7 +1043,6 @@ export default function FilePreviewPanel({
   const isAudio = relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(relativePath);
   const isImage = relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(relativePath);
   const isMedia = isImage || isVideo || isAudio;
-  // PDFs have no text to show; HTML has, and can toggle between page and source.
   const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
   const isHtml = relativePath !== null && !isPdf && isBrowserPreviewFile(relativePath);
   // A file outside the workspace (an absolute path) is shown, never edited.
@@ -1072,10 +1051,7 @@ export default function FilePreviewPanel({
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
-  // Media and PDFs render from their absolute path, so their contents are never
-  // shown. The read still runs: a folder named `assets.png` is only knowable as a
-  // folder from the read failure, and the server stats before reading, so a folder
-  // costs an open and a stat and returns no body.
+  // Read media paths too: assets.png can be a directory, detected by the server stat before reading.
   const file = useProjectFileQuery(
     environmentId,
     cwd,
@@ -1083,13 +1059,9 @@ export default function FilePreviewPanel({
     attachment === undefined && relativePath !== null,
   );
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
-  // A chat link cannot tell a folder from a file, so a folder arrives here as
-  // a file surface and the read fails. Keep the breadcrumbs, drop the preview
-  // pane, and let the tree fill the surface with the folder revealed. Mutation
-  // refresh stays on so the surface notices if the path becomes a file. A host
-  // path cannot be revealed in the workspace tree, so it keeps the read error.
+  // Folder chat links arrive as file surfaces: reveal them in the workspace tree
+  // and keep refresh enabled to detect replacement by a file. Host paths keep the read error.
   const isDirectory = file.isNotFile && !isHostFile;
-  // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isDirectory ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
   const showExplorer = shouldShowFileExplorer({
@@ -1097,8 +1069,7 @@ export default function FilePreviewPanel({
     explorerOpen,
     attachmentOpen: attachment !== undefined,
   });
-  // Reading markdown rendered is a preference, not a property of one file. Keeping
-  // it on the panel meant a thread switch dropped it and forced source back.
+  // Persist the rendered-markdown preference across thread switches.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
@@ -1114,9 +1085,7 @@ export default function FilePreviewPanel({
     true,
     Schema.Boolean,
   );
-  // Paired with the path on purpose: each file surface counts its reveals from
-  // one, so a bare id would let a dismissed reveal on one file swallow the first
-  // reveal on the next.
+  // Reveal ids restart at one per file; pair with the path so dismissals cannot swallow the next file.
   const [handledReveal, setHandledReveal] = useState<{ path: string; requestId: number } | null>(
     null,
   );
@@ -1169,9 +1138,8 @@ export default function FilePreviewPanel({
     enabled:
       attachment === undefined &&
       relativePath !== null &&
-      // Media and PDFs never show their contents, so re-reading them on every
-      // workspace mutation is waste. A folder named like one still re-reads, so
-      // it notices when the path becomes a file.
+      // Skip media/PDF reads on workspace mutations, but refresh similarly named folders
+      // to detect when they become files.
       (isDirectory || (!isMedia && !isPdf)) &&
       !selectedFilePending,
     mutationId: workspaceMutationId,
@@ -1432,9 +1400,7 @@ export default function FilePreviewPanel({
             </div>
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
-              // Markdown reconciles in place across text updates, so a file
-              // switch needs a new key or the previous file's disclosure and
-              // wrap state carries into the next document.
+              // Key file switches so Markdown disclosure and wrap state cannot carry into the next document.
               <RenderedMarkdownSurface
                 key={relativePath}
                 environmentId={environmentId}

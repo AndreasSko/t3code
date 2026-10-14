@@ -38,10 +38,7 @@ export interface PairingConnectionInput {
   readonly pairingUrl?: string;
   readonly host?: string;
   readonly pairingCode?: string;
-  /**
-   * Set when adding a route to a saved machine: the pairing must reach this
-   * environment, or nothing is saved.
-   */
+  /** Pairing must reach this saved environment or nothing is saved. */
   readonly expectedEnvironmentId?: EnvironmentId;
 }
 
@@ -304,7 +301,6 @@ const registerSshConnection = Effect.fn(
   return registration.target.environmentId;
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const presentation = yield* ClientCapabilities.ClientPresentation;

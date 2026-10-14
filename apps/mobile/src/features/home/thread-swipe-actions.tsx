@@ -143,14 +143,8 @@ export function SwipeableScrollGateProvider(props: {
 }
 
 /**
- * Gates row swipes on list scroll activity, mirroring UIKit's own swipe
- * actions (`!isDragging && !isDecelerating`). failOffsetY on the swipe pan
- * covers the first pan of a scroll, but trackpad scroll sessions spawn fresh
- * gesture sessions (momentum catch, direction changes) whose reset
- * translation can re-activate a swipe mid-scroll — so while the list has
- * moved vertically during an active drag/momentum phase, row swipes are
- * disabled entirely.
- *
+ * Trackpad momentum can reset pan translation and bypass failOffsetY, so gate
+ * row swipes throughout vertical drag/momentum rather than only the initial pan.
  * Spread the returned handlers onto the list and pass `swipeEnabled` to rows.
  */
 export function useSwipeableScrollGate(options?: {

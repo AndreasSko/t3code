@@ -54,9 +54,7 @@ export function createSidebarCollisionDetection(
       ?.getBoundingClientRect();
     if (items && boundary && source?.kind === "thread" && pointer) {
       boundarySection ??= source.section === "pinned" ? "pinned" : "active";
-      // Use the visible divider row, including its sortable translation.
-      // Only pointer movement can change sections: opening the destination
-      // moves this row, but must not toggle a stationary gesture back.
+      // A moving divider must not toggle a stationary gesture's section; require pointer movement.
       const previousY = previousPointerY ?? pointer.y;
       previousPointerY = pointer.y;
       if (pointer.x >= boundary.left && pointer.x <= boundary.right) {
@@ -102,7 +100,7 @@ export function createSidebarSortingStrategy(input: {
   /** Suspend the reorder preview while the thread is dragged out as context. */
   enabled?: boolean;
   settledOrder: readonly string[];
-  /** Time-ordered inbox (Working beta): where the lifted row would land. */
+  /** Time-ordered inbox: where the lifted row would land. */
   activeOrder?: readonly string[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
@@ -110,8 +108,7 @@ export function createSidebarSortingStrategy(input: {
   snoozedThreadCount?: number;
   cardHeight?: number;
   slimHeight?: number;
-  /** Space each pinned boundary opens for its label while dragging. The
-   * markers stay zero height at rest, so nothing is reserved until pickup. */
+  /** Markers reserve no height until pickup opens space for their labels. */
   boundaryLabelHeight?: number;
 }): SortingStrategy {
   if (input.enabled === false) return () => stationary;

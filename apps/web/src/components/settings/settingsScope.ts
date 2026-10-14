@@ -7,10 +7,8 @@ import type {
 import type { EnvironmentPresentation } from "../../state/environments";
 
 /**
- * Two axes. `machine` narrows the environment axis (absent = all
- * environments); `project` and `checkout` narrow the project axis (absent =
- * environment defaults). Device-local preferences are not a scope: they
- * render regardless of the selection because they never touch a server.
+ * Absent machine means all environments; absent project/checkout means environment defaults. Device-local
+ * preferences render regardless of this selection.
  */
 export interface SettingsScopeSearch {
   project?: string | undefined;

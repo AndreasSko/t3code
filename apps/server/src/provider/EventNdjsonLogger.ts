@@ -1,10 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * Best-effort provider event logging with one shared writer per thread.
- *
- * Native and canonical views share batching, rotation, and retention state so
- * they cannot race while appending to the same thread-scoped file.
- */
+/** Native and canonical views share a writer per thread to avoid append/rotation/retention races. */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 

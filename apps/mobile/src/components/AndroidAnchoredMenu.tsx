@@ -13,11 +13,8 @@ import { MaterialMenuPopup } from "./MaterialMenuPopup";
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 6;
 
-// Anchor position is snapshotted in window coordinates when the menu opens;
-// the overlay root measures itself the same way, and the menu is placed from
-// the delta. Both snapshots are taken at open time so later reflows (keyboard
-// show/hide, screen transitions) can't flip an opens-up menu to opens-down
-// mid-presentation.
+// Snapshot window coordinates at opening so keyboard or screen reflows cannot
+// flip the menu's direction mid-presentation.
 type AnchorSnapshot = {
   readonly x: number;
   readonly y: number;
@@ -40,12 +37,7 @@ export type AndroidAnchoredMenuProps = {
   /** Applied to the anchor wrapper — call sites flex these to fill toolbars. */
   readonly className?: string;
   readonly style?: StyleProp<ViewStyle>;
-  /**
-   * Plain children open the menu on tap (the wrapper owns the press). A
-   * render function keeps the children interactive and hands them `open` to
-   * call from their own gesture — e.g. a row that selects on tap and opens
-   * this menu on long-press.
-   */
+  /** Plain children open on tap; a render function supplies its own gesture via `open`. */
   readonly children: ReactNode | ((open: () => void) => ReactNode);
 };
 
@@ -58,16 +50,10 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const { scale, menuWidth: desiredMenuWidth } = useAndroidControlSizing();
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
   const [path, setPath] = useState<readonly MenuAction[]>([]);
-  // Height of the modal's root view, in the modal's own coordinate space.
-  // Menus that flip above their anchor are pinned by their BOTTOM edge
-  // (bottom = rootHeight - anchorTop), so drill-in height changes grow
-  // upward without any re-measurement — positioning them via `top` from the
-  // menu's measured height made every submenu transition settle over two
-  // frames and jitter.
+  // Pin upward-opening menus by their bottom edge so submenu height changes
+  // grow upward without a second measurement frame and jitter.
   const [rootHeight, setRootHeight] = useState<number | null>(null);
-  // Window frame of the overlay root, measured on layout. Anchor coordinates
-  // are converted into this frame, so the menu lands correctly no matter
-  // where the portal host sits (status bar, keyboard resize, etc.).
+  // Convert the anchor into the overlay frame to account for status-bar and keyboard offsets.
   const [overlay, setOverlay] = useState<OverlayFrame | null>(null);
   const menuWidth =
     overlay === null
@@ -121,7 +107,6 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
     (action) => !(action.attributes?.hidden ?? false),
   );
 
-  // Anchor in overlay-local coordinates (both measured in window space).
   const local =
     anchor === null || overlay === null
       ? null
@@ -141,9 +126,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
     overlay === null
       ? 0
       : Math.min(Math.max(preferredLeft, SCREEN_MARGIN), overlay.width - menuWidth - SCREEN_MARGIN);
-  // The keyboard stays up while the menu is open (in-window overlay, no
-  // focus change), so the space it covers is not usable — without this the
-  // composer-pill menus "open down" into the IME and can't be tapped.
+  // The in-window menu keeps the keyboard up, so exclude its area from placement.
   const usableBottom =
     overlay === null ? 0 : overlay.height - (keyboardVisible ? keyboardHeight : 0);
   const spaceBelow =

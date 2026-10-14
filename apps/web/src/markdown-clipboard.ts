@@ -1,10 +1,4 @@
-/**
- * Converts a DOM selection inside rendered chat markdown back into markdown
- * source so highlight-and-copy keeps formatting (links, emphasis, lists,
- * fences, tables) instead of flattening to plain text. The `text/plain`
- * clipboard flavor carries the markdown; `text/html` carries a sanitized
- * copy of the rendered fragment for rich-paste targets.
- */
+/** Copy text/plain as Markdown and text/html as a sanitized rendered fragment for rich-paste targets. */
 
 const SKIPPED_TAGS = new Set(["BUTTON", "INPUT", "SCRIPT", "STYLE", "TEMPLATE"]);
 const SKIPPED_CLASS_NAMES = ["select-none", "sr-only"];
@@ -38,10 +32,8 @@ function wrapInlineMarker(content: string, marker: string): string {
 }
 
 /**
- * A code element whose pre wrapper fell outside the copied range is still
- * block code, recognizable by its highlighter line spans or embedded
- * newlines. Wrapping it like inline code produces backtick-surrounded
- * shell commands on paste.
+ * A partial pre selection still contains block code; detect lines/newlines so copy does not add inline
+ * backticks.
  */
 function isBlockCodeElement(element: Element, content: string): boolean {
   if (content.includes("\n")) return true;
@@ -258,10 +250,6 @@ function serializeNode(node: Node): string {
   }
 }
 
-/**
- * Tracks whether a fragment carries exactly one code block and nothing else a
- * reader would see.
- */
 interface SoleCodeBlockScan {
   pre: Element | null;
   other: boolean;
@@ -299,10 +287,8 @@ function scanForSoleCodeBlock(node: Node, scan: SoleCodeBlockScan): void {
       continue;
     }
     if (element.tagName === "LI") {
-      // serializeListItem emits a marker ("- ", "1. ", "[x] ") for every item,
-      // so an item that does not hold the block carries content of its own even
-      // when it renders no text. An item that wraps the block is just the
-      // structure around it, and a pre-only selection would drop the marker too.
+      // List items contribute serialized markers even without text, unless they only wrap the selected code
+      // block.
       const preBeforeItem = scan.pre;
       scanForSoleCodeBlock(element, scan);
       if (!scan.other && scan.pre === preBeforeItem) scan.other = true;
@@ -313,11 +299,8 @@ function scanForSoleCodeBlock(node: Node, scan: SoleCodeBlockScan): void {
 }
 
 /**
- * A drag that ends on a block's final newline pulls the closing `pre` into the
- * range, so the fragment holds the whole block even though the user only
- * highlighted code. Re-fencing that pastes stray backticks, so a fragment whose
- * only visible content is one code block copies as plain code, matching a
- * selection that never left the `pre`.
+ * A drag ending on the final newline may include pre; if code is the only visible content, copy plain code
+ * so re-fencing cannot paste stray backticks.
  */
 function soleCodeBlock(container: Node): Element | null {
   const scan: SoleCodeBlockScan = { pre: null, other: false };

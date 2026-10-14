@@ -41,18 +41,9 @@ import {
 } from "./terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 
-/**
- * Builds the wire records behind a draft's inline references, and the reverse for reading a
- * message. Draft shapes stay what the producing panels emit; only the send boundary converts.
- */
-
 const PREVIEW_LABEL_MAX_CHARS = 48;
 
-/**
- * A review selection can be arbitrarily large, but the wire schema bounds `text` and `diff`.
- * Clamp at the same boundary so an oversized selection still sends, marked where it was cut,
- * rather than failing to encode at send time.
- */
+/** Clamp review text/diff to wire limits and mark truncation so oversized selections still send. */
 const TRUNCATION_MARKER = "\n… truncated …";
 
 function clampContextText(value: string, max: number): string {
@@ -127,7 +118,6 @@ export function terminalContextReference(context: TerminalContextDraft): Compose
   };
 }
 
-/** Review producers mint ids in their own grammars; the context id is a folded form of them. */
 export function reviewCommentContextId(commentId: string): ComposerContextId {
   return toKindScopedComposerContextId("review-comment", commentId);
 }
@@ -322,7 +312,6 @@ export function buildMessageContext(input: {
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
 }): OrchestrationMessageContext | undefined {
-  // An annotation's screenshot travels as the image attachment that reuses its id.
   const screenshotAttachmentIds = new Set(
     (input.attachments ?? []).flatMap(({ attachment }) =>
       attachment.type === "image" ? [attachment.id] : [],
@@ -342,10 +331,7 @@ export function buildMessageContext(input: {
   return records.length === 0 ? undefined : { version: 1, records };
 }
 
-/**
- * Narrows away the unknown-kind member. Its `kind` is an open string, so a plain
- * `record.kind === "terminal"` check cannot discriminate the union on its own.
- */
+/** The unknown member has an open-string kind, so plain kind comparisons cannot discriminate this union. */
 export function asKnownContextRecord(
   record: ComposerContextRecord | undefined,
 ): KnownComposerContextRecord | undefined {
@@ -353,7 +339,6 @@ export function asKnownContextRecord(
   return record as KnownComposerContextRecord;
 }
 
-/** Candidate keys for finding the draft record an imported wire record would reconstruct. */
 export function composerContextImportLookupIds(
   record: KnownComposerContextRecord,
 ): ReadonlyArray<ComposerContextId> {
@@ -372,12 +357,7 @@ export interface ResolvedUserMessageContext {
   recordsById: ReadonlyMap<string, ComposerContextRecord>;
 }
 
-/**
- * The clipboard fragment behind a timeline message selection: only records for
- * chips actually inside the selection travel, so copying prose next to an
- * image never starts importing that image somewhere else. Returns null when no
- * selected chip has backing records.
- */
+/** Copy only backing records for chips in the selection; nearby prose must not import unrelated attachments. */
 export function selectedMessageContextFragment(input: {
   readonly markdown: string;
   readonly records: ReadonlyArray<ComposerContextRecord>;
@@ -415,10 +395,6 @@ export function resolveUserMessageContext(message: {
     recordsById: new Map(resolved.records.map((record) => [record.contextId, record])),
   };
 }
-
-// ---------------------------------------------------------------------------
-// Records back into draft shapes (paste)
-// ---------------------------------------------------------------------------
 
 export function terminalContextDraftFromRecord(
   record: TerminalContextRecord,
@@ -468,8 +444,6 @@ export function previewAnnotationFromRecord(
       rect: { x: 0, y: 0, width: 0, height: 0 },
       element: { ...element, stack: [], pickedAt: new Date().toISOString() },
     })),
-    // Geometry does not travel, but the counts do, so the rebuilt summary still reports
-    // what the annotation marked.
     regions: Array.from({ length: record.regionCount ?? 0 }, (_unused, index) => ({
       id: `${record.contextId}-region-${index + 1}`,
       rect: { x: 0, y: 0, width: 0, height: 0 },
@@ -501,11 +475,7 @@ export function previewAnnotationFromRecord(
   };
 }
 
-/**
- * Whether two records carry the same payload, ignoring the label (display text, never
- * identity). Context ids are a folded form of producer ids, so a collision alone does not mean
- * the records are the same excerpt; the paste path compares payloads before de-duplicating.
- */
+/** Ignore display labels; folded ids can collide, so paste must compare payloads before deduplicating. */
 export function isSameComposerContextPayload(
   left: ComposerContextRecord,
   right: ComposerContextRecord,

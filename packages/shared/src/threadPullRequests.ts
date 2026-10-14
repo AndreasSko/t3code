@@ -120,8 +120,7 @@ export function resolveThreadCurrentPullRequest(
   if (open.length === 1) return { kind: "single", link: open[0]! };
   const chains = resolveThreadPullRequestChains(visible);
   if (open.length > 1) {
-    // `.reverse()` on a copy, not `.toReversed()`: this runs on Hermes, which has no ES2023
-    // array methods, and a TypeError here is fatal on every mobile launch that renders a stack.
+    // Hermes lacks ES2023 array methods, so reverse a copy instead of using toReversed().
     const openChains = chains
       .map((chain) => [...chain.layers].reverse().filter(isOpen))
       .filter((layers) => layers.length > 0)
@@ -142,7 +141,6 @@ export function resolveThreadCurrentPullRequest(
   return { kind: "single", link: terminal[0]! };
 }
 
-/** The one link a legacy `linkedPullRequest` consumer should see, or null. */
 export function resolveThreadCurrentPullRequestLink(
   links: ReadonlyArray<ThreadPullRequestLink>,
 ): ThreadPullRequestLink | null {
@@ -208,11 +206,8 @@ export interface ThreadPullRequestChain {
   readonly layers: ReadonlyArray<ThreadPullRequestLink>;
 }
 
-/**
- * Groups a thread's links into stacks. Native stacks come from the host and win; the rest
- * are chained by matching one link's base branch to another's head branch within the same
- * repository. A link that chains to nothing is a one-layer chain.
- */
+/** Groups native stacks first, then chains base/head branches within each repository.
+ * A link with no chain remains a one-layer stack. */
 export function resolveThreadPullRequestChains(
   links: ReadonlyArray<ThreadPullRequestLink>,
 ): ReadonlyArray<ThreadPullRequestChain> {
@@ -254,7 +249,6 @@ export function resolveThreadPullRequestChains(
     const parent = byHead.get(branchKey(link, link.snapshot.baseBranch));
     if (parent != null && parent !== link) hasChild.add(threadPullRequestKeyOf(parent));
   }
-  // Walk from each top (a link nothing builds on) down its base chain.
   for (const top of remaining) {
     if (hasChild.has(threadPullRequestKeyOf(top))) continue;
     const layers: Array<ThreadPullRequestLink> = [];
@@ -288,7 +282,6 @@ export type ThreadPullRequestBadge = {
   | { readonly kind: "pull-request"; readonly others: number }
 );
 
-/** Aggregate visible links' state for both stacks and unrelated linked counts. */
 export function resolveThreadPullRequestBadge(
   pullRequests: ReadonlyArray<ThreadPullRequestLink> | undefined,
 ): ThreadPullRequestBadge | null {
@@ -309,7 +302,6 @@ export function resolveThreadPullRequestBadge(
   return { kind: "pull-request", others: visible.length - 1, state };
 }
 
-/** Search terms for visible PR links, the legacy projection, and the branch PR. */
 export function threadPullRequestSearchTerms(thread: {
   readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;

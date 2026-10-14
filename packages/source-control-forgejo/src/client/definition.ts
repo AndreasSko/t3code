@@ -1,8 +1,3 @@
-/**
- * Forgejo's client definition, which covers Gitea as well. Browser- and React Native-safe.
- *
- * @module source-control-forgejo/client/definition
- */
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   type ChangeRequestProjectIdentity,
@@ -19,10 +14,7 @@ const CHANGE_REQUEST_REFERENCE =
 
 const KIND = SourceControlProviderKind.make("forgejo");
 
-/**
- * The repository's browser URL the server resolved from the signed-in account, which is the
- * only place a Forgejo mounted below a path says so.
- */
+/** Resolved web URLs retain mount paths that the host and owner/repo selector cannot express. */
 function resolvedWebUrl(identity: ChangeRequestProjectIdentity): URL | null {
   if (!identity.webUrl) return null;
   try {
@@ -46,8 +38,7 @@ export const definition = defineSourceControlClient({
   publishHost: (signedInHost) => signedInHost ?? "your server",
   newRepositoryOwner: (account) => (account ? { owner: account } : null),
   defaultCloneTransport: "https",
-  // The server's resolved web URL wins; otherwise an HTTP remote on the same host names the
-  // origin, which may carry a port. SSH remotes say nothing about the web origin.
+  // Prefer the resolved web URL, then a matching HTTP remote; SSH does not identify web ports.
   changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) => {
     if (webUrl) return `${webUrl.replace(/\/+$/, "")}/pulls/${number}`;
     try {
@@ -59,9 +50,7 @@ export const definition = defineSourceControlClient({
       ) {
         return `${remote.origin}/${repository}/pulls/${number}`;
       }
-    } catch {
-      // Not an HTTP remote.
-    }
+    } catch {}
     return `https://${host}/${repository}/pulls/${number}`;
   },
   changeRequestActions: new Set(["merge", "close", "reopen", "update-branch"] as const),

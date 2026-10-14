@@ -1,11 +1,6 @@
 /**
- * Where development state lives, and how to keep it away from the shared
- * `~/.t3` that a user's installed T3 Code runs against.
- *
- * A linked git worktree gets its own (gitignored) `.t3`: feature work in a
- * throwaway branch must not share a database with the real app, and an ambient
- * `T3CODE_HOME` counts as an explicit base dir — flipping the state directory
- * from `<base>/dev` to `<base>/userdata`, the live production database.
+ * Linked worktrees use a private .t3 so development cannot share the installed app's database.
+ * An ambient T3CODE_HOME would otherwise select <base>/userdata, the live production state.
  */
 
 import * as Effect from "effect/Effect";
@@ -14,15 +9,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 /**
- * A `.git` file points at the real git directory. A linked worktree's lives at
- * `<common-dir>/worktrees/<name>`; a submodule's at
- * `<super-git-dir>/modules/<name>`. Both are files, so the pointer — not the
- * file-vs-directory distinction alone — is what identifies a worktree.
- *
- * The common dir is not necessarily named `.git`: a worktree of a bare repo
- * points at `<repo>.git/worktrees/<name>`, and `$GIT_COMMON_DIR` can be
- * anything. So match on the `worktrees/<name>` tail, which git always uses,
- * rather than on the name of the directory containing it.
+ * Both submodules and linked worktrees have .git files. Only worktree pointers end in
+ * <common-dir>/worktrees/<name>; the common directory need not itself be named .git.
  */
 const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boolean => {
   const gitdir = gitFileContents
@@ -40,18 +28,12 @@ const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boole
     .normalize(gitdir.replaceAll("\\", "/"))
     .split(/[/\\]/)
     .filter((segment) => segment.length > 0);
-  // `<common-dir>/worktrees/<name>`: `worktrees` is the penultimate segment,
-  // and something must precede it. This excludes `<git-dir>/modules/<name>`.
   return segments.length >= 3 && segments.at(-2) === "worktrees";
 };
 
 /**
- * The path of the linked git worktree containing `cwd`, or undefined when
- * `cwd` is not inside one. Git marks a linked worktree by making `.git` a file
- * whose `gitdir:` points into the repository's `.git/worktrees`.
- *
- * Walks up to the repository root, so running from a subdirectory resolves the
- * same worktree as running from the top.
+ * Resolve the enclosing linked worktree, including when cwd is a subdirectory;
+ * return undefined outside one.
  */
 export const resolveGitWorktreePath = (
   cwd: string,
@@ -70,8 +52,6 @@ export const resolveGitWorktreePath = (
         if (info.value.type !== "File") {
           return undefined;
         }
-        // A submodule also has a `.git` file, but it is not a worktree of this
-        // repository and gets no worktree-local home.
         const contents = yield* fileSystem
           .readFileString(gitPath)
           .pipe(Effect.orElseSucceed(() => ""));

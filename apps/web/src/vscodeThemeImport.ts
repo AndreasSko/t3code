@@ -12,16 +12,7 @@ import {
   type ThemeDefinition,
 } from "./themePalette";
 
-/**
- * Best-effort import of a VS Code color theme (`*-color-theme.json`).
- *
- * VS Code themes describe editor chrome, not an app palette: they carry a few
- * hundred workbench keys, leave most of them unset, and freely use 8-digit
- * hex with alpha for overlays. The conversion derives a complete palette from
- * a visible accent and the editor background, then layers usable workbench
- * colors on top. Foregrounds must remain readable, while authored focus and
- * control candidates must remain distinct from adjacent surfaces and states.
- */
+/** Derive an opaque palette from VS Code editor colors, preserving readable and distinct control states. */
 
 type VsCodeRgba = { r: number; g: number; b: number; a: number };
 type VsCodeRgb = { r: number; g: number; b: number };
@@ -30,7 +21,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** sRGB transfer function, and its inverse, shared by the wide-gamut path. */
 function decodeGamma(value: number): number {
   return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
 }
@@ -40,11 +30,7 @@ function encodeGamma(value: number): number {
   return clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * clamped ** (1 / 2.4) - 0.055;
 }
 
-/**
- * `color(display-p3 r g b / a)` shows up in themes authored for wide-gamut
- * displays. Out-of-gamut colors clip to the sRGB edge, which is what a browser
- * on an sRGB screen shows anyway.
- */
+/** Display P3 colors clip to the sRGB gamut for this importer. */
 function parseColorFunction(value: string): VsCodeRgba | null {
   const match = /^color\(\s*(display-p3|srgb)\s+([^)]+)\)$/i.exec(value);
   if (!match) return null;
@@ -145,10 +131,7 @@ function hexToRgb(value: string): VsCodeRgb {
   return parseVsCodeColor(themeColorToHex(value) ?? value) ?? { r: 0, g: 0, b: 0, a: 1 };
 }
 
-/**
- * A VS Code theme is recognised by its workbench colors: the keys are dotted
- * paths (`editor.background`), which our own files never use.
- */
+/** Dotted workbench color keys distinguish VS Code files from app theme files. */
 export function isVsCodeThemeFile(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (value.version === THEME_FILE_VERSION) return false;
@@ -191,7 +174,6 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
   if (!isRecord(value)) throw new Error("Theme files must contain a JSON object.");
   const colors = isRecord(value.colors) ? value.colors : {};
 
-  /** First key that carries a usable color, in priority order. */
   const pick = (...keys: ReadonlyArray<string>): VsCodeRgba | null => {
     for (const key of keys) {
       const parsed = parseVsCodeColor(colors[key]);
@@ -258,11 +240,7 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
     accentColor = parseVsCodeColor(accentHex)!;
   }
 
-  // The derived palette is the floor: every role starts contrast-solved, then
-  // the theme's own workbench colors replace what it actually specified. The
-  // floor derives from a muted accent -- the vivid engine carries the accent
-  // hue into every surface, which washes an imported neutral palette (a gray
-  // theme with a blue focusBorder would get blue code and text surfaces).
+  // Mute the fallback accent so the vivid engine does not tint every neutral imported surface.
   const mutedAccentHex = flattenOver(
     { r: accentColor.r, g: accentColor.g, b: accentColor.b, a: 0.2 },
     canvas,
@@ -286,10 +264,7 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
     const isReadable = (candidate: string) => contrastRatio(hexToRgb(candidate), surfaceRgb) >= 4.5;
     const specified = solidOver(surfaceRgb, ...keys);
     if (specified && isReadable(specified)) return specified;
-    // The derived fallback was solved against the derived surface. When the
-    // file replaced that surface (a light sideBar in a dark theme, say), the
-    // fallback has to clear the bar there too, or the text falls back to the
-    // readable end of the greyscale for the surface actually in play.
+    // Imported surfaces may differ from the derived ones, so fallback foregrounds must pass contrast again.
     if (isReadable(fallback)) return fallback;
     return relativeLuminance(surfaceRgb) < 0.179 ? "#ffffff" : "#000000";
   };
@@ -411,12 +386,7 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
   });
 }
 
-/**
- * Extensions ship a family of themes (GitHub: dark, light, dark-colorblind,
- * light-colorblind, dark-dimmed, ...). When several are imported together,
- * a light and a dark file whose names differ only by the appearance word
- * become one dual-mode theme; everything else stays its own theme.
- */
+/** Pairs single-mode themes whose labels differ only by appearance; other variants stay separate. */
 export function pairVsCodeThemes(
   themes: ReadonlyArray<ThemeDefinition>,
   options?: {
@@ -433,10 +403,7 @@ export function pairVsCodeThemes(
   const groups = new Map<string, Group>();
   const passthrough: Array<{ theme: ThemeDefinition; order: number }> = [];
   themes.forEach((theme, order) => {
-    // Only single-appearance themes with an appearance word in the name can
-    // pair, and only when the rest of the name can still identify the pair
-    // ("Dark+" and "Light+" would pair as "+"); anything else is already
-    // what the user asked for.
+    // Only pair when the stripped label still identifies the theme; "Dark+"/"Light+" would become "+".
     const key = stripAppearance(theme.label);
     if (getThemeModes(theme).length !== 1 || key === theme.label || !/[a-z0-9]/i.test(key)) {
       passthrough.push({ theme, order });
@@ -449,10 +416,7 @@ export function pairVsCodeThemes(
 
   const paired: Array<{ theme: ThemeDefinition; order: number }> = [];
   for (const [key, group] of groups) {
-    // Ambiguity (two darks for one light) is not guessed at, and a pair
-    // whose stripped name collides with a built-in id ("Grove Light" +
-    // "Grove Dark" -> the reserved "grove") stays two single themes rather
-    // than failing the whole batch.
+    // Ambiguous pairs and reserved-id collisions stay separate rather than failing the batch.
     if (group.light.length === 1 && group.dark.length === 1) {
       try {
         paired.push({
@@ -467,9 +431,7 @@ export function pairVsCodeThemes(
           }),
         });
         continue;
-      } catch {
-        // Fall through to the individual themes below.
-      }
+      } catch {}
     }
     for (const theme of [...group.light, ...group.dark]) {
       paired.push({ theme, order: group.order });
@@ -479,17 +441,10 @@ export function pairVsCodeThemes(
   return [...passthrough, ...paired].sort((a, b) => a.order - b.order).map((entry) => entry.theme);
 }
 
-/**
- * Some extensions reuse one display name across every file: Dracula ships
- * dracula.json and dracula-soft.json that both say "Dracula". When a batch
- * carries the same id twice, the file names are the only thing that tells
- * the variants apart, so colliding entries are relabelled from their file
- * name (and numbered only when even that collides).
- */
+/** Duplicate display names use filenames to distinguish variants, then numbers if needed. */
 export function resolveThemeLabelCollisions(
   entries: ReadonlyArray<{ theme: ThemeDefinition; sourceName?: string | undefined }>,
 ): ReadonlyArray<ThemeDefinition> {
-  // Null when the new name is unusable (reserved id, invalid characters).
   const rename = (theme: ThemeDefinition, name: string): ThemeDefinition | null => {
     try {
       return parseThemeFile({
