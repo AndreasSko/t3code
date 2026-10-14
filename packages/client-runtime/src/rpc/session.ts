@@ -148,6 +148,7 @@ function mapSessionRpcError(
   }
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("RpcSessionFactory.make")(function* (
   options: RpcSessionOptions = {},
 ) {
