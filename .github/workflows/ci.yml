@@ -89,8 +89,19 @@ jobs:
         uses: ./.github/actions/ci-changes
 
       - name: Setup Vite+
-        id: setup
         uses: ./.github/actions/setup-ci-deps
+
+      # Runs in the background next to the lint steps, so merging it into this
+      # job adds no time; the last step reports its result.
+      - name: Start release smoke
+        id: smoke
+        if: steps.changes.outputs.release_smoke != 'false'
+        run: |
+          (
+            set +e
+            node scripts/release-smoke.ts
+            echo "$?" > "$RUNNER_TEMP/smoke-status"
+          ) > "$RUNNER_TEMP/smoke.log" 2>&1 < /dev/null &
 
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
@@ -102,10 +113,14 @@ jobs:
       - name: Check
         run: vp check
 
-      # Runs even when an earlier lint step failed, as its own job did.
+      # Reports even when an earlier lint step failed, as its own job did.
       - name: Exercise release-only workflow steps
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.changes.outputs.release_smoke != 'false' }}
-        run: node scripts/release-smoke.ts
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        timeout-minutes: 5
+        run: |
+          until test -s "$RUNNER_TEMP/smoke-status"; do sleep 1; done
+          cat "$RUNNER_TEMP/smoke.log"
+          exit "$(cat "$RUNNER_TEMP/smoke-status")"
 
   build:
     name: Build and Typecheck
@@ -143,11 +158,17 @@ jobs:
         id: electron
         run: vp run --filter @t3tools/desktop ensure:electron
 
-      # Typecheck and the build report independently: one failing does not
-      # skip the other.
-      - name: Typecheck
+      # Runs in the background while the build runs, and reports in the last
+      # step: neither result hides the other.
+      - name: Start typecheck
+        id: typecheck
         if: ${{ !cancelled() && steps.electron.outcome == 'success' && needs.changes.outputs.typecheck != 'false' }}
-        run: vpr typecheck
+        run: |
+          (
+            set +e
+            vpr typecheck
+            echo "$?" > "$RUNNER_TEMP/typecheck-status"
+          ) > "$RUNNER_TEMP/typecheck.log" 2>&1 < /dev/null &
 
       - name: Finish installing browser secret helper build libraries
         id: apt
@@ -166,6 +187,14 @@ jobs:
       - name: Verify preload bundle output
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node apps/desktop/scripts/verify-preload-bundle.mjs
+
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.typecheck.outcome == 'success' }}
+        timeout-minutes: 5
+        run: |
+          until test -s "$RUNNER_TEMP/typecheck-status"; do sleep 1; done
+          cat "$RUNNER_TEMP/typecheck.log"
+          exit "$(cat "$RUNNER_TEMP/typecheck-status")"
 
   # Everything except `t3` (apps/server) and the web app, which has its own job
   # below. `--parallel` drops the package dependency ordering that `vp run`
