@@ -126,7 +126,8 @@ export const assertTargetWithinLimits = (
 export function assertLiveCaller({ caller, scope }: Caller) {
   if (caller === undefined) return Effect.void;
   return caller.archivedAt !== null ||
-    (caller.activeRunId === null && !OrchestrationMcp.hasRunningBackgroundSubagent(caller)) ||
+    (caller.activeRunId === null &&
+      !OrchestrationMcp.hasRunningBackgroundSubagent(caller, scope.thread?.providerInstanceId)) ||
     caller.providerInstanceId !== scope.thread?.providerInstanceId
     ? Effect.fail(
         new OrchestratorMcpFailure({

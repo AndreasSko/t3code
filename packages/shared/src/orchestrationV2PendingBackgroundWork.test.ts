@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationV2PendingBackgroundTask } from "@t3tools/contracts";
+import {
+  type OrchestrationV2PendingBackgroundTask,
+  ProviderInstanceId,
+  ProviderThreadId,
+} from "@t3tools/contracts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -41,6 +45,74 @@ describe("backgroundWorkHoldsCompletion", () => {
 });
 
 describe("derivePendingBackgroundWork", () => {
+  it("keeps each subagent item's owning instance across provider switches", () => {
+    const oldThreadId = ProviderThreadId.make("pt-old");
+    const currentThreadId = ProviderThreadId.make("pt-current");
+    const oldInstanceId = ProviderInstanceId.make("claude-old");
+    const currentInstanceId = ProviderInstanceId.make("claude-current");
+    const oldItem = {
+      id: "old-item",
+      providerThreadId: oldThreadId,
+      // A delegated item's instance names its target, not its owning provider thread.
+      providerInstanceId: currentInstanceId,
+      type: "subagent" as const,
+      status: "running" as const,
+      title: null,
+    };
+    const tasks = derivePendingBackgroundWork({
+      latestRun: { id: "run-1" as never, ordinal: 1, status: "completed" },
+      activeProviderThreadId: currentThreadId,
+      providerThreads: [
+        { id: oldThreadId, providerInstanceId: oldInstanceId },
+        { id: currentThreadId, providerInstanceId: currentInstanceId },
+      ],
+      turnItems: [
+        oldItem,
+        {
+          id: "current-item",
+          providerThreadId: currentThreadId,
+          type: "subagent",
+          status: "running",
+          title: null,
+        },
+        {
+          id: "unknown-item",
+          providerThreadId: null,
+          type: "subagent",
+          status: "running",
+          title: null,
+        },
+      ],
+    });
+    expect(tasks).toEqual([
+      { taskId: "old-item", kind: "subagent", providerInstanceId: oldInstanceId },
+      { taskId: "current-item", kind: "subagent", providerInstanceId: currentInstanceId },
+      { taskId: "unknown-item", kind: "subagent" },
+    ]);
+  });
+
+  it("takes a roster subagent's instance from its owning provider thread", () => {
+    const owner = ProviderInstanceId.make("claude-owner");
+    const tasks = derivePendingBackgroundWork({
+      latestRun: { id: "run-1" as never, ordinal: 1, status: "completed" },
+      providerThreads: [
+        {
+          id: ProviderThreadId.make("pt-owner"),
+          providerInstanceId: owner,
+          pendingBackgroundTasks: [
+            {
+              taskId: "roster-item",
+              kind: "subagent",
+              providerInstanceId: ProviderInstanceId.make("other"),
+            },
+          ],
+        },
+      ],
+      turnItems: [],
+    });
+    expect(tasks).toEqual([{ taskId: "roster-item", kind: "subagent", providerInstanceId: owner }]);
+  });
+
   it("returns empty while the latest run is not settled", () => {
     const tasks = derivePendingBackgroundWork({
       latestRun: { id: "run-1" as never, ordinal: 1, status: "running" },

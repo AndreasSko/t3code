@@ -97,13 +97,16 @@ type PendingBackgroundWorkPullRequest = Pick<
 type PendingBackgroundWorkProviderThread = Pick<
   OrchestrationV2ProviderThread,
   "id" | "pendingBackgroundTasks"
->;
+> & { readonly providerInstanceId?: OrchestrationV2ProviderThread["providerInstanceId"] };
 
 type PendingBackgroundWorkTurnItem = {
   readonly id: OrchestrationV2TurnItem["id"] | string;
   readonly type: OrchestrationV2TurnItem["type"];
   readonly status: OrchestrationV2TurnItem["status"];
   readonly title: string | null;
+  readonly providerThreadId?: OrchestrationV2TurnItem["providerThreadId"];
+  /** SQL shells join the owner even when its provider thread belongs to a child app thread. */
+  readonly owningProviderInstanceId?: OrchestrationV2ProviderThread["providerInstanceId"];
   /** When present and the run is rolled_back, the item is abandoned, not pending. */
   readonly runId?: OrchestrationV2Run["id"] | string | null;
   readonly nativeItemRef?: {
@@ -154,6 +157,7 @@ function descriptionFromTurnItem(item: PendingBackgroundWorkTurnItem): string | 
 function pendingTaskFromTurnItem(
   taskId: string,
   item: PendingBackgroundWorkTurnItem,
+  providerInstanceId: OrchestrationV2ProviderThread["providerInstanceId"] | undefined,
 ): PendingBackgroundWorkTask {
   const description = descriptionFromTurnItem(item);
   const named = { taskId, ...(description === undefined ? {} : { description }) };
@@ -162,6 +166,7 @@ function pendingTaskFromTurnItem(
       return {
         ...named,
         kind: "subagent",
+        ...(providerInstanceId === undefined ? {} : { providerInstanceId }),
         ...(item.childThreadId == null ? {} : { childThreadId: item.childThreadId }),
       };
     case "command_execution":
@@ -252,6 +257,10 @@ export function derivePendingBackgroundWork(input: {
   }
 
   const byTaskId = new Map<string, PendingBackgroundWorkTask>();
+  // Items from earlier provider threads remain pending after a provider switch.
+  const providerInstanceIds = new Map(
+    input.providerThreads.map((thread) => [thread.id, thread.providerInstanceId]),
+  );
 
   const providerThreads =
     input.activeProviderThreadId === undefined || input.activeProviderThreadId === null
@@ -267,6 +276,9 @@ export function derivePendingBackgroundWork(input: {
       const description = rawDescription?.trim();
       byTaskId.set(task.taskId, {
         ...named,
+        ...(task.kind === "subagent"
+          ? { providerInstanceId: providerThread.providerInstanceId }
+          : {}),
         ...(description === undefined || description.length === 0 ? {} : { description }),
       });
     }
@@ -278,7 +290,17 @@ export function derivePendingBackgroundWork(input: {
       continue;
     }
 
-    byTaskId.set(taskId, pendingTaskFromTurnItem(taskId, item));
+    byTaskId.set(
+      taskId,
+      pendingTaskFromTurnItem(
+        taskId,
+        item,
+        item.owningProviderInstanceId ??
+          (item.providerThreadId == null
+            ? undefined
+            : providerInstanceIds.get(item.providerThreadId)),
+      ),
+    );
   }
 
   for (const task of pullRequestWatchTasks(input.pullRequests)) byTaskId.set(task.taskId, task);

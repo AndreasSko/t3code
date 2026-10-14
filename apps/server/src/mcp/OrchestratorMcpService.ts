@@ -50,6 +50,7 @@ import {
   type OrchestratorMcpThreadWaitInput,
   type OrchestratorMcpThreadWaitResult,
   type ProviderInteractionMode,
+  type ProviderInstanceId,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type RuntimeMode,
@@ -204,12 +205,18 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
 
 /**
  * A background subagent outlives the run that started it and calls tools
- * with its thread's credential, so the thread's provider still acts while
- * one runs. The credential is revoked when the provider process goes away.
+ * with its thread's credential, so only its owning provider instance stays
+ * live. The credential is revoked when the provider process goes away.
  */
 export const hasRunningBackgroundSubagent = (
   thread: Pick<OrchestrationV2ThreadShell, "pendingBackgroundTasks">,
-) => thread.pendingBackgroundTasks?.some((task) => task.kind === "subagent") ?? false;
+  providerInstanceId: ProviderInstanceId | undefined,
+) =>
+  providerInstanceId !== undefined &&
+  (thread.pendingBackgroundTasks?.some(
+    (task) => task.kind === "subagent" && task.providerInstanceId === providerInstanceId,
+  ) ??
+    false);
 
 function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
@@ -1119,13 +1126,16 @@ const make = Effect.gen(function* () {
         }
         return;
       }
+      // Decide from this one fresh snapshot: a run may have started since `parent` was read.
       const shell = yield* threadManagement
         .getThreadShell(parent.thread.id)
         .pipe(Effect.mapError(threadManagementFailure));
       if (
         shell === null ||
+        shell.archivedAt !== null ||
         shell.providerInstanceId !== scope.thread?.providerInstanceId ||
-        !hasRunningBackgroundSubagent(shell)
+        (shell.activeRunId === null &&
+          !hasRunningBackgroundSubagent(shell, scope.thread?.providerInstanceId))
       ) {
         return yield* notActive;
       }

@@ -32,7 +32,6 @@ import type {
   OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
   ProjectId,
-  ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
@@ -63,6 +62,7 @@ import {
   ThreadId,
   TurnItemId,
   NodeId,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
   createOrchestrationV2TurnItemVisibility,
@@ -966,6 +966,11 @@ function applyToProjectionReplayState(
 
 type PayloadRow = {
   readonly payload_json: string;
+};
+
+type ShellPendingTurnItemRow = PayloadRow & {
+  readonly thread_id: string;
+  readonly owning_provider_instance_id: string | null;
 };
 
 type ShellThreadRow = {
@@ -5388,9 +5393,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const selectShellPendingTurnItemRows = (threadIds?: ReadonlyArray<ThreadId>) =>
       threadIds === undefined
-        ? sql<PayloadRow & { readonly thread_id: string }>`
-            SELECT i.thread_id, i.payload_json
+        ? sql<ShellPendingTurnItemRow>`
+            SELECT i.thread_id, i.payload_json, p.provider_instance_id AS owning_provider_instance_id
             FROM orchestration_v2_projection_turn_items i
+            LEFT JOIN orchestration_v2_projection_provider_threads p
+              ON p.provider_thread_id = i.provider_thread_id
             LEFT JOIN orchestration_v2_projection_runs r
               ON r.run_id = i.run_id
             WHERE i.type IN ('command_execution', 'dynamic_tool', 'subagent')
@@ -5400,9 +5407,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               -- matching the item_count query's exclusion above.
               AND (i.run_id IS NULL OR r.status <> 'rolled_back')
           `
-        : sql<PayloadRow & { readonly thread_id: string }>`
-            SELECT i.thread_id, i.payload_json
+        : sql<ShellPendingTurnItemRow>`
+            SELECT i.thread_id, i.payload_json, p.provider_instance_id AS owning_provider_instance_id
             FROM orchestration_v2_projection_turn_items i
+            LEFT JOIN orchestration_v2_projection_provider_threads p
+              ON p.provider_thread_id = i.provider_thread_id
             LEFT JOIN orchestration_v2_projection_runs r
               ON r.run_id = i.run_id
             WHERE i.type IN ('command_execution', 'dynamic_tool', 'subagent')
@@ -5436,7 +5445,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const pendingBackgroundDataByThreadId = (input: {
       readonly providerThreadRows: ReadonlyArray<PayloadRow & { readonly thread_id: string }>;
-      readonly pendingTurnItemRows: ReadonlyArray<PayloadRow & { readonly thread_id: string }>;
+      readonly pendingTurnItemRows: ReadonlyArray<ShellPendingTurnItemRow>;
     }) =>
       Effect.gen(function* () {
         const providerThreadsByThreadId = new Map<
@@ -5457,7 +5466,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
         const pendingTurnItemsByThreadId = new Map<ThreadId, Array<OrchestrationV2TurnItem>>();
         for (const row of input.pendingTurnItemRows) {
-          const turnItem = yield* decodeTurnItemPayload(row.payload_json);
+          const turnItem = {
+            ...(yield* decodeTurnItemPayload(row.payload_json)),
+            ...(row.owning_provider_instance_id === null
+              ? {}
+              : {
+                  owningProviderInstanceId: ProviderInstanceId.make(
+                    row.owning_provider_instance_id,
+                  ),
+                }),
+          };
           const threadId = ThreadId.make(row.thread_id);
           const existing = pendingTurnItemsByThreadId.get(threadId) ?? [];
           existing.push(turnItem);

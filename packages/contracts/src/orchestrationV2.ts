@@ -898,6 +898,8 @@ export const OrchestrationV2PendingBackgroundTask = kindUnionWithFallback(
     Schema.Struct({
       ...PendingBackgroundTaskFields,
       kind: Schema.Literal("subagent"),
+      /** The owning provider thread's instance, populated in derived pending work. */
+      providerInstanceId: Schema.optional(ProviderInstanceId),
       /** The subagent's own thread, when it has one. */
       childThreadId: Schema.optional(ThreadId),
     }),

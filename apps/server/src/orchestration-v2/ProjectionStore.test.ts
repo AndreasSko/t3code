@@ -5220,6 +5220,150 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect(
+    "SQL and projection shells preserve a child provider thread's subagent owner after a switch",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* ProjectionStore.ProjectionStoreV2;
+        const threadId = yield* addRolledBackRecoveryCandidate("background-provider-owner");
+        const initial = yield* store.getThreadProjection(threadId);
+        const run = initial.runs[0]!;
+        const at = initial.updatedAt;
+        const childThreadId = ThreadId.make("thread:background-provider-owner:child");
+        const providerThreadId = ProviderThreadId.make(
+          "provider-thread:background-provider-owner:child",
+        );
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:child"),
+          type: "thread.created",
+          threadId: childThreadId,
+          occurredAt: at,
+          payload: {
+            ...initial.thread,
+            id: childThreadId,
+            lineage: {
+              parentThreadId: threadId,
+              relationshipToParent: "subagent",
+              rootThreadId: threadId,
+            },
+          },
+        });
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:provider-thread"),
+          type: "provider-thread.updated",
+          threadId: childThreadId,
+          occurredAt: at,
+          payload: {
+            id: providerThreadId,
+            driver,
+            providerInstanceId,
+            providerSessionId: null,
+            appThreadId: childThreadId,
+            ownerNodeId: null,
+            nativeThreadRef: null,
+            nativeConversationHeadRef: null,
+            status: "idle",
+            firstRunOrdinal: 1,
+            lastRunOrdinal: 1,
+            handoffIds: [],
+            forkedFrom: null,
+            createdAt: at,
+            updatedAt: at,
+          },
+        });
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:completed"),
+          type: "run.updated",
+          threadId,
+          occurredAt: at,
+          payload: { ...run, status: "completed", completedAt: at },
+        });
+        const item = {
+          ...initial.turnItems[0]!,
+          id: TurnItemId.make("item:background-provider-owner"),
+          providerThreadId,
+          type: "subagent" as const,
+          status: "running" as const,
+          subagentId: NodeId.make("node:background-provider-owner"),
+          origin: "provider_native" as const,
+          driver,
+          providerInstanceId,
+          childThreadId,
+          prompt: "Review",
+          result: null,
+        };
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:subagent"),
+          type: "subagent.updated",
+          threadId,
+          occurredAt: at,
+          payload: {
+            ...item,
+            id: item.subagentId,
+            parentNodeId: run.rootNodeId!,
+            createdBy: "agent",
+            nativeTaskRef: item.nativeItemRef,
+            model: null,
+          },
+        });
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:item"),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: at,
+          payload: item,
+        });
+        const assertOwners = Effect.fnUntraced(function* (expected: ReadonlyArray<unknown>) {
+          const projection = yield* store.getThreadProjection(threadId);
+          const sqlShell = yield* store.getThreadShell(threadId);
+          const listed = (yield* store.getShellSnapshot()).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          for (const shell of [
+            ProjectionStore.threadShellFromProjection(projection),
+            sqlShell,
+            listed,
+          ]) {
+            assert.deepEqual(
+              shell?.pendingBackgroundTasks?.filter((task) => task.kind === "subagent"),
+              expected,
+            );
+          }
+        });
+        const expected = [
+          {
+            taskId: String(item.id),
+            description: item.title,
+            kind: "subagent",
+            providerInstanceId,
+            childThreadId,
+          },
+        ];
+        yield* assertOwners(expected);
+        const switchedInstanceId = ProviderInstanceId.make("codex-other");
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:switched"),
+          type: "thread.provider-switched",
+          threadId,
+          occurredAt: at,
+          payload: {
+            ...initial.thread,
+            providerInstanceId: switchedInstanceId,
+            modelSelection: { ...modelSelection, instanceId: switchedInstanceId },
+          },
+        });
+        yield* assertOwners(expected);
+        yield* store.apply({
+          id: EventId.make("event:background-provider-owner:stopped"),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: at,
+          payload: { ...item, status: "cancelled", completedAt: at },
+        });
+        yield* assertOwners([]);
+      }),
+  );
+
   it.effect("a pull request watch keeps a finished thread working until it ends", () =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
