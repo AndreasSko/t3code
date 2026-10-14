@@ -13,23 +13,24 @@ type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId">;
 
 const MAX_LABEL_LENGTH = 160;
 
-function compactLabel(value: unknown): string | undefined {
+function compactLabel(value: unknown, maxLength = MAX_LABEL_LENGTH): string | undefined {
   if (typeof value !== "string") return undefined;
   const text = value.replaceAll(/\s+/g, " ").trim();
   if (text.length === 0) return undefined;
-  return text.length > MAX_LABEL_LENGTH ? `${text.slice(0, MAX_LABEL_LENGTH - 1)}…` : text;
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
 /** Describes a background-capable turn item that restart recovery cancels. */
 export function cancelledTurnItemWork(item: OrchestrationV2TurnItem): Work | undefined {
   switch (item.type) {
     case "subagent": {
-      const label = compactLabel(item.title) ?? compactLabel(item.prompt) ?? "subagent";
       // The native id is what the agent resumes the subagent by.
       const nativeId = item.origin === "provider_native" ? item.nativeItemRef?.nativeId : undefined;
+      const suffix = nativeId === undefined ? "" : ` (id ${nativeId})`;
+      const max = MAX_LABEL_LENGTH - suffix.length;
       return {
         kind: "subagent",
-        label: nativeId === undefined ? label : `${label} (id ${nativeId})`,
+        label: `${compactLabel(item.title, max) ?? compactLabel(item.prompt, max) ?? "subagent"}${suffix}`,
         id: item.id,
       };
     }
@@ -78,9 +79,10 @@ function restartWorkKind(task: OrchestrationV2PendingBackgroundTask): Work["kind
  */
 export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTask): Work {
   if (task.parentTaskId !== undefined) {
+    const suffix = ` (subagent ${task.parentTaskId})`;
     return {
       kind: "subagent",
-      label: `${compactLabel(task.description) ?? "background task"} (subagent ${task.parentTaskId})`,
+      label: `${compactLabel(task.description, MAX_LABEL_LENGTH - suffix.length) ?? "background task"}${suffix}`,
       id: task.parentTaskId,
     };
   }
@@ -161,6 +163,17 @@ export function runOutcome(
     (run.restartCancelledBackgroundWork ?? []).some(isAwaitedWork)
     ? "interrupted"
     : run.status;
+}
+
+/**
+ * A run that never reached its provider, such as a provider wake the restart
+ * cut while it was starting: it lost no work and has no turn to continue. A
+ * prepared restart continuation still counts, since it carries its source.
+ */
+export function neverStarted(
+  run: Pick<OrchestrationV2Run, "startedAt" | "restartContinuationOfRunId">,
+): boolean {
+  return run.startedAt === null && run.restartContinuationOfRunId === undefined;
 }
 
 /**

@@ -32,6 +32,7 @@ import {
   cancelledRosterTaskWork,
   cancelledTurnItemWork,
   mergeRestartCancelledBackgroundWork,
+  neverStarted,
 } from "./RestartBackgroundNote.ts";
 
 export class ProviderRuntimeRecoveryError extends Schema.TaggedError<ProviderRuntimeRecoveryError>()(
@@ -174,6 +175,7 @@ function latestStartedRun(
       run.providerThreadId === providerThreadId &&
       run.status !== "queued" &&
       run.status !== "rolled_back" &&
+      !neverStarted(run) &&
       (latest === undefined || runRanAfter(run, latest))
         ? run
         : latest,
@@ -557,7 +559,13 @@ export const make = Effect.gen(function* () {
         }
         if (providerThread.ownerNodeId === null) {
           for (const task of providerThread.pendingBackgroundTasks ?? []) {
-            if (cancelledBackgroundNativeIds.has(task.taskId)) continue;
+            // A subagent already recorded covers the shells it started.
+            if (
+              cancelledBackgroundNativeIds.has(task.taskId) ||
+              (task.parentTaskId !== undefined &&
+                cancelledBackgroundNativeIds.has(task.parentTaskId))
+            )
+              continue;
             cancelledBackgroundNativeIds.add(task.taskId);
             recordCancelledBackgroundWork(providerThread.id, cancelledRosterTaskWork(task));
           }

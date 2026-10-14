@@ -21,6 +21,7 @@ import {
   isAwaitedWork,
   isRestartContinuationSource,
   isRestartNoteSource,
+  neverStarted,
   restartCancelledBackgroundWorkNote,
   restartContinuationNote,
 } from "./RestartBackgroundNote.ts";
@@ -142,7 +143,7 @@ export function restartContinuationRun(
   const run = projection.runs.reduce<OrchestrationV2Run | undefined>(
     (latest, candidate) =>
       candidate.status !== "queued" &&
-      (candidate.startedAt !== null || candidate.restartContinuationOfRunId !== undefined) &&
+      !neverStarted(candidate) &&
       (!latest || runRanAfter(candidate, latest))
         ? candidate
         : latest,
@@ -238,7 +239,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         (run) =>
           run.id !== source.id &&
           run.status !== "queued" &&
-          !(run.startedAt === null && run.completedAt !== null) &&
+          !(neverStarted(run) && run.completedAt !== null) &&
           runRanAfter(run, source),
       )
     )

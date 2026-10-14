@@ -132,6 +132,14 @@ it("names a lost subagent by the id the agent resumes it with", () => {
     id: "agent-1",
   });
   assert.isTrue(isAwaitedWork(ownShell));
+  const long = cancelledRosterTaskWork({
+    kind: "command",
+    taskId: "shell-1",
+    description: "d".repeat(400),
+    parentTaskId: "agent-1",
+  }).label;
+  assert.lengthOf(long, 160);
+  assert.isTrue(long.endsWith("(subagent agent-1)"));
   assert.isFalse(isAwaitedWork(cancelledRosterTaskWork({ kind: "command", taskId: "shell-2" })));
   assert.equal(
     cancelledTurnItemWork({
