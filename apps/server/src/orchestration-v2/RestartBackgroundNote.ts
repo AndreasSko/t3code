@@ -20,17 +20,26 @@ function compactLabel(value: unknown, maxLength = MAX_LABEL_LENGTH): string | un
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
+/** A bounded label that keeps its id suffix whole whenever it fits. */
+function labelWithId(name: unknown, fallback: string, suffix: string): string {
+  const budget = MAX_LABEL_LENGTH - suffix.length;
+  if (budget < 2) return compactLabel(`${fallback}${suffix}`) ?? fallback;
+  return `${compactLabel(name, budget) ?? compactLabel(fallback, budget)}${suffix}`;
+}
+
 /** Describes a background-capable turn item that restart recovery cancels. */
 export function cancelledTurnItemWork(item: OrchestrationV2TurnItem): Work | undefined {
   switch (item.type) {
     case "subagent": {
       // The native id is what the agent resumes the subagent by.
       const nativeId = item.origin === "provider_native" ? item.nativeItemRef?.nativeId : undefined;
-      const suffix = nativeId === undefined ? "" : ` (id ${nativeId})`;
-      const max = MAX_LABEL_LENGTH - suffix.length;
       return {
         kind: "subagent",
-        label: `${compactLabel(item.title, max) ?? compactLabel(item.prompt, max) ?? "subagent"}${suffix}`,
+        label: labelWithId(
+          compactLabel(item.title) === undefined ? item.prompt : item.title,
+          "subagent",
+          nativeId === undefined ? "" : ` (id ${nativeId})`,
+        ),
         id: item.id,
       };
     }
@@ -79,10 +88,9 @@ function restartWorkKind(task: OrchestrationV2PendingBackgroundTask): Work["kind
  */
 export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTask): Work {
   if (task.parentTaskId !== undefined) {
-    const suffix = ` (subagent ${task.parentTaskId})`;
     return {
       kind: "subagent",
-      label: `${compactLabel(task.description, MAX_LABEL_LENGTH - suffix.length) ?? "background task"}${suffix}`,
+      label: labelWithId(task.description, "background task", ` (subagent ${task.parentTaskId})`),
       id: task.parentTaskId,
     };
   }
