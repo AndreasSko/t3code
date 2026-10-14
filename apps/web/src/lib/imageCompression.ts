@@ -24,7 +24,6 @@ import {
   readImageDimensions,
 } from "@t3tools/shared/imageDimensions";
 
-/** Longest edge kept when an image has to be re-encoded. */
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
 /** Base64 budget for a single stashed image (~975KB of binary). */
 export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
@@ -392,10 +391,8 @@ export async function compressImageForStash(
 }
 
 /**
- * Scales a PNG or JPEG whose long edge is over `IMAGE_ATTACHMENT_MAX_EDGE`
- * down to that edge in its own format, so a PNG keeps its transparency.
- * Returns null when the image already fits, is another format (GIF, WebP,
- * SVG), or cannot be decoded or encoded here; the caller keeps the original.
+ * Preserves PNG transparency by resizing in the source format.
+ * Returns null when the image fits, is unsupported, or cannot be decoded or encoded.
  */
 async function fitImageToMaxEdge(file: File): Promise<{ file: File; imageSize: ImageSize } | null> {
   const mimeType = downscalableImageMimeType(file.type);

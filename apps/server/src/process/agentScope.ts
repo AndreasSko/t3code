@@ -22,11 +22,8 @@ import * as ProcessRunner from "../processRunner.ts";
 const AGENT_SLICE = "app-t3code-agents.slice";
 
 /**
- * The child slice for one server's agents, named after its state directory.
- * Only one server uses a state directory at a time, so an agent in this slice
- * when the server starts was left by an earlier server on the same state,
- * for example one the launcher killed during an update. Other servers on the
- * machine, such as dev servers, have their own slice.
+ * Only one server uses a state directory at a time, so agents in its slice
+ * at startup are leftovers. Other state directories have separate slices.
  */
 export function ownedAgentSlice(stateDir: string): string {
   const hash = NodeCrypto.createHash("sha256").update(stateDir).digest("hex").slice(0, 12);
@@ -140,7 +137,6 @@ export const make = Effect.gen(function* () {
       const events = controlGroup ? yield* readCgroupFile(controlGroup, "cgroup.events") : "";
       if (parseCgroupCounter(events, "populated") === 0) return;
       yield* Effect.logWarning("Stopping agents left by a previous server", { slice: ownedSlice });
-      // Agents get SIGTERM, then SIGKILL after their stop timeout.
       const stopped = yield* runner
         .run({ command: systemctl, args: ["--user", "stop", ownedSlice], timeout: "30 seconds" })
         .pipe(Effect.option);
@@ -152,9 +148,6 @@ export const make = Effect.gen(function* () {
       }
     });
 
-  // Runs once, on the first agent or terminal launch. It proves this process
-  // can reach a systemd user manager, stops agents a previous server left,
-  // creates the agents slice, and sets its limits.
   const systemd = yield* Effect.cached(
     Effect.gen(function* () {
       const runtimeDir = hostEnvironment.XDG_RUNTIME_DIR;

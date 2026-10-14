@@ -39,12 +39,9 @@ import {
 
 const RETRY_BASE_DELAY_MS = 1_000;
 const RETRY_MAX_DELAY_MS = 300_000;
-// Per-route budget to resolve credentials and create the session, which ends
-// when the driver reports the synchronizing stage. Each route that gets that
-// far adds its own budget for the socket to open (bounded at 15 seconds by the
-// RPC session) and the server to deliver the first config snapshot. A cold
-// server with a large database can take longer than 15 seconds to answer, and
-// that is not a reason to drop a working connection.
+// Each route gets 15 s for credentials/session setup, then a separate 75 s
+// for socket opening (capped at 15 s by RPC) and the first config snapshot.
+// Cold servers with large databases can need more than 15 s to answer.
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const establishmentTimeout = Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT);
 const synchronizationTimeout = Duration.fromInputUnsafe("75 seconds");
@@ -690,9 +687,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           resetRetry,
         })),
       ),
-      // Each route may use the full setup time before the next is tried, and
-      // each route that reaches synchronizing adds its own snapshot budget, so
-      // a route that fails late does not eat the next route's time.
+      // Give each synchronizing route its own snapshot budget so a late failure
+      // cannot consume the next route's time.
       Effect.gen(function* () {
         const routeCount = connectionRoutes(yield* Ref.get(currentEntry)).length;
         const startedAt = yield* Clock.monotonicTimeNanos;

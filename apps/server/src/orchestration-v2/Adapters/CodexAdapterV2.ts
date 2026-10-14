@@ -3897,8 +3897,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             return { node, plan, turnItem };
           });
 
-        // Streamed plan text, flushed at most once per interval. A turn that ends
-        // early leaves its partial plan streaming, as an unfinished plan item.
+        // A turn that ends early leaves its partial plan streaming, as an unfinished plan item.
         const planDeltas = yield* makeProviderTextDeltaCoalescer({
           flushIntervalMs: CODEX_PLAN_DELTA_FLUSH_INTERVAL_MS,
           emit: (update) =>
