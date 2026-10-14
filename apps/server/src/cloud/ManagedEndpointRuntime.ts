@@ -79,12 +79,9 @@ const TUNNEL_AUTHORIZATION_FAILURES_BEFORE_RECOVERY = 4;
 // Unrecognized rejection wording can leave a dead tunnel unconnected;
 // periodically request recovery, which preserves tunnels that are still live.
 const CONNECTOR_REGISTRATION_TIMEOUT = Duration.minutes(3);
-// cloudflared resolves the edge only at startup, so after a network change it
-// can stay alive with zero connections, dialing addresses that no longer route.
-// Its /ready endpoint answers 503 then. After this many 503s in a row (about
-// three minutes), the connector is restarted. Each restart that is never
-// followed by a ready answer doubles the count, up to about thirty minutes, so
-// a host that is really offline does not restart every few minutes.
+// cloudflared resolves edge addresses only at startup, so network changes can strand it.
+// Six /ready 503s (~3 minutes) trigger a restart; unready restarts double the
+// threshold up to ~30 minutes so offline hosts do not churn.
 const CONNECTOR_READINESS_INTERVAL = Duration.seconds(30);
 const CONNECTOR_READINESS_REQUEST_TIMEOUT = Duration.seconds(5);
 const CONNECTOR_NOT_READY_CHECKS_BEFORE_RESTART = 6;
@@ -384,10 +381,8 @@ export const make = Effect.gen(function* () {
       return false;
     }).pipe(Effect.repeat({ until: (connected) => connected }));
 
-  // Kills a connector whose /ready keeps answering 503, so the supervisor
-  // restarts it like any exited connector. Only an explicit 503 counts: a failed
-  // request says nothing about the tunnel. A connector that never logs its
-  // metrics address is not polled.
+  // Only explicit /ready 503s warrant a restart; failed requests say nothing about the tunnel.
+  // Connectors that never log their metrics address cannot be polled.
   const watchConnectorReadiness = (connector: ActiveConnector) =>
     Effect.gen(function* () {
       const readyUrl = `http://${yield* Deferred.await(connector.metricsAddress)}/ready`;

@@ -209,7 +209,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   // Tracks the restart markers and install records installs leave, so
   // installs stay free of real disk I/O that would outrun the tests' settle loops.
   const updateRestartMarkers = new Set<string>();
-  // Contents of the install record, by path once an install writes one.
   const installRecords = new Map<string, string>();
   let previousInstallRecord = options.installRecord;
   const isInstallRecord = (path: string) =>

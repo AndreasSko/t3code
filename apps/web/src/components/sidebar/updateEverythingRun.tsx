@@ -15,7 +15,7 @@ import {
   type UpdateEverythingRun,
 } from "./updateEverything.logic";
 
-/** The running "update everything" pass, or null. Outlives the sidebar button. */
+/** Outlives the sidebar button. */
 const updateEverythingRunAtom = Atom.make<UpdateEverythingRun | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("update-everything-run"),
@@ -25,14 +25,12 @@ export function useUpdateEverythingRun(): UpdateEverythingRun | null {
   return useAtomValue(updateEverythingRunAtom);
 }
 
-/** Starts, changes, or ends (null) the running pass. */
 export function setUpdateEverythingRun(
   update: (run: UpdateEverythingRun | null) => UpdateEverythingRun | null,
 ): void {
   appAtomRegistry.update(updateEverythingRunAtom, update);
 }
 
-/** Records the result of every update for one machine in the running pass. */
 export function settleUpdateRunMachine(environmentId: EnvironmentId, failed: boolean): void {
   setUpdateEverythingRun(
     (run) =>
@@ -76,7 +74,6 @@ export function clearSavedUpdateEverythingResult(): void {
   try {
     window.localStorage.removeItem(SAVED_RESULT_KEY);
   } catch {
-    // Nothing to clear.
   }
 }
 
@@ -96,7 +93,6 @@ function takeSavedUpdateEverythingResult(): UpdateEverythingResult | null {
   }
 }
 
-/** Shows the one summary toast for a finished pass. */
 export function showUpdateEverythingResult(result: UpdateEverythingResult): void {
   const view = getUpdateEverythingToastView(result, APP_VERSION);
   if (!view) return;
@@ -113,11 +109,7 @@ export function showUpdateEverythingResult(result: UpdateEverythingResult): void
 
 let notifiedNotAppliedVersion: string | null = null;
 
-/**
- * Desktop launch notices for updates: the summary of a pass that ended with
- * this app's relaunch, and a warning when the last install did not apply.
- * Mount once at the app root.
- */
+/** Mount once at the app root to consume the saved update result. */
 export function DesktopUpdateLaunchNotice() {
   const notAppliedVersion = useDesktopUpdateState()?.notAppliedVersion ?? null;
 

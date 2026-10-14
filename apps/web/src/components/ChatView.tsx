@@ -7929,7 +7929,6 @@ export default function ChatView(props: ChatViewProps) {
           void handleUnsettleActiveThread();
           return;
         }
-        // Same as the sidebar Settle button: settle, then open the next thread.
         if (settleAndAdvance(activeThreadRef)) return;
 
         void settleThread(activeThreadRef).then((result) => {

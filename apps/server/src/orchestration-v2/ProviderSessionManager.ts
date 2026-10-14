@@ -720,14 +720,9 @@ export const layerWithOptions = (
           }
         });
 
-      // Reads the background tasks a released session's process left on its
-      // provider threads. Read as soon as the session leaves the live map:
-      // after that, a replacement session with the same id can open and report
-      // tasks of its own on the same provider threads. Server shutdown keeps
-      // rosters, since startup recovery clears them and records the cancelled
-      // work. Only runtimes whose tasks end with their process opt in (Claude,
-      // Muse). OpenCode's background subagents run on a server shared by its
-      // sessions and can outlive this one, so their roster stays.
+      // Read immediately after release so replacement-session tasks are not captured.
+      // Shutdown leaves rosters to startup recovery. OpenCode's shared server can keep
+      // subagents alive after this session ends, so its roster stays.
       const readReleasedBackgroundTasks = (input: {
         readonly entry: LiveSessionEntry;
         readonly reason: ProviderSessionReleaseReason;
@@ -776,12 +771,9 @@ export const layerWithOptions = (
         ReturnType<typeof readReleasedBackgroundTasks>
       >[number];
 
-      // Removes the tasks `readReleasedBackgroundTasks` found from their
-      // rosters. Their process is gone, so nothing will report them ending,
-      // and a leftover roster keeps the thread Waiting (#15239). Tasks a
-      // replacement session reported since are left in place. The write
-      // commits only if the stored row still equals what was read, and is
-      // retried a few times when a provider update lands in between.
+      // Process-bound tasks cannot report completion after exit, leaving threads waiting.
+      // Remove only captured task IDs so replacement sessions keep their tasks.
+      // Compare-and-set the roster and retry conflicts with provider updates.
       const writeReleasedBackgroundWorkEvents = (
         released: ReadonlyArray<ReleasedBackgroundTasks>,
       ) =>
@@ -832,9 +824,8 @@ export const layerWithOptions = (
         );
 
       // Records a released session as stopped and resolves the live runtime
-      // requests and background-task rosters it left. Each write runs even if
-      // another fails. Once a replacement session opens with the same id, it
-      // owns the session status, so only the requests are settled.
+      // requests and captured task rosters even if another write fails.
+      // A replacement session owns the session status, so its status is left alone.
       const writeReleaseRecords = (input: {
         readonly entry: LiveSessionEntry;
         readonly reason: ProviderSessionReleaseReason;

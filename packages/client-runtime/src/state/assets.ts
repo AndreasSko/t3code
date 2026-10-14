@@ -85,15 +85,12 @@ export type AssetUrlState =
       readonly imageDimensions?: AssetImageDimensions;
     };
 
-/** Shown in place of a host file the session lacks `filesystem:read` for. */
 export const MISSING_FILE_ACCESS_MESSAGE =
   "This connection cannot read host files. Pair again with a new link to view it.";
 
 /**
- * The state for a host file this session cannot read yet, or null when the client
- * should ask the host. The host requires `filesystem:read` for these resources, so
- * clients skip the request. A connected session without the scope gets its own
- * reason, so the UI can say to pair again instead of implying the file is gone.
+ * Return null to let the client request the asset. Host files require
+ * `filesystem:read`; a missing grant must prompt pairing rather than imply deletion.
  */
 export function blockedAssetUrlState(
   resource: AssetResource | null,
