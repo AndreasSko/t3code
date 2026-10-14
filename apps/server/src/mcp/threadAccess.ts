@@ -125,17 +125,14 @@ export const assertTargetWithinLimits = (
  */
 export function assertLiveCaller({ caller, scope }: Caller) {
   if (caller === undefined) return Effect.void;
-  return caller.archivedAt !== null ||
-    (caller.activeRunId === null &&
-      !OrchestrationMcp.hasRunningBackgroundSubagent(caller, scope.thread?.providerInstanceId)) ||
-    caller.providerInstanceId !== scope.thread?.providerInstanceId
-    ? Effect.fail(
+  return OrchestrationMcp.isLiveCallerShell(caller, scope.thread?.providerInstanceId)
+    ? Effect.void
+    : Effect.fail(
         new OrchestratorMcpFailure({
           code: "parent_not_active",
           message: "The calling provider no longer owns an active thread run.",
         }),
-      )
-    : Effect.void;
+      );
 }
 
 /**

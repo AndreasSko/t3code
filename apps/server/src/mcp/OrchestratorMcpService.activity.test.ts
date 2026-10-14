@@ -6,12 +6,10 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
-  ProviderThreadId,
   RunId,
   ScheduledTaskId,
   ThreadId,
 } from "@t3tools/contracts";
-import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -537,20 +535,13 @@ it("readThread and sendToThread reach threads in other projects", async () => {
     expect(staleDelete.code).toBe("parent_not_active");
 
     // A background item keeps only its owning instance live, even after a switch.
-    const owningThreadId = ProviderThreadId.make("provider-thread:background-owner");
-    const backgroundTasks = derivePendingBackgroundWork({
-      latestRun: { id: activeRunId, ordinal: 1, status: "completed" },
-      providerThreads: [{ id: owningThreadId, providerInstanceId: parentInstanceId }],
-      turnItems: [
-        {
-          id: "background-subagent",
-          providerThreadId: owningThreadId,
-          type: "subagent",
-          status: "running",
-          title: null,
-        },
-      ],
-    });
+    const backgroundTasks = [
+      {
+        taskId: "background-subagent",
+        kind: "subagent" as const,
+        providerInstanceId: parentInstanceId,
+      },
+    ];
     parentShell = {
       ...liveThreadShell(parentThreadId, { activeRunId: null }),
       pendingBackgroundTasks: backgroundTasks,
