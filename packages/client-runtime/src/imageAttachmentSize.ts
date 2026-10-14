@@ -1,8 +1,7 @@
 /**
- * Longest edge, in pixels, a PNG or JPEG attachment keeps. Anthropic rejects an image over
- * 2000px on a side once a request holds more than 20 images, and Claude Code forwards images
- * sent into a running turn unchanged, so one large paste breaks every later request in that
- * thread. Web and mobile scale attachments down to this edge when they are attached.
+ * Anthropic rejects images over 2000px per side once a request holds more than 20 images.
+ * Claude Code forwards mid-turn attachments unchanged, so one large paste can break
+ * every later request in that thread.
  */
 export const IMAGE_ATTACHMENT_MAX_EDGE = 2000;
 
@@ -16,10 +15,7 @@ export function downscalableImageMimeType(mimeType: string): DownscalableImageMi
   return null;
 }
 
-/**
- * The size an image should be scaled to so its long edge fits `IMAGE_ATTACHMENT_MAX_EDGE`,
- * keeping its aspect ratio. Returns null when it already fits.
- */
+/** Preserves aspect ratio within `IMAGE_ATTACHMENT_MAX_EDGE`; returns null if it already fits. */
 export function fitImageAttachmentSize(size: {
   readonly width: number;
   readonly height: number;

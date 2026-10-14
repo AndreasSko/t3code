@@ -336,10 +336,7 @@ export interface ProviderUpdateRun {
   >;
 }
 
-/**
- * What one provider update in a cross-machine run did. A failure carries a
- * line that names the machine and provider, such as "alvin · Codex: npm exited".
- */
+/** Failure lines name both the machine and provider. */
 export function getProviderUpdateRunOutcome(
   run: ProviderUpdateRun,
 ):

@@ -3217,7 +3217,6 @@ export default function Sidebar() {
     },
     [planForwardNavigation, settleThread],
   );
-  // The thread.settle shortcut parks the open thread through this same path.
   useEffect(() => registerSettleAndAdvance(attemptSettle), [attemptSettle]);
   // Post-settle navigation must skip threads settling in this same batch —
   // they are all leaving the card block together. Rows that are already

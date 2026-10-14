@@ -57,7 +57,6 @@ export function collectRestartingMachines(
   });
 }
 
-/** A machine the run leaves alone, with a short reason such as "not connected". */
 export interface SkippedMachine {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -67,12 +66,8 @@ export interface SkippedMachine {
 /**
  * The servers that "update everything" moves to `targetVersion`: connected,
  * permitted, able to update over RPC, behind the target, and on its release
- * channel. Every other behind server comes back in `skipped` with a reason for
- * the confirmation; a machine that never connected has an unknown version, so
- * it counts as skipped. Two kinds are in neither list: servers already on the
- * target, and servers this app hosts, which would relaunch the app mid-run
- * and update with the app's own install anyway. A desktop-managed server
- * follows its own app's update feed, so the channel rule does not apply to it.
+ * channel. Locally hosted servers update with this app to avoid a mid-run relaunch.
+ * Desktop-managed servers follow their own app's update feed, ignoring the channel rule.
  */
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
@@ -144,11 +139,8 @@ export interface UpdateEverythingSteps<Providers, Servers> {
 }
 
 /**
- * Runs the remote half of one "update everything" pass and returns each
- * step's results. Providers finish before any server restarts, so no install
- * is cut off. The local download runs alongside the remote work. The caller
- * installs this app afterwards when `localReady`, because the relaunch ends
- * the run; a failed download skips only that install.
+ * Providers finish before servers restart so installs are not cut off. The caller
+ * installs this app last when `localReady`, because relaunch ends the run.
  */
 export async function runUpdateEverything<Providers, Servers>(
   steps: UpdateEverythingSteps<Providers, Servers>,
@@ -166,7 +158,6 @@ export async function runUpdateEverything<Providers, Servers>(
   return { localReady, ...remote };
 }
 
-/** The current state of one machine in a running pass. */
 export type UpdateRunMachineStatus =
   | "providers"
   | "waiting"
@@ -175,7 +166,6 @@ export type UpdateRunMachineStatus =
   | "done"
   | "failed";
 
-/** One machine in a running "update everything" pass. */
 export interface UpdateRunMachine {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -185,7 +175,6 @@ export interface UpdateRunMachine {
   readonly result: "done" | "failed" | null;
 }
 
-/** A running "update everything" pass, kept while it runs. */
 export interface UpdateEverythingRun {
   /** The version this app installs last, or null when it does not install. */
   readonly localVersion: string | null;
@@ -194,7 +183,6 @@ export interface UpdateEverythingRun {
   readonly machines: ReadonlyArray<UpdateRunMachine>;
 }
 
-/** Status of one machine, from the run and that server's own update state. */
 export function resolveUpdateRunMachineStatus(
   machine: UpdateRunMachine,
   phase: UpdateEverythingRun["phase"],
@@ -217,11 +205,7 @@ const RUN_STATUS_LABELS: Record<UpdateRunMachineStatus, string> = {
   failed: "failed",
 };
 
-/**
- * Tooltip lines for a running pass, such as "alvin: restarting". `local` is
- * this app's own state, such as "downloading 40%", or null when it does not
- * install.
- */
+/** Tooltip lines, with `local` for this app's status or null when it does not install. */
 export function describeUpdateRun(
   machines: ReadonlyArray<{ readonly label: string; readonly status: UpdateRunMachineStatus }>,
   local: string | null,
@@ -233,7 +217,7 @@ export function describeUpdateRun(
   ];
 }
 
-/** What one pass did. It is saved before this app installs, so it outlives the relaunch. */
+/** Saved before this app installs so the result outlives the relaunch. */
 export interface UpdateEverythingResult {
   /** The version this app installed last, or null when it did not install. */
   readonly localVersion: string | null;
@@ -243,10 +227,8 @@ export interface UpdateEverythingResult {
   readonly failures: ReadonlyArray<string>;
 }
 
-/** Counts what a pass updated and lists each failure with its machine. */
 export function collectUpdateEverythingResult(input: {
   readonly localVersion: string | null;
-  /** This app's own download or install failures. */
   readonly localFailures: ReadonlyArray<string>;
   readonly servers: ReadonlyArray<{
     readonly label: string;
@@ -272,11 +254,8 @@ export function collectUpdateEverythingResult(input: {
 }
 
 /**
- * The one toast for a finished pass, such as "Updated this app, 8 servers,
- * and 3 providers" with a line per failure. `appVersion` is the version this
- * app runs now: after the relaunch it tells whether the local install
- * applied. Null when nothing finished, for example every request was
- * interrupted.
+ * `appVersion` confirms the local install applied after relaunch. Returns null
+ * when no updates finished and there are no failures.
  */
 export function getUpdateEverythingToastView(
   result: UpdateEverythingResult,

@@ -30,7 +30,6 @@ import {
   showUpdateEverythingResult,
 } from "./updateEverythingRun";
 
-/** Where this app's own download or install reports a failure. */
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /**
@@ -38,9 +37,7 @@ export type ReportLocalUpdateError = (title: string, description: string) => voi
  * connected machine, and servers behind the version this client runs or is
  * about to install (`localUpdateVersion`). Servers that install from npm appear
  * only once npm confirms that version. `run` performs the whole pass, including
- * this app's own download and install when given. It updates quietly, tracks
- * each machine in the run state, and reports one summary toast at the end.
- * When this app installs, the summary waits for the relaunch.
+ * this app's own download and install when given.
  */
 export function useUpdateEverything(localUpdateVersion: string | null) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
@@ -108,10 +105,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     summary,
     lines,
     restarts,
-    /** Behind machines the run leaves alone, with the reason. */
     skipped,
-    /** Runs the pass. `installLocal` resolves true when this app is relaunching.
-        Both report failures to the pass, which lists them in its summary. */
+    /** `installLocal` resolves true when this app is relaunching. */
     run: async ({
       downloadLocal,
       installLocal,

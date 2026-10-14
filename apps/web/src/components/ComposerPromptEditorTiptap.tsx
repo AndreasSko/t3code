@@ -888,7 +888,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const hasAppliedControlledSelectionRef = useRef(false);
   const citationRequestRef = useRef<ComposerCitationCommentRequest | null>(null);
   const [openCitation, setOpenCitation] = useState<OpenCitationComment | null>(null);
-  // The open citation's unsaved comment, saved before a new value replaces the document.
   const citationDraftRef = useRef<{ key: string; comment: string } | null>(null);
   const [isEmpty, setIsEmpty] = useState(value.length === 0);
 
