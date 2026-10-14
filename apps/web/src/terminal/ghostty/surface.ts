@@ -894,9 +894,8 @@ export class GhosttyTerminalSurface {
   }
 
   /**
-   * Releasing a panel, drawer, or split divider settles the size, so the PTY
-   * hears it now instead of after the debounce. Otherwise typing right after
-   * the release reaches a shell that still lays out the old width.
+   * Flush the PTY size on drag release so immediate typing does not reach a
+   * shell still laid out at the old width.
    */
   private readonly onWindowPointerRelease = () => {
     if (this.disposed || this.resizeNotifyTimer === null) return;

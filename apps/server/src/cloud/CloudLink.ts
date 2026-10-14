@@ -788,11 +788,9 @@ const make = Effect.gen(function* () {
         : null;
       yield* endpointRuntime.applyConfig(null);
       yield* secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN);
-      // The relay has already committed this link. The stored runtime config
-      // is what reports the link as managed and what startup respawns, so drop
-      // it first and store it last. A write that fails part-way then leaves a
-      // link that reads as not managed, and the next relink repairs it instead
-      // of trusting a stale tunnel config.
+      // The relay has committed; startup trusts the stored runtime config, so
+      // remove it first and store it last. Partial writes then read as unmanaged,
+      // letting relinking repair them instead of respawning a stale tunnel.
       yield* secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG);
 
       yield* secrets.set(RELAY_URL_SECRET, stringToBytes(payload.relayUrl));
@@ -986,12 +984,8 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * Marks the link revoked after the relay answered 401 to `credential`, usually
-   * because the environment was deregistered. Retrying cannot fix that, and
-   * relinking is the user's call, so only mark it. Nothing stored is removed:
-   * the relay also answers 401 for a skewed clock, and the next accepted
-   * registration clears the mark. Returns false, without marking, when a relink
-   * replaced the credential while the rejected request was in flight.
+   * Keep credentials because a 401 can also mean clock skew; successful registration clears the mark.
+   * Relinking is the user's call. Returns false if a concurrent relink replaced `credential`.
    */
   const markLinkRevoked = (credential: string, cause: RelayRequestError) =>
     endpointRuntime.withLinkStateLock(
@@ -1178,7 +1172,6 @@ const make = Effect.gen(function* () {
         }
         yield* secrets.set(CLOUD_ENDPOINT_RUNTIME_CONFIG, stringToBytes(encoded));
         yield* secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN);
-        // The relay accepted this link, so an earlier rejection no longer holds.
         yield* secrets.remove(CLOUD_LINK_REVOKED);
         return true;
       }),

@@ -158,11 +158,9 @@ const registerPairingConnection = Effect.fn(
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   // A platform-managed environment belongs to the host, so pairing leaves it alone.
   if (!(yield* registry.register(registration))) return registration.target.environmentId;
-  // Registering keeps a previous entry's switched-off flag and unsupported
-  // reason, which is right for label or URL edits. A pairing is an explicit
-  // request to connect, so the stale reason is cleared and the environment
-  // turned on after the pair succeeded; a server that is still incompatible,
-  // such as an outdated one awaiting an update, is flagged again on connect.
+  // Registration preserves disabled and incompatible state for URL/label edits.
+  // Pairing explicitly requests a connection, so clear stale incompatibility
+  // and enable it; connect flags incompatible servers again.
   yield* registry.setCompatibility(registration.target.environmentId, null);
   yield* registry
     .setEnabled(registration.target.environmentId, true)

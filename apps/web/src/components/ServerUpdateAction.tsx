@@ -63,8 +63,7 @@ type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" 
   readonly appearance?: "button" | "icon";
 };
 
-/** What {@link useServerUpdate} did. "skipped" covers a missing permission, an
-    update already in flight, and an interrupted request. */
+/** "skipped" covers missing permission, an update already in flight, or interruption. */
 export type ServerUpdateOutcome =
   | { readonly status: "updated" | "skipped" }
   | { readonly status: "failed"; readonly message: string };

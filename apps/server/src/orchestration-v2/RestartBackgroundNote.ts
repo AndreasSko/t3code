@@ -115,20 +115,17 @@ export function isRestartNoteSource(
 }
 
 /**
- * Work an agent ends its turn to wait for: a monitor, a subagent, or a
- * background task. A restart that cancels it wakes the settled turn, because
- * nothing else will. A shell does not wake it: most are dev servers that
- * nobody waits on, so their note waits for the next user message.
+ * Restart-cancelled monitors, subagents, and tasks must wake settled turns because
+ * nothing else will. Shells are usually dev servers nobody waits on; leave their
+ * note for the next user message.
  */
 export function isAwaitedWork(work: Pick<Work, "kind">): boolean {
   return work.kind !== "shell";
 }
 
 /**
- * A run's status as its waiter should read it: a delegating parent,
- * `task_status`, or `t3_thread_wait`. A turn that ended to wait on work the
- * restart then cancelled did not finish, so it is "interrupted", not
- * "completed", and its last message is not a final result.
+ * Delegating parents, `task_status`, and `t3_thread_wait` must see restart-cancelled
+ * awaited work as interrupted so an ended turn's last message cannot be a final result.
  */
 export function runOutcome(
   run: Pick<OrchestrationV2Run, "status" | "restartCancelledBackgroundWork">,

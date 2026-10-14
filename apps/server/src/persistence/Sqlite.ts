@@ -22,9 +22,8 @@ const layerSetup = Layer.effectDiscard(
     // NORMAL avoids per-event main-thread fsync stalls; WAL syncs at checkpoints without corrupting the database.
     // App crashes lose no commits; an OS crash or power loss can roll back commits since the last checkpoint.
     yield* sql`PRAGMA synchronous = NORMAL;`;
-    // Checkpoints are now the only sync, and macOS fsync() does not flush the
-    // drive cache. F_FULLFSYNC makes them reach disk; other platforms ignore it.
-    // Per-commit fullfsync stays off.
+    // macOS fsync() does not flush the drive cache; F_FULLFSYNC makes
+    // checkpoints reach disk. Other platforms ignore checkpoint_fullfsync.
     yield* sql`PRAGMA checkpoint_fullfsync = ON;`;
     // PASSIVE checkpoints never shrink the -wal file, so it otherwise keeps its
     // largest size until the last connection closes.

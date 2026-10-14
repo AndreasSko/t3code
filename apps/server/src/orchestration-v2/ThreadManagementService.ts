@@ -453,7 +453,6 @@ export function latestRun(
   return projection.runs.toSorted((left, right) => right.ordinal - left.ordinal)[0];
 }
 
-/** The newest run in `run`'s restart continuation chain, or `run` itself. */
 function latestRestartContinuation(
   runs: ReadonlyArray<OrchestrationV2Run>,
   run: OrchestrationV2Run,
