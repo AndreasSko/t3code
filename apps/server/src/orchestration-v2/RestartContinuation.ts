@@ -118,10 +118,9 @@ function hasOpenAwaitedWork(
 }
 
 /**
- * The run a restart continues: an unfinished root turn, or a settled one
- * waiting on awaited work that the restart cancels. A settled run needs a
- * live session, so stale records from an older crash never wake it. Other
- * leftover work is cleaned up and reported on the next user turn.
+ * Continue an unfinished root turn or a settled run that lost awaited work.
+ * Settled runs require a live session so stale crash records cannot wake them;
+ * other leftover work is reported on the next user turn.
  */
 export function restartContinuationRun(
   projection: Pick<

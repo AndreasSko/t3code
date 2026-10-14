@@ -29,7 +29,6 @@ export function ThreadMarkdownImageView(props: {
   readonly uri: string | null;
   readonly sourceKey: string;
   readonly unavailable: boolean;
-  /** Why the image is unavailable, when the cause is known. */
   readonly unavailableDetail?: string | undefined;
   readonly alt: string | null;
   /** Header dimensions allow a final frame on first render, before image decoding. */

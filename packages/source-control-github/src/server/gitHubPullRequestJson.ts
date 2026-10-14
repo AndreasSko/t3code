@@ -581,7 +581,6 @@ const RawReviewThreadsSchema = Schema.Struct({
             Schema.Struct({
               nodes: Schema.Array(
                 Schema.Struct({
-                  // Null where GitHub does not name who was asked.
                   requestedReviewer: Schema.optional(Schema.NullOr(RawRequestedReviewerSchema)),
                 }),
               ),

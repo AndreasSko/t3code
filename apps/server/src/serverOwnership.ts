@@ -84,10 +84,9 @@ const legacyOwnerIsLive = Effect.fn("legacyOwnerIsLive")(function* (
 });
 
 /**
- * Hold an exclusive lock on the state directory until the scope closes. The
- * lock is an exclusive transaction on `server-owner.sqlite`, which never holds
- * data and must never be unlinked: the OS releases it when the process exits,
- * even on SIGKILL, so a crashed owner never blocks the next start.
+ * Hold an exclusive transaction on the empty `server-owner.sqlite` until the
+ * scope closes. Never unlink it: the OS releases the lock on process exit,
+ * even on SIGKILL, so a crashed owner cannot block the next start.
  */
 export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(function* (
   statePath: string,

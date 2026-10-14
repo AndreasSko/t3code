@@ -624,10 +624,8 @@ export const make = Effect.gen(function* () {
     .remove(installRecordPath, { force: true })
     .pipe(Effect.ignore);
 
-  // Reads the record of the last install. Returns the version it did not
-  // apply, when the app came back on the version it installed from. That
-  // record stays through later starts, until the version changes or a new
-  // install replaces it, so no restart forgets the failed version.
+  // Keep the failed install record across starts until the version changes or
+  // a new install replaces it, so restarts do not forget the failed version.
   const readNotAppliedInstallVersion = fileSystem.readFileString(installRecordPath).pipe(
     Effect.flatMap(decodeInstallRecord),
     Effect.option,

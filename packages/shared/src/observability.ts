@@ -477,7 +477,6 @@ export const makeTraceSink = Effect.fn("makeTraceSink")(function* (options: Trac
 
   yield* Effect.addFinalizer(() => flush.pipe(Effect.ignore));
   yield* Effect.forkScoped(
-    // Flush when push fills a batch or the batch window passes.
     Queue.take(flushRequests).pipe(
       Effect.timeoutOption(`${options.batchWindowMs} millis`),
       Effect.andThen(flush),

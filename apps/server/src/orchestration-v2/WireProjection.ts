@@ -35,10 +35,9 @@ function truncateDetail(
 }
 
 /**
- * Bounds the text a provider file change keeps in the event log and its
- * projection. Clients never receive more than this (see projectTurnItemForWire),
- * so a full diff of a large file would only grow the database and the heap that
- * reads it back. Agents reading the thread over MCP get the bounded text.
+ * Full provider diffs would grow the database and heap beyond what clients
+ * receive (see projectTurnItemForWire). MCP thread reads also get this
+ * bounded text.
  */
 export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   if (item.type !== "file_change") return item;

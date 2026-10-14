@@ -35,12 +35,9 @@ export interface CloudLinkDesiredState {
 }
 
 /**
- * Whether the link has a working managed tunnel. The local tunnel config can
- * outlive a relay link that drifted to publish-only, and clients then get
- * `endpoint_provider_not_managed`. So when relay discovery has this
- * environment's record, it must also say managed. Older environment servers
- * predate managedTunnelActive; for them a link always implies a tunnel. A link
- * the relay rejected (usually after a Deregister) gives no access at all.
+ * When present, relay discovery must also say managed to avoid
+ * `endpoint_provider_not_managed` from stale local tunnel config. Older
+ * servers imply a tunnel from `linked`; revoked links grant no access.
  */
 function isManagedTunnelActive(
   linkState: EnvironmentCloudLinkStateResult,
