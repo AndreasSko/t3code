@@ -16,7 +16,10 @@ const definitions: ReadonlyArray<SourceControlClientDefinition> = [
   GitCafe.definition,
 ];
 
-/** Secret field names per host kind; a host with none is absent. */
+/**
+ * Secret field names per host kind; a host with none is absent. `serverSettings` keeps these
+ * values in the secret store and redacts them for clients, the same way for every host.
+ */
 export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   string,
   ReadonlyArray<string>
