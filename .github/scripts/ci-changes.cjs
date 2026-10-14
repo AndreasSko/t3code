@@ -21,6 +21,13 @@ const INERT = [
   /^LICENSE$/,
 ];
 
+// Run everything: the root vite.config.ts loads the first as setup for every
+// package's tests, and the vendored mobile tarballs are installed dependencies.
+const RUNS_EVERYTHING = [
+  /^packages\/shared\/src\/(HostProcess|testing\/longTempDir)\.ts$/,
+  /^apps\/mobile\/deps\//,
+];
+
 // Paths outside a package, or files inside one that other packages read
 // through relative imports rather than a package.json dependency.
 const EXTRA_OWNERS = [
@@ -33,8 +40,19 @@ const EXTRA_OWNERS = [
 ];
 const RUST = /^native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot)\//;
 
-// Tests that import another package's sources without declaring it.
-const TEST_ONLY_DEPS = { "@t3tools/provider-pi": ["@t3tools/client-runtime"] };
+// Tests that read another package's files without declaring it. The scripts
+// tests read app manifests, assets, and sources (cursor-sdk-packaging,
+// third-party-licenses, brand-assets, build-desktop-artifact).
+const TEST_ONLY_DEPS = {
+  "@t3tools/provider-pi": ["@t3tools/client-runtime"],
+  "@t3tools/scripts": [
+    "@t3tools/desktop",
+    "@t3tools/mobile",
+    "@t3tools/web",
+    "t3",
+    "@t3tools/provider-cursor",
+  ],
+};
 // Declared dependencies that only feed a build step: the server bundles the
 // built web app (apps/server/vite.config.ts) but never imports it.
 const BUILD_ONLY_DEPS = { t3: ["@t3tools/web"] };
@@ -93,7 +111,9 @@ function ownersOf(file, packages) {
   if (INERT.some((pattern) => pattern.test(file))) return [];
   // A manifest can change dependencies or versions other packages read.
   if (path.posix.basename(file) === "package.json") return null;
-  if (RUST.test(file)) return [];
+  if (RUNS_EVERYTHING.some((pattern) => pattern.test(file))) return null;
+  // scripts/build-desktop-artifact.test.ts reads the crates' sources.
+  if (RUST.test(file)) return ["@t3tools/scripts"];
 
   const extra = EXTRA_OWNERS.flatMap(([pattern, names]) => (pattern.test(file) ? names : []));
   const owner = packages
@@ -120,6 +140,8 @@ function decide(files, packages, full) {
     }
   }
 
+  // Release smoke reads scripts/ itself, not what the scripts tests read.
+  let scriptsChanged = everything;
   if (everything) {
     affected = all;
   } else {
@@ -134,6 +156,7 @@ function decide(files, packages, full) {
         }
       }
     }
+    scriptsChanged = affected.has("@t3tools/scripts");
     for (const [name, deps] of Object.entries(TEST_ONLY_DEPS)) {
       if (deps.some((dep) => affected.has(dep))) affected.add(name);
     }
@@ -155,7 +178,7 @@ function decide(files, packages, full) {
       test_web: has("@t3tools/web"),
       test_server: has("t3"),
       rust: everything || rust,
-      release_smoke: everything || has("@t3tools/scripts"),
+      release_smoke: scriptsChanged,
       mobile_native: files === null || files.some((file) => MOBILE_NATIVE.test(file)),
     },
   };
