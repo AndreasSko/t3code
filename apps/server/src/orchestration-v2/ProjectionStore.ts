@@ -924,6 +924,21 @@ function applyToProjectionReplayState(
   switch (event.type) {
     case "provider-thread.updated": {
       state.providerThreadInstanceIds.set(event.payload.id, event.payload.providerInstanceId);
+      // SQL's upsert moves the provider-thread row and its roster to appThreadId.
+      for (const [threadId, projection] of state.projections) {
+        if (threadId === event.payload.appThreadId) {
+          if (threadId !== event.threadId) {
+            state.projections.set(threadId, applyToProjection(projection, event));
+          }
+          continue;
+        }
+        const providerThreads = projection.providerThreads.filter(
+          (thread) => thread.id !== event.payload.id,
+        );
+        if (providerThreads.length !== projection.providerThreads.length) {
+          state.projections.set(threadId, { ...projection, providerThreads });
+        }
+      }
       break;
     }
     case "provider-session.attached": {
