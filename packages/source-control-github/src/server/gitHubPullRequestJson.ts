@@ -656,7 +656,11 @@ const RawRepositoryAccessSchema = Schema.Struct({
   mergeCommitAllowed: Schema.Boolean,
   squashMergeAllowed: Schema.Boolean,
   rebaseMergeAllowed: Schema.Boolean,
-  /** Missing role means unknown access, which must not fail the whole detail read. */
+  /**
+   * ADMIN, MAINTAIN, WRITE, TRIAGE, READ or NONE, or null for a GitHub App. Optional rather than
+   * required, unlike the three above: an install that does not report it still decodes rather
+   * than failing the whole detail read, and `toCanWrite` decides what that standing allows.
+   */
   viewerPermission: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
@@ -2654,9 +2658,22 @@ export interface GitHubRepositoryAccess {
   readonly canWrite: boolean;
 }
 
-/** Missing repository role does not grant write, which controls merge and closing others' changes.
- * Softer permissions keep their permissive unknown defaults. */
-function toCanWrite(viewerPermission: string | null | undefined): boolean {
+/**
+ * Whether the viewer's role on the repository is one that can push, which is what merging needs.
+ * TRIAGE and READ are not: a triager moves issues about and neither of them lands a commit.
+ *
+ * An install that reports no permission at all does not count as write. This is the exception to
+ * "an unknown permission is granted": write is what merging and closing somebody else's change
+ * need, and offering those to a reader who cannot use them wastes the press and reads as the app
+ * being wrong. Everything softer — commenting, reviewing, resolving — keeps the granting default,
+ * because being unable to say something is the worse failure there.
+ *
+ * A null permission is not that. GitHub answers null only to a GitHub App installation, and no
+ * API says what an installation may do, so null is granted and GitHub refuses whatever the app
+ * was not given. A person always gets a role, READ at the least.
+ */
+export function toCanWrite(viewerPermission: string | null | undefined): boolean {
+  if (viewerPermission === null) return true;
   switch (viewerPermission?.trim().toUpperCase()) {
     case "ADMIN":
     case "MAINTAIN":
