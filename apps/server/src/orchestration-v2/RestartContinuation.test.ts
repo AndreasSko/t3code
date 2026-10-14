@@ -700,6 +700,61 @@ it("does not wake a settled run for work left by a session that already stopped"
     );
 });
 
+it.effect("wakes a run whose subagent's own shell the restart cut, past a wake it cut first", () =>
+  Effect.gen(function* () {
+    const base = makeProjection();
+    const cutWake = {
+      ...base.runs[0]!,
+      id: RunId.make("run:wake"),
+      ordinal: 2,
+      status: "starting",
+      startedAt: null,
+    };
+    const withShell = (parentTaskId?: string) =>
+      ({
+        ...base,
+        runs: [{ ...base.runs[0]!, status: "waiting", startedAt: now }, cutWake],
+        providerThreads: [
+          {
+            ...base.providerThreads[0]!,
+            status: "idle",
+            pendingBackgroundTasks: [
+              {
+                kind: "command",
+                taskId: "shell:1",
+                description: "sleep 150",
+                ...(parentTaskId === undefined ? {} : { parentTaskId }),
+              },
+            ],
+          },
+        ],
+        providerTurns: [{ ...base.providerTurns[0]!, status: "completed" }],
+      }) as unknown as OrchestrationV2ThreadProjection;
+    assert.equal(restartContinuationRun(withShell("agent:1"), now)?.id, runId);
+    // A shell the agent started itself still does not wake it.
+    assert.isUndefined(restartContinuationRun(withShell(), now));
+
+    const texts = yield* continuationTexts({
+      ...base,
+      runs: [
+        {
+          ...base.runs[0]!,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+          restartCancelledBackgroundWork: [
+            { kind: "subagent", label: "sleep 150 (subagent agent:1)", id: "agent:1" },
+          ],
+        },
+        { ...cutWake, status: "cancelled", completedAt: now },
+      ],
+      providerTurns: [{ ...base.providerTurns[0]!, status: "completed" }],
+    } as unknown as OrchestrationV2ThreadProjection);
+    assert.lengthOf(texts, 1);
+    assert.include(texts[0], "- subagent: sleep 150 (subagent agent:1)");
+  }),
+);
+
 it.effect("does not cancel or resume a run that completes while shutdown intent commits", () =>
   Effect.gen(function* () {
     let projection = makeProjection();

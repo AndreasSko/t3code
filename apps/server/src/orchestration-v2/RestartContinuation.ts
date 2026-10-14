@@ -136,10 +136,14 @@ export function restartContinuationRun(
   >,
   now: DateTime.Utc,
 ): OrchestrationV2Run | undefined {
-  // Queued runs never started; recovery holds them behind the cut run.
+  // Queued runs never started; recovery holds them behind the cut run. A run
+  // cut before it started (a provider wake, say) has no turn to continue, so
+  // the run before it decides.
   const run = projection.runs.reduce<OrchestrationV2Run | undefined>(
     (latest, candidate) =>
-      candidate.status !== "queued" && (!latest || runRanAfter(candidate, latest))
+      candidate.status !== "queued" &&
+      (candidate.startedAt !== null || candidate.restartContinuationOfRunId !== undefined) &&
+      (!latest || runRanAfter(candidate, latest))
         ? candidate
         : latest,
     undefined,
@@ -227,10 +231,15 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     )
       return;
     // A user submission after reconciliation takes precedence over an automatic
-    // prompt. Queued runs never started and stay held behind this one.
+    // prompt. Queued runs never started and stay held behind this one, and a
+    // run the restart ended before it started did nothing to take precedence.
     if (
       projection.runs.some(
-        (run) => run.id !== source.id && run.status !== "queued" && runRanAfter(run, source),
+        (run) =>
+          run.id !== source.id &&
+          run.status !== "queued" &&
+          !(run.startedAt === null && run.completedAt !== null) &&
+          runRanAfter(run, source),
       )
     )
       return;

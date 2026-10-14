@@ -23,12 +23,16 @@ function compactLabel(value: unknown): string | undefined {
 /** Describes a background-capable turn item that restart recovery cancels. */
 export function cancelledTurnItemWork(item: OrchestrationV2TurnItem): Work | undefined {
   switch (item.type) {
-    case "subagent":
+    case "subagent": {
+      const label = compactLabel(item.title) ?? compactLabel(item.prompt) ?? "subagent";
+      // The native id is what the agent resumes the subagent by.
+      const nativeId = item.origin === "provider_native" ? item.nativeItemRef?.nativeId : undefined;
       return {
         kind: "subagent",
-        label: compactLabel(item.title) ?? compactLabel(item.prompt) ?? "subagent",
+        label: nativeId === undefined ? label : `${label} (id ${nativeId})`,
         id: item.id,
       };
+    }
     case "command_execution":
       return {
         kind: "shell",
@@ -67,8 +71,19 @@ function restartWorkKind(task: OrchestrationV2PendingBackgroundTask): Work["kind
   }
 }
 
-/** Describes a provider-reported background task (the provider-thread roster). */
+/**
+ * Describes a provider-reported background task (the provider-thread roster).
+ * Work a subagent started and waits on is reported as that subagent, since the
+ * agent is waiting for the subagent's result and resumes it by that id.
+ */
 export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTask): Work {
+  if (task.parentTaskId !== undefined) {
+    return {
+      kind: "subagent",
+      label: `${compactLabel(task.description) ?? "background task"} (subagent ${task.parentTaskId})`,
+      id: task.parentTaskId,
+    };
+  }
   const kind = restartWorkKind(task);
   const description = compactLabel(task.description);
   return {
@@ -90,7 +105,7 @@ const MAX_NOTE_ENTRIES = 10;
 export function restartCancelledBackgroundWorkNote(work: ReadonlyArray<Work>): string {
   const omitted = work.length - MAX_NOTE_ENTRIES;
   return [
-    "Note: the T3 server restarted, and this background work was cancelled before it finished. It will not report back:",
+    "Note: the T3 server restarted, and this background work was cancelled before it finished. It will not report back on its own, so resume or restart what you still need and wait for its result:",
     ...work.slice(0, MAX_NOTE_ENTRIES).map((entry) => `- ${entry.kind}: ${entry.label}`),
     ...(omitted > 0 ? [`- and ${omitted} more`] : []),
   ].join("\n");
