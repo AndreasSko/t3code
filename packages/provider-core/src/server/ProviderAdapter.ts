@@ -556,7 +556,7 @@ export interface ProviderAdapterV2SessionRuntime {
   ) => Effect.Effect<boolean>;
   /**
    * Set only when all listed tasks run inside and end with this session's process.
-   * The manager clears them on release. Leave unset for tasks that can outlive
+   * The manager clears them on release (#15239). Leave unset for tasks that can outlive
    * the session (for example, on a shared server) so their threads stay Waiting.
    */
   readonly backgroundTasksEndWithProcess?: true;

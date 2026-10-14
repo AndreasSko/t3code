@@ -119,7 +119,7 @@ function runCp(args: ReadonlyArray<string>): Promise<boolean> {
 /**
  * Clones avoid copying tens of GB: APFS uses `cp -c`, btrfs/XFS use
  * `cp --reflink=auto`. On macOS, Node's `fs.copyFile` clone flag falls back
- * to a full copy.
+ * to a full copy. Without clone support, or when `cp` fails, this copies.
  */
 async function copyDatabaseFile(source: string, destination: string): Promise<void> {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
