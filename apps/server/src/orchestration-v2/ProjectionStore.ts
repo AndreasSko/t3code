@@ -6516,7 +6516,22 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
           if (!projection) {
             return yield* new ProjectionStoreThreadNotFoundError({ threadId });
           }
-          return projection;
+          // Match the SQL shell join, including provider threads stored on child app threads.
+          const providerInstances = new Map(
+            [...existing.values()].flatMap(({ providerThreads }) =>
+              providerThreads.map((thread) => [thread.id, thread.providerInstanceId] as const),
+            ),
+          );
+          return {
+            ...projection,
+            turnItems: projection.turnItems.map((item) => {
+              const owner =
+                item.type !== "subagent" || item.providerThreadId === null
+                  ? undefined
+                  : providerInstances.get(item.providerThreadId);
+              return owner === undefined ? item : { ...item, owningProviderInstanceId: owner };
+            }),
+          };
         }),
       getTurnStartContext: (threadId, runId) =>
         service.getThreadProjection(threadId).pipe(

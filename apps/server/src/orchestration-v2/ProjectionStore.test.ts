@@ -182,6 +182,115 @@ const addRolledBackRecoveryCandidate = Effect.fn("addRolledBackRecoveryCandidate
   return threadId;
 });
 
+it.effect("memory shell preserves a child provider thread's subagent owner after a switch", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* addRolledBackRecoveryCandidate("memory-background-provider-owner");
+    const initial = yield* store.getThreadProjection(threadId);
+    const run = initial.runs[0]!;
+    const at = initial.updatedAt;
+    yield* store.apply({
+      id: EventId.make("event:memory-background-provider-owner:completed"),
+      type: "run.updated",
+      threadId,
+      occurredAt: at,
+      payload: { ...run, status: "completed", completedAt: at },
+    });
+    const childThreadId = ThreadId.make("thread:memory-background-provider-owner:child");
+    const providerThreadId = ProviderThreadId.make(
+      "provider-thread:memory-background-provider-owner:child",
+    );
+    yield* store.apply({
+      id: EventId.make("event:memory-background-provider-owner:child"),
+      type: "thread.created",
+      threadId: childThreadId,
+      occurredAt: at,
+      payload: { ...initial.thread, id: childThreadId },
+    });
+    yield* store.apply({
+      id: EventId.make("event:memory-background-provider-owner:provider-thread"),
+      type: "provider-thread.updated",
+      threadId: childThreadId,
+      occurredAt: at,
+      payload: {
+        id: providerThreadId,
+        driver,
+        providerInstanceId,
+        providerSessionId: null,
+        appThreadId: childThreadId,
+        ownerNodeId: null,
+        nativeThreadRef: null,
+        nativeConversationHeadRef: null,
+        status: "idle",
+        firstRunOrdinal: 1,
+        lastRunOrdinal: 1,
+        handoffIds: [],
+        forkedFrom: null,
+        createdAt: at,
+        updatedAt: at,
+      },
+    });
+    const item = {
+      ...initial.turnItems[0]!,
+      id: TurnItemId.make("item:memory-background-provider-owner"),
+      providerThreadId,
+      type: "subagent" as const,
+      status: "running" as const,
+      subagentId: NodeId.make("node:memory-background-provider-owner"),
+      origin: "provider_native" as const,
+      driver,
+      providerInstanceId,
+      childThreadId,
+      title: "Review",
+      prompt: "Review",
+      result: null,
+    };
+    yield* store.apply({
+      id: EventId.make("event:memory-background-provider-owner:item"),
+      type: "turn-item.updated",
+      threadId,
+      occurredAt: at,
+      payload: item,
+    });
+    const expected = [
+      {
+        taskId: String(item.id),
+        description: item.title,
+        kind: "subagent" as const,
+        providerInstanceId,
+        childThreadId,
+      },
+    ];
+    const assertOwners = Effect.fnUntraced(function* () {
+      const projection = yield* store.getThreadProjection(threadId);
+      assert.deepEqual(projection.providerThreads, []);
+      assert.deepEqual(projection.subagents, []);
+      const projectionShell = ProjectionStore.threadShellFromProjection(projection);
+      const memoryShell = yield* store.getThreadShell(threadId);
+      for (const shell of [projectionShell, memoryShell]) {
+        assert.deepEqual(
+          shell?.pendingBackgroundTasks?.filter((task) => task.kind === "subagent"),
+          expected,
+        );
+      }
+    });
+    yield* assertOwners();
+    const switchedInstanceId = ProviderInstanceId.make("codex-other");
+    yield* store.apply({
+      id: EventId.make("event:memory-background-provider-owner:switched"),
+      type: "thread.provider-switched",
+      threadId,
+      occurredAt: at,
+      payload: {
+        ...initial.thread,
+        providerInstanceId: switchedInstanceId,
+        modelSelection: { ...modelSelection, instanceId: switchedInstanceId },
+      },
+    });
+    yield* assertOwners();
+  }).pipe(Effect.provide(ProjectionStore.layerMemory)),
+);
+
 const addOrphanedRecoveryCandidate = Effect.fn("addOrphanedRecoveryCandidate")(function* (
   suffix: string,
 ) {
