@@ -3,6 +3,10 @@
 T3 Code shows a setup flow when you open a new installation or connect to the
 hosted app for the first time. Existing workspaces skip this flow.
 
+Close setup at any step to go straight to the app. You can connect computers
+and agents later from Settings, or open `/welcome` to run setup again. Direct links,
+such as Settings, open normally before setup is done.
+
 ## Connect your computers
 
 Select one or more computers to set up. If you opened T3 Code directly from a
@@ -20,6 +24,9 @@ You can add more computers before continuing:
   Start the server with `t3 serve`, then run `t3 pair --tailscale` and paste
   the pairing link. You can also run `t3 serve --host <address>` and use
   `t3 pair` when the server is already reachable on your network.
+
+A computer marked **Client not supported** runs a T3 Code version that cannot
+talk to this app. The message under its name says which side to update.
 
 Saved computers and computers discovered through T3 Connect are selected by
 default. Uncheck any you do not want to set up; this does not disconnect them.
