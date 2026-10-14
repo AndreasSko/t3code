@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "./config.ts";
 
@@ -23,8 +24,11 @@ describe("otlpResource", () => {
         "from-env",
       );
     }).pipe(
-      Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-otlp-resource-" })),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-otlp-resource-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
     ),
   );
 });
