@@ -1,4 +1,5 @@
 /**
+ * Longest edge in pixels; web and mobile scale PNG and JPEG attachments down to it.
  * Anthropic rejects images over 2000px per side once a request holds more than 20 images.
  * Claude Code forwards mid-turn attachments unchanged, so one large paste can break
  * every later request in that thread.

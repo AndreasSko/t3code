@@ -66,8 +66,10 @@ export interface SkippedMachine {
 /**
  * The servers that "update everything" moves to `targetVersion`: connected,
  * permitted, able to update over RPC, behind the target, and on its release
- * channel. Locally hosted servers update with this app to avoid a mid-run relaunch.
- * Desktop-managed servers follow their own app's update feed, ignoring the channel rule.
+ * channel. Other behind servers, including never-connected ones, land in `skipped`
+ * with a reason. Servers on the target and ones this app hosts are in neither list;
+ * hosted ones update with this app to avoid a mid-run relaunch. Desktop-managed
+ * servers follow their own app's update feed, ignoring the channel rule.
  */
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
