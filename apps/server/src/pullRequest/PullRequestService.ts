@@ -2532,11 +2532,8 @@ export const make = Effect.gen(function* () {
       ref.repository.toLowerCase(),
       ref.number,
     ]);
-  /**
-   * The project epoch a pull request was first read merged under. A merged pull request cannot
-   * change again, so a turn in its project no longer moves its key; otherwise every reader showing
-   * it would read the host again after every turn. A refresh or a mutation still moves it.
-   */
+  // Pin merged PR cache keys across project turns to avoid repeated host reads.
+  // Explicit refreshes and mutations still invalidate them.
   const mergedEpochs = new Map<string, number>();
   const refEpoch = (ref: PullRequestRef) => {
     const scope = refScope(ref);

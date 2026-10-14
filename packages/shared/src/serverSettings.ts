@@ -95,10 +95,8 @@ const TEXT_GENERATION_FALLBACK_DRIVERS = [
  * `includeConfiguredInstances` is set, configured instances of those
  * drivers. `null` when none is.
  *
- * The model is the driver's cheap default, unless `defaultModelSelection`
- * (the thread default) is one of that instance's custom models. A custom
- * model usually means a backend that may refuse the built-in default, and
- * the thread default, with its options, is known to work there.
+ * Preserve a custom `defaultModelSelection` and its options: that backend may
+ * reject the driver's built-in default.
  *
  * `includeConfiguredInstances` is for the project-scoped caller only: a
  * project that disabled every built-in instance should still be able to

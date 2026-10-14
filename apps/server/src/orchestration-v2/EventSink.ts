@@ -110,10 +110,8 @@ export interface EventSinkV2Shape {
     EventSinkV2Error
   >;
   /**
-   * Atomically commit only while the stored provider thread still equals
-   * `expected`, the row its writer read, so a read-modify-write of the row
-   * cannot overwrite an update published in between. The whole row is
-   * compared because not every writer moves `updatedAt`.
+   * Commit only if `expected` still matches the whole row, preventing lost updates.
+   * Some writers leave `updatedAt` unchanged.
    */
   readonly writeIfProviderThreadUnchanged: (input: {
     readonly expected: OrchestrationV2ProviderThread;

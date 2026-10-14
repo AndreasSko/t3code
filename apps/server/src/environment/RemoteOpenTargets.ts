@@ -50,10 +50,8 @@ export const make = Effect.gen(function* () {
     const targets: Array<RemoteOpenTarget> = [];
 
     if (!sshdListening) {
-      // Tailscale SSH answers on the tailnet name with no local sshd, so only
-      // that name can work. A running tailscaled alone is not an SSH route.
-      // With neither, advertise nothing so clients render a clear "no SSH
-      // route" state instead of links that hang.
+      // Without a local sshd, only enabled Tailscale SSH can serve a route;
+      // a running tailscaled alone cannot.
       if (
         magicDnsName !== null &&
         (yield* readTailscaleSshEnabled.pipe(

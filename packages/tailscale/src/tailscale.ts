@@ -205,7 +205,6 @@ export const parseTailscaleStatus = (
     }),
   );
 
-/** Runs a read-only tailscale command and returns its stdout. */
 const readTailscaleOutput = (subcommand: "status" | "debug", args: readonly string[]) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
