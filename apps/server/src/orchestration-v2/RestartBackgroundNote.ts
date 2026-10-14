@@ -177,6 +177,16 @@ export function neverStarted(
 }
 
 /**
+ * A run the restart cancelled before it started, so it supersedes nothing. A
+ * run the user stopped before it started still does.
+ */
+export function cancelledBeforeStart(
+  run: Pick<OrchestrationV2Run, "status" | "startedAt" | "restartContinuationOfRunId">,
+): boolean {
+  return run.status === "cancelled" && neverStarted(run);
+}
+
+/**
  * Whether a restart continuation may prompt from `source`: a turn the restart
  * cut mid-way, or a settled turn that lost awaited work in the restart.
  */

@@ -20,6 +20,7 @@ import {
   cancelledTurnItemWork,
   isAwaitedWork,
   isRestartContinuationSource,
+  cancelledBeforeStart,
   isRestartNoteSource,
   neverStarted,
   restartCancelledBackgroundWorkNote,
@@ -239,7 +240,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         (run) =>
           run.id !== source.id &&
           run.status !== "queued" &&
-          !(neverStarted(run) && run.completedAt !== null) &&
+          !cancelledBeforeStart(run) &&
           runRanAfter(run, source),
       )
     )
