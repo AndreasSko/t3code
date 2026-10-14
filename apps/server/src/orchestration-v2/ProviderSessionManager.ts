@@ -771,7 +771,7 @@ export const layerWithOptions = (
         ReturnType<typeof readReleasedBackgroundTasks>
       >[number];
 
-      // Process-bound tasks cannot report completion after exit, leaving threads waiting.
+      // Process-bound tasks cannot report completion after exit, leaving threads waiting (#15239).
       // Remove only captured task IDs so replacement sessions keep their tasks.
       // Compare-and-set the roster and retry conflicts with provider updates.
       const writeReleasedBackgroundWorkEvents = (

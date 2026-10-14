@@ -23,7 +23,10 @@ export const PersistedServerRuntimeState = Schema.Struct({
   startedAt: Schema.String,
   /** Distinguishes service-managed servers so the CLI can offer the appropriate restart or stop action. */
   serviceManaged: Schema.optional(Schema.Boolean),
-  /** `t3 triage` needs the server build because its CLI can be a different build. */
+  /**
+   * `t3 triage` needs the server build because its CLI can be a different build.
+   * Missing on records from older servers.
+   */
   serverVersion: Schema.optional(Schema.String),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;

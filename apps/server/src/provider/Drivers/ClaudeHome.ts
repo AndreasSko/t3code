@@ -48,7 +48,7 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
 /**
  * Claude rejects `--strict-mcp-config` when `managed-mcp.json` exists.
  * Managed config already excludes user, project and `--mcp-config` servers,
- * so callers can omit that flag.
+ * so callers can omit that flag. Paths match the ones Claude Code checks.
  */
 export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
