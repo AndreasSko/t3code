@@ -15,7 +15,7 @@ export const DEFAULT_PR_LIST_CONTROLS: PullRequestListControls = {
   sort: "updated",
 };
 
-/** A scope saved on the Scratch folder is no longer offered, so it reads as "All projects". */
+/** Treat a saved Scratch folder scope as "All projects". */
 export function withoutScratchProjectScope(
   controls: PullRequestListControls,
   projects: readonly { id: string; environmentId: string; isScratch?: true }[],
