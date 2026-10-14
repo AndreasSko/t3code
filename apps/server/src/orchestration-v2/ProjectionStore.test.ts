@@ -291,6 +291,116 @@ it.effect("memory shell preserves a child provider thread's subagent owner after
   }).pipe(Effect.provide(ProjectionStore.layerMemory)),
 );
 
+it.effect.each([
+  ["memory", ProjectionStore.layerMemory],
+  ["SQL", layerTest],
+] as const)(
+  "%s shells use the latest subagent owner for duplicate provider-thread ids",
+  ([, layer]) =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* addRolledBackRecoveryCandidate("duplicate-provider-thread-owner");
+      const initial = yield* store.getThreadProjection(threadId);
+      const at = initial.updatedAt;
+      const otherThreadId = ThreadId.make("thread:duplicate-provider-thread-owner:other");
+      const otherInstanceId = ProviderInstanceId.make("codex-other");
+      yield* store.apply({
+        id: EventId.make("event:duplicate-provider-thread-owner:other"),
+        type: "thread.created",
+        threadId: otherThreadId,
+        occurredAt: at,
+        payload: { ...initial.thread, id: otherThreadId },
+      });
+      const providerThreadId = ProviderThreadId.make("provider-thread:duplicate-owner");
+      // The later-inserted app thread keeps a stale row after the latest global upsert.
+      for (const [appThreadId, owner] of [
+        [otherThreadId, otherInstanceId],
+        [threadId, providerInstanceId],
+      ] as const) {
+        yield* store.apply({
+          id: EventId.make(`event:duplicate-provider-thread-owner:${owner}`),
+          type: "provider-thread.updated",
+          threadId: appThreadId,
+          occurredAt: at,
+          payload: {
+            id: providerThreadId,
+            driver,
+            providerInstanceId: owner,
+            providerSessionId: null,
+            appThreadId,
+            ownerNodeId: null,
+            nativeThreadRef: null,
+            nativeConversationHeadRef: null,
+            status: "idle",
+            firstRunOrdinal: 1,
+            lastRunOrdinal: 1,
+            handoffIds: [],
+            forkedFrom: null,
+            createdAt: at,
+            updatedAt: at,
+          },
+        });
+      }
+      yield* store.apply({
+        id: EventId.make("event:duplicate-provider-thread-owner:completed"),
+        type: "run.updated",
+        threadId,
+        occurredAt: at,
+        payload: { ...initial.runs[0]!, status: "completed", completedAt: at },
+      });
+      const item = {
+        ...initial.turnItems[0]!,
+        id: TurnItemId.make("item:duplicate-provider-thread-owner"),
+        providerThreadId,
+        type: "subagent" as const,
+        status: "running" as const,
+        subagentId: NodeId.make("node:duplicate-provider-thread-owner"),
+        origin: "provider_native" as const,
+        driver,
+        providerInstanceId,
+        childThreadId: null,
+        title: "Review",
+        prompt: "Review",
+        result: null,
+      };
+      yield* store.apply({
+        id: EventId.make("event:duplicate-provider-thread-owner:item"),
+        type: "turn-item.updated",
+        threadId,
+        occurredAt: at,
+        payload: item,
+      });
+      yield* store.apply({
+        id: EventId.make("event:duplicate-provider-thread-owner:switched"),
+        type: "thread.provider-switched",
+        threadId,
+        occurredAt: at,
+        payload: {
+          ...initial.thread,
+          providerInstanceId: otherInstanceId,
+          modelSelection: { ...modelSelection, instanceId: otherInstanceId },
+        },
+      });
+      const projection = yield* store.getThreadProjection(threadId);
+      const shell = yield* store.getThreadShell(threadId);
+      for (const result of [ProjectionStore.threadShellFromProjection(projection), shell]) {
+        assert.equal(result?.providerInstanceId, otherInstanceId);
+        assert.equal(result?.activeRunId, null);
+        assert.deepEqual(
+          result?.pendingBackgroundTasks?.filter((task) => task.kind === "subagent"),
+          [
+            {
+              taskId: String(item.id),
+              description: item.title,
+              kind: "subagent" as const,
+              providerInstanceId,
+            },
+          ],
+        );
+      }
+    }).pipe(Effect.provide(layer)),
+);
+
 const addOrphanedRecoveryCandidate = Effect.fn("addOrphanedRecoveryCandidate")(function* (
   suffix: string,
 ) {

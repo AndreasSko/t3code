@@ -880,16 +880,19 @@ export function applyToProjection(
  * application event itself belongs to one thread stream. Keeping the binding index here
  * makes in-memory replay match the normalized SQL projection without scanning every
  * thread for every session event.
+ * Provider thread owners are global too: the latest event wins across app threads.
  */
 export interface ProjectionReplayState {
   readonly projections: Map<ThreadId, OrchestrationV2ThreadProjection>;
   readonly providerSessionThreadIds: Map<ProviderSessionId, ReadonlySet<ThreadId>>;
+  readonly providerThreadInstanceIds: Map<ProviderThreadId, ProviderInstanceId>;
 }
 
 function makeProjectionReplayState(): ProjectionReplayState {
   return {
     projections: new Map(),
     providerSessionThreadIds: new Map(),
+    providerThreadInstanceIds: new Map(),
   };
 }
 
@@ -919,6 +922,10 @@ function applyToProjectionReplayState(
   state.projections.set(event.threadId, next);
 
   switch (event.type) {
+    case "provider-thread.updated": {
+      state.providerThreadInstanceIds.set(event.payload.id, event.payload.providerInstanceId);
+      break;
+    }
     case "provider-session.attached": {
       const boundThreadIds = new Set(state.providerSessionThreadIds.get(event.payload.id) ?? []);
       boundThreadIds.add(event.threadId);
@@ -6009,6 +6016,7 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
             const next: ProjectionReplayState = {
               projections: new Map(existing.projections),
               providerSessionThreadIds: new Map(existing.providerSessionThreadIds),
+              providerThreadInstanceIds: new Map(existing.providerThreadInstanceIds),
             };
             if (!applyToProjectionReplayState(next, event)) {
               return [
@@ -6487,7 +6495,7 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
         }),
       getThreadProjection: (threadId) =>
         Effect.gen(function* () {
-          const existing = (yield* Ref.get(replayState)).projections;
+          const { projections: existing, providerThreadInstanceIds } = yield* Ref.get(replayState);
           const readProjection = (
             targetThreadId: ThreadId,
             seenThreadIds: ReadonlySet<ThreadId>,
@@ -6517,18 +6525,13 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
             return yield* new ProjectionStoreThreadNotFoundError({ threadId });
           }
           // Match the SQL shell join, including provider threads stored on child app threads.
-          const providerInstances = new Map(
-            [...existing.values()].flatMap(({ providerThreads }) =>
-              providerThreads.map((thread) => [thread.id, thread.providerInstanceId] as const),
-            ),
-          );
           return {
             ...projection,
             turnItems: projection.turnItems.map((item) => {
               const owner =
                 item.type !== "subagent" || item.providerThreadId === null
                   ? undefined
-                  : providerInstances.get(item.providerThreadId);
+                  : providerThreadInstanceIds.get(item.providerThreadId);
               return owner === undefined ? item : { ...item, owningProviderInstanceId: owner };
             }),
           };
