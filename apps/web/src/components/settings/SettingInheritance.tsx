@@ -342,26 +342,28 @@ export function SettingInheritance({
                         />
                       }
                     >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-sm text-foreground tabular-nums">
-                          {winningLayer?.value}
+                      <span className="flex w-full min-w-0 flex-col">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-sm text-foreground tabular-nums">
+                            {winningLayer?.value}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {winningLayer?.key === "environment"
+                              ? "Environment"
+                              : winningLayer?.label}
+                          </span>
+                          <ChevronRightIcon
+                            aria-hidden
+                            className="size-3 shrink-0 text-muted-foreground [[data-panel-open]_&]:rotate-90"
+                          />
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {winningLayer?.key === "environment"
-                            ? "Environment"
-                            : winningLayer?.label}
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {members
+                            .map(({ labels, secondary }) =>
+                              [labels.primary, secondary].filter(Boolean).join(" · "),
+                            )
+                            .join(", ")}
                         </span>
-                        <ChevronRightIcon
-                          aria-hidden
-                          className="size-3 shrink-0 text-muted-foreground [[data-panel-open]_&]:rotate-90"
-                        />
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {members
-                          .map(({ labels, secondary }) =>
-                            [labels.primary, secondary].filter(Boolean).join(" · "),
-                          )
-                          .join(", ")}
                       </span>
                     </CollapsibleTrigger>
                     <CollapsiblePanel>
