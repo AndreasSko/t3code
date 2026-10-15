@@ -468,6 +468,7 @@ describe("subagent worktree ownership", () => {
     "idle",
     "grandchild",
     "null-branch",
+    "stale-branch",
     "isolated-owner",
     "fork-owner",
     "missing-parent",
@@ -512,7 +513,12 @@ describe("subagent worktree ownership", () => {
       });
       const child = shell({
         id: ThreadId.make("child"),
-        branch: scenario === "null-branch" ? null : "feature",
+        branch:
+          scenario === "null-branch"
+            ? null
+            : scenario === "stale-branch"
+              ? "t3/15a6e5ae"
+              : "feature",
         worktreePath: fixture.worktree,
         lineage: {
           parentThreadId:
@@ -580,8 +586,8 @@ describe("subagent worktree ownership", () => {
             ? "Thread is running or has pending work"
             : shared
               ? "Shared by 2 threads"
-              : scenario === "null-branch"
-                ? "A subagent thread has no branch to restore it from"
+              : scenario === "null-branch" || scenario === "stale-branch"
+                ? "A subagent thread's branch differs from this worktree's branch"
                 : scenario === "recent-activity"
                   ? "Settled for 2 of 8 days"
                   : scenario === "recent-inactive"
@@ -601,6 +607,7 @@ describe("subagent worktree ownership", () => {
     "settled",
     "resettled",
     "null-branch",
+    "stale-branch",
   ] as const)("cancels removal when a child changes during measurement (%s)", (change) =>
     runCleanupTest(
       Effect.gen(function* () {
@@ -623,7 +630,12 @@ describe("subagent worktree ownership", () => {
           root,
           {
             ...child,
-            branch: change === "null-branch" ? null : child.branch,
+            branch:
+              change === "null-branch"
+                ? null
+                : change === "stale-branch"
+                  ? "t3/15a6e5ae"
+                  : child.branch,
             settledAt: change === "settled" ? at(-20 * DAY_MS) : child.settledAt,
             updatedAt: change === "settled" || change === "resettled" ? at(0) : child.updatedAt,
             status: change === "running" ? "running" : "idle",
