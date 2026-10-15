@@ -65,8 +65,9 @@ export function AgentActivity(
   const monochrome =
     environment.widgetRenderingMode === "accented" || environment.widgetRenderingMode === "vibrant";
 
-  // Match the web status palette; iPhone Mirroring and Mac notifications need
-  // its light variant, while iPhone Live Activities use the dark variant.
+  // On iPhone the LA sits on a dark material, but macOS (iPhone Mirroring /
+  // Mac notification center) renders it on a light one — so pick the web
+  // palette's light (-600) or dark (-300) variant off the color scheme.
   const isLightScheme = environment.colorScheme === "light";
   const phaseTint = (phase: AgentActivityPhase | undefined): Foreground => {
     if (environment.isLuminanceReduced) {
@@ -77,23 +78,22 @@ export function AgentActivity(
     }
     switch (phase) {
       case "waiting_for_approval":
-        return isLightScheme ? "#d97706" : "#fcd34d"; // amber-600 / amber-300
+        return isLightScheme ? "#d97706" : "#fcd34d";
       case "waiting_for_input":
-        return isLightScheme ? "#4f46e5" : "#a5b4fc"; // indigo-600 / indigo-300
+        return isLightScheme ? "#4f46e5" : "#a5b4fc";
       case "failed":
-        return isLightScheme ? "#dc2626" : "#fca5a5"; // red-600 / red-300
+        return isLightScheme ? "#dc2626" : "#fca5a5";
       case "completed":
-        return isLightScheme ? "#059669" : "#6ee7b7"; // emerald-600 / emerald-300
+        return isLightScheme ? "#059669" : "#6ee7b7";
       case "stale":
         return secondaryForeground;
       case "starting":
       case "running":
       default:
-        return isLightScheme ? "#0284c7" : "#7dd3fc"; // sky-600 / sky-300
+        return isLightScheme ? "#0284c7" : "#7dd3fc";
     }
   };
 
-  // Put agents needing attention first in every presentation.
   const phasePriority = (phase: AgentActivityPhase): number => {
     if (phase === "waiting_for_approval" || phase === "waiting_for_input") return 0;
     if (phase === "failed") return 1;
@@ -130,8 +130,10 @@ export function AgentActivity(
       ? phaseTint(failedRow.phase)
       : tint;
 
-  // Derive the finished outcome from all rows so every presentation agrees
-  // and any failure dominates a newer success.
+  // The outcome is derived here from the rows rather than taken from the server
+  // subtitle (which keys off the newest terminal row): every presentation —
+  // header text, tint, count slots, minimal glyph — must agree, and a failure
+  // anywhere should dominate a newer success.
   const allDone = props.activeCount === 0;
   const doneLabel = failedRow ? "Failed" : "Done";
   const outcomeLabel = failedRow ? "Agent work failed" : "Agent work completed";
@@ -190,7 +192,6 @@ export function AgentActivity(
     </HStack>
   );
 
-  // Single-line rows fit the expanded island's ~160pt height budget.
   const renderCompactRow = (row: AgentActivityRowProps) => (
     <HStack spacing={7} alignment="center">
       <Text
@@ -202,8 +203,12 @@ export function AgentActivity(
       >
         {row.threadTitle}
       </Text>
-      {/* Bare texts share width proportionally; frames reserve excess space and
-      layoutPriority lets the project starve the title. */}
+      {/* No layoutPriority and no frame on the project: two bare texts take
+          their ideal width when it fits and shrink proportionally only when it
+          doesn't — so short rows never truncate, and long title + long project
+          truncate together. (A maxWidth frame is greedy and reserved its full
+          width even for short names; layoutPriority let the project starve the
+          title.) */}
       <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryForeground), lineLimit(1)]}>
         {row.projectTitle}
       </Text>
@@ -220,8 +225,11 @@ export function AgentActivity(
     </HStack>
   );
 
-  // Template images ignore direct frame/foregroundStyle modifiers, so apply
-  // them to a container. The 3:2 frame preserves the mark's aspect ratio.
+  // Image views only honor `resizable` directly (frame/foregroundStyle are
+  // dropped), so we size it via a container frame the resizable image fills and
+  // tint it through the container's foreground style, which the template image
+  // inherits. The 3:2 frame matches the glyph's aspect ratio so it never
+  // distorts.
   const renderLogo = (height: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
@@ -240,7 +248,6 @@ export function AgentActivity(
           ...(deepLink ? [widgetURL(deepLink)] : []),
         ]}
       >
-        {/* ZStack centers the status text without the leading logo skewing it. */}
         <ZStack>
           <HStack spacing={0} alignment="center">
             {renderLogo(13, primaryForeground)}
@@ -281,7 +288,6 @@ export function AgentActivity(
         {row4 ? renderCompactRow(row4) : null}
       </VStack>
     ),
-    // The .small family serves the watchOS Smart Stack and CarPlay.
     bannerSmall: (
       <VStack alignment="leading" spacing={5} modifiers={[padding({ all: 10 })]}>
         <HStack spacing={7} alignment="center">
@@ -326,7 +332,6 @@ export function AgentActivity(
           : activeLabel}
       </Text>
     ),
-    // The minimal form is a ~22pt circle, too small for the wordmark.
     minimal:
       (attentionRow || failedRow || allDone) && heroRow
         ? renderGlyph(phaseSymbol(heroRow.phase), 13, phaseTint(heroRow.phase))
@@ -339,12 +344,12 @@ export function AgentActivity(
         </Text>
       </HStack>
     ),
-    // Extra center content would exceed the expanded island's height budget.
+    // No center content: the phase glyphs + statuses in expandedBottom already
+    // carry the attention signal, and the expanded island's height budget is
+    // tight enough that a summary line there pushed the third row off.
     expandedCenter: null,
-    // The trailing region hugs the island's corner radius and clips timestamps.
     expandedTrailing: null,
     expandedBottom: (
-      // Horizontal padding keeps rows clear of the island's corner curvature.
       <VStack
         alignment="leading"
         spacing={5}

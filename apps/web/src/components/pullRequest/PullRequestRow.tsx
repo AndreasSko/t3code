@@ -28,7 +28,6 @@ import {
   PullRequestReviewDecisionGlyph,
 } from "./pullRequestPresentation";
 
-/** Show more label slots as width permits; the last visible pill carries the remaining count. */
 const LABEL_SLOTS = [
   { overflow: "@xl/pr-row-meta:hidden" },
   { overflow: "@3xl/pr-row-meta:hidden" },
@@ -94,7 +93,6 @@ function PullRequestRowImpl({
   showProjectTitle: boolean;
   showProvider: boolean;
   environmentLabel?: string;
-  /** Signal matches in hidden description/comment/commit text so rows do not appear unrelated. */
   matchedElsewhere?: boolean;
   /** Used by the list's shared visibility observer to defer optional line-count reads. */
   statsKey?: string;
@@ -138,7 +136,6 @@ function PullRequestRowImpl({
         />
         <PullRequestRowLines
           number={
-            // Right-clicking the linked number copies the PR URL instead of opening the edit menu.
             <span
               className={PULL_REQUEST_ROW_NUMBER_CLASS}
               onContextMenu={(event) => {
@@ -168,7 +165,6 @@ function PullRequestRowImpl({
                   }}
                 />
               )}
-              {}
               {entry.reviewDecision === undefined ? null : (
                 <PullRequestReviewDecisionGlyph decision={entry.reviewDecision} />
               )}
@@ -255,5 +251,9 @@ function PullRequestRowImpl({
   );
 }
 
-/** Stable onSelect and unchanged row inputs let memo skip search keystrokes and status polls. */
+/**
+ * Memoized: the list re-renders on every keystroke of a search and every status poll, and a
+ * row whose entry, selection and match state are unchanged has nothing new to say. Effective
+ * because the route hands it a stable `onSelect`.
+ */
 export const PullRequestRow = memo(PullRequestRowImpl);

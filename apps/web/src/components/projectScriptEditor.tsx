@@ -113,7 +113,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   autoOpenPreview: false,
 };
 
-/** scriptId: null opens an add form. */
+/** `scriptId: null` means "add". */
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;

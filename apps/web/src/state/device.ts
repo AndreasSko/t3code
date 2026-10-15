@@ -39,7 +39,9 @@ export function useDeviceState(environmentId: EnvironmentId | null): {
   return { state: query.data ?? EMPTY_DEVICE_STATE, loaded: query.data !== undefined };
 }
 
-/** Bearer/DPoP streams mint tickets; refresh on 401. Re-pairing changes the connection key and credentials. */
+/**
+ * Keyed on the prepared connection so a re-pair produces new credentials.
+ */
 const deviceHubAccessAtom = Atom.family((environmentId: EnvironmentId) =>
   connectionAtomRuntime
     .atom((get) => {

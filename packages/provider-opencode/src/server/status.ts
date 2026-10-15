@@ -200,8 +200,9 @@ function openCodeCapabilitiesForModel(input: {
   readonly agents: ReadonlyArray<Agent>;
 }): ModelCapabilities {
   const rawVariantValues = Object.keys(input.model.variants ?? {});
-  // Supply standard reasoning levels when OpenCode advertises no variants,
-  // so the composer still offers a reasoning selector.
+  // When a model advertises no variants, synthesize the standard reasoning
+  // levels so the composer still offers a Reasoning selector (mirrors the
+  // Codex/Grok experience where reasoning is always configurable).
   const variantValues =
     rawVariantValues.length > 0 ? rawVariantValues : ["low", "medium", "high", "xhigh"];
   const defaultVariant = inferDefaultVariant(input.providerID, variantValues);
@@ -384,8 +385,9 @@ export interface OpenCode2Model {
 }
 
 /**
- * Overlapping provider catalogs need distinct labels; omit a redundant OpenCode label
- * and use the provider id until the server supplies its name.
+ * One OpenCode instance fronts several providers, and their catalogues overlap:
+ * OpenCode Zen and OpenCode Go both list Step 5 Preview Free. Naming the
+ * sub-provider is what tells two such rows apart.
  */
 function subProviderLabelFor(input: {
   readonly providerID: string;
@@ -397,7 +399,12 @@ function subProviderLabelFor(input: {
     : label;
 }
 
-/** OpenCode loads its catalog lazily; retry empty reads and retain the last non-empty list. */
+/**
+ * A server loads its catalog lazily and lists nothing for its first few
+ * hundred milliseconds, and a local instance starts a fresh server for each
+ * status check. So an empty list is read again for a while, and the last
+ * non-empty list stands in if the catalog still has not loaded.
+ */
 export const makeOpenCode2ModelLoader = <E>(
   list: Effect.Effect<ReadonlyArray<OpenCode2Model>, E>,
 ) =>
@@ -565,7 +572,6 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
     enabled: true,
     checkedAt,
     models,
-    // Every session can compact; a workspace snapshot adds that directory's commands.
     slashCommands: [COMPACT_SLASH_COMMAND],
     probe:
       result.value.length > 0

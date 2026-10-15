@@ -66,7 +66,9 @@ function optionsSignature(value: unknown, seen = new WeakSet<object>()): string 
     case "undefined":
       return "undefined";
     case "function":
-      // Compare factory source: inline function identities would make setOptions re-enter indefinitely.
+      // Header factories are frequently recreated inline. Their source is
+      // stable across equivalent renders, while a reference comparison would
+      // make navigation.setOptions re-enter the navigator indefinitely.
       return `function:${Function.prototype.toString.call(value)}`;
     case "symbol":
       return `symbol:${String(value)}`;
@@ -134,7 +136,12 @@ function stabilizeOptionFunctions(
 
 export function NativeStackScreenOptions(props: {
   readonly options?: AppNativeStackNavigationOptions;
-  /** Change this when closed-over menu data changes; stabilized factories cannot detect closure changes. */
+  /**
+   * Causes dynamic native header factories to be reapplied when their closed-over
+   * menu content changes. Factory functions are intentionally stabilized, so
+   * their source alone cannot capture a menu that was initially empty while
+   * asynchronous data was loading.
+   */
   readonly optionsVersion?: unknown;
   readonly listeners?: Record<string, (event: never) => void>;
   readonly name?: string;
@@ -163,8 +170,6 @@ export function NativeStackScreenOptions(props: {
       return;
     }
     const signature = optionsSignature([stableOptions, props.optionsVersion]);
-    // Avoid re-entering navigation state when semantically equal options are
-    // reapplied every layout (common when callers pass unstable object literals).
     if (lastAppliedOptionsSignatureRef.current === signature) {
       return;
     }

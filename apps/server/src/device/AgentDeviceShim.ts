@@ -1,6 +1,4 @@
 // @effect-diagnostics preferSchemaOverJson:off - JSON string literals embed paths safely into generated JavaScript.
-// Prepend the pinned agent-device launcher to provider PATH so its version
-// matches injected instructions regardless of global installs.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import * as Effect from "effect/Effect";

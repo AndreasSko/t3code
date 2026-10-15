@@ -130,10 +130,14 @@ import {
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
 
-/** Collapsed composer height excluding the safe-area inset; used for feed overlap. */
+/**
+ * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
+ */
 export const COMPOSER_COLLAPSED_CHROME = 60;
 
-/** Expanded composer height excluding the safe-area inset; used for feed overlap. */
+/**
+ * Height of the expanded composer (card + toolbar + vertical padding, excluding safe-area inset).
+ */
 export const COMPOSER_EXPANDED_CHROME = 156;
 
 export interface ThreadComposerProps {
@@ -145,7 +149,11 @@ export interface ThreadComposerProps {
   readonly bottomInset?: number;
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
-  /** Loading has no messages yet; syncing reconciles messages already on screen. */
+  /**
+   * Message sync phase for the selected thread (drives the status pill):
+   * "loading" = first fetch, nothing to show yet; "syncing" = cached messages
+   * are on screen while they reconcile with the server.
+   */
   readonly threadSyncPhase?: "loading" | "syncing" | null;
   readonly selectedThread: EnvironmentThreadShell;
   readonly reportedModelSelection?: ModelSelection | null;
@@ -156,11 +164,8 @@ export interface ThreadComposerProps {
   readonly canStopThread: boolean;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
-  /** Why sending is blocked right now (shown as the send button's label), or null. */
   readonly sendBlockedReason?: string | null;
-  /** Where the composer's content lives. Defaults to this thread's own draft. */
   readonly draftKey?: string;
-  /** Queued edits save instead of send and retain the server attachments for removal. */
   readonly queuedEdit?: {
     readonly existingAttachments: ReadonlyArray<ChatAttachment>;
     readonly saving: boolean;
@@ -179,7 +184,6 @@ export interface ThreadComposerProps {
   readonly onSendMessage: (followUp?: ActiveTurnComposerAction) => Promise<MessageId | null>;
   /** `/usage-limits` resolves locally; the host decides where the report shows. Null clears it. */
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
-  /** False restricts the picker to the thread session's provider instance. */
   readonly canSwitchProvider: boolean;
   readonly onUpdateModelSelection: (modelSelection: ModelSelection) => void;
   readonly onUpdateRuntimeMode: (runtimeMode: RuntimeMode) => void;
@@ -189,10 +193,13 @@ export interface ThreadComposerProps {
   readonly onEditorFocusChange?: (focused: boolean) => void;
 }
 
-// Share the dock/surface transition so final-size content stays clipped while growing upward.
-// Android uses only the IME-synced slide; a simultaneous timed layout morph jitters.
+// Android gets NO layout transition: the composer rides the keyboard via KeyboardStickyView
+// (frame-synced to the IME), and a time-based morph running alongside that translate reads as
+// jitter.
 export const COMPOSER_TRANSITION_DURATION_MS = 220;
-// Side panes animate width; nested horizontal transitions would trail the toolbar.
+// Side panes already animate the dock's width. Nested horizontal layout
+// transitions would leave the surface trailing its toolbar's new position.
+// Keep the vertical pill/card morph while horizontal layout follows the dock.
 const composerHeightTransition: LayoutAnimationFunction = (values) => {
   "worklet";
   const timing = {
@@ -236,7 +243,6 @@ const FOLLOW_UP_ACTION_SUBTITLE = {
   restart: "Start the turn over with this message",
 } as const;
 
-/** Long-press chooses follow-up behavior during a turn, like the hardware Command modifier. */
 function SendActionButton(props: {
   readonly accessibilityLabel: string;
   readonly presentation: ComposerSendPresentation;
@@ -301,7 +307,8 @@ export function ComposerSurface(props: {
   }));
   const layoutTransition = shouldAnimate ? COMPOSER_LAYOUT_TRANSITION : undefined;
 
-  // Animate each native frame; outer clipping alone leaves glass/content at final height.
+  // Each native frame follows the same transition. Animating only the outer
+  // clip leaves the glass and content at their final height on the first frame.
   return (
     <Animated.View
       className={
@@ -320,7 +327,8 @@ export function ComposerSurface(props: {
         fallbackColor={colors["--color-composer-surface"]}
         fallbackClassName="border border-composer-border"
         glassEffectStyle="regular"
-        // Keep passive native glass outside interactive controls' layout and hit-testing.
+        // The composer is a passive material containing interactive controls.
+        // Keep native glass out of the interactive content's layout path.
         pointerEvents="none"
         tintColor="transparent"
         layout={layoutTransition}
@@ -383,7 +391,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       serverConfig: props.serverConfig,
       states: uploadStates,
     });
-  // The outbox label distinguishes immediate delivery from connection, queue, or upload waits.
   const sendPresentation = resolveComposerSendPresentation({
     editingQueuedMessage: queuedEdit !== null,
     running: props.activeThreadBusy,
@@ -411,7 +418,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
   const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-  // Queued edits use their own draft; settings and dictation keep the composer owner key.
+  // Content lives under the edit's own draft while a queued message is open;
+  // the owner key still identifies this composer for settings and dictation.
   const composerDraftKey = props.draftKey ?? composerOwnerKey;
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
     Keyboard.dismiss();
@@ -426,7 +434,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     });
   };
   const { onSendMessage, onChangeDraftMessage, onShowUsageLimits } = props;
-  // Intercept /usage-limits only when the selected provider has Limits data.
+  // T3 owns /usage-limits only where Limits has data for the selected provider;
+  // elsewhere the name stays the provider's own and is sent through untouched.
   const usageLimitsOffered =
     selectedProviderStatus !== null &&
     hasProviderUsageLimits(
@@ -565,7 +574,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const handleSend = useCallback(
     async (followUp?: ActiveTurnComposerAction) => {
       if (voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0) return;
-      // Attached content makes /usage-limits an ordinary prompt even when typed in full.
+      // Typed out in full rather than picked from the menu. Attachments mean the
+      // user is sending a prompt, so those go through as usual.
       if (
         usageLimitsOffered &&
         isUsageLimitsCommand(props.draftMessage) &&
@@ -582,7 +592,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         if (messageId === null) {
           return;
         }
-        // Start ActivityKit while foregrounded, after send feedback to avoid competing on the tap frame.
+        // Armed after the send so its preference read and native Activity start don't contend
+        // with the queued-message feedback on the tap frame.
         armAgentAwarenessLiveActivityForLocalWork({
           environmentId: props.environmentId,
           threadTitle: props.selectedThread.title,
@@ -712,7 +723,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   useEffect(
     () =>
-      // The native-stack patch reports UIKit dismissal completion so keyboard restoration can wait.
+      // UIKit's completion callback for the sheet dismissal, surfaced by the
+      // native-stack patch. This is when the queued keyboard restore runs.
       (navigation as unknown as NavigationWithFinishTransitioning).addListener(
         "finishTransitioning",
         settingsSheetPresentation.onStackTransitionsFinished,
@@ -730,7 +742,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           Platform.OS === "android" ? themeColorWithAlpha(composerPanel, 1) : undefined,
       }}
     >
-      {/* Reanimated Animated.View drops experimental_backgroundImage on Android; use a plain View. */}
+      {/* The backdrop gradient lives on a plain View: Reanimated's Animated.View
+          silently drops experimental_backgroundImage on Android, which left this
+          strip fully transparent and the feed text legible through the composer. */}
       <View
         className={
           Platform.OS === "android"
@@ -795,8 +809,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   paddingTop: 14,
                 }
               : {
-                  // Keep the numeric radius close to the expanded card so the
-                  // shape morph stays bounded while rendering as a capsule.
                   borderRadius: 27,
                   overflow: "hidden" as const,
                   paddingVertical: 2,
@@ -873,7 +885,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   });
                 }}
                 onOpenAttachment={openDraftDocument}
-                // Collapsed chips focus the editor so attachments do not consume every available tap target.
+                // A rested composer full of chips left almost nowhere to tap to start typing:
+                // every chip opened its file instead. Collapsed, they focus the editor.
                 chipsInert={!isExpanded}
                 onInertChipPress={() => inputRef.current?.focus()}
                 ref={inputRef}
@@ -973,7 +986,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     : FOLLOW_UP_ACTION_LABEL[sendPresentation.alternate]
                 }
                 scrollEnabled={isExpanded}
-                // Android centers the collapsed single line with native gravity; iOS uses content insets.
+                // Android: collapsed single line centers natively (gravity) in
+                // a pill-height box matching the send button; iOS keeps insets.
                 singleLineCentered={!isExpanded}
                 contentInsetVertical={isExpanded || Platform.OS === "android" ? 0 : 6}
                 style={

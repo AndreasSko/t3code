@@ -36,7 +36,6 @@ export type MarkdownFileIcon = keyof typeof MARKDOWN_FILE_ICON_SOURCES;
 
 export type MarkdownLinkIcon = "github";
 
-/** Monochrome brand marks use the link tint so they follow the theme. */
 export function resolveMarkdownLinkIcon(host: string): MarkdownLinkIcon | null {
   const hostname = host.toLowerCase();
   if (hostname === "github.com" || hostname.endsWith(".github.com")) return "github";
@@ -297,7 +296,6 @@ export function resolveMarkdownLinkPresentation(href: string): MarkdownLinkPrese
   };
 }
 
-/** Backticks become file references only when the shared path heuristic recognizes the whole span. */
 export function resolveMarkdownInlineCodePresentation(
   content: string,
 ): Extract<MarkdownLinkPresentation, { readonly kind: "file" }> | null {

@@ -21,7 +21,10 @@ export const PROVIDER_STATUS_STYLES = {
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
 
-/** Missing probe state uses generic copy; a ready provider without account metadata is still available. */
+/**
+ * A ready provider without account metadata remains available and does not
+ * imply an authentication failure.
+ */
 export function getProviderSummary(provider: ServerProvider | undefined) {
   if (!provider) {
     return {

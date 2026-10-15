@@ -625,7 +625,9 @@ import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplat
 
 const TIMELINE_SCROLL_CANCEL_SENTINEL = Object.freeze({});
 const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
-// Mid-turn updatedAt bumps broadcast full visit commands without changing unread state; throttle them.
+// During an active turn the thread's updatedAt advances several times per
+// second, and every server-side visit is a full command dispatch plus a
+// broadcast to all shell subscribers.
 const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
@@ -786,7 +788,6 @@ function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
   return true;
 }
 
-/** Leaves file pastes to the composer's own handler. */
 function pasteTextToFocusComposer(event: ClipboardEvent): string | null {
   if (!event.clipboardData || event.clipboardData.files.length > 0) return null;
   if (!shouldRedirectInputToComposer(event)) return null;
@@ -919,7 +920,6 @@ function useLocalDispatchState(input: {
   };
 }
 
-/** Same terminal ids (order ignored) — avoids reconcile when only server session ordering differs. */
 function terminalIdListsEqual(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) {
     return false;
@@ -937,7 +937,10 @@ function terminalIdListsEqual(left: readonly string[], right: readonly string[])
   return true;
 }
 
-/** The server list lags terminal.open; reconciling a strict subset would discard a fresh split layout. */
+/**
+ * Typical right after `terminal.open`: known-session list lags; reconciling would drop the new id
+ * and later re-add it as a separate group (no split layout).
+ */
 function serverTerminalIdsStrictSubsetOfClient(
   serverIds: readonly string[],
   clientIds: readonly string[],
@@ -1070,7 +1073,9 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     () => drawerTerminalSessions.map((session) => session.target.terminalId),
     [drawerTerminalSessions],
   );
-  // Include fresh local and panel ids: server lag or drawer filtering must not attach two viewports to one PTY.
+  // Every client-side id source participates in allocation: the server list
+  // lags fresh opens, and panel terminals are filtered out of the drawer's
+  // sessions — an id collision attaches two viewports to one PTY session.
   const allocatableTerminalIds = useMemo(
     () => [
       ...new Set([
@@ -1526,7 +1531,6 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   );
 });
 
-// Draft and thread error maps race during promotion; timestamps let the latest write win.
 type LocalThreadErrorEntry = {
   readonly message: string | null;
   readonly at: number;
@@ -1542,7 +1546,13 @@ const noopHeldTurnDiff = (_turnId: RunId, _filePath?: string) => {};
 const noopHeldRevert = (_targetTurnCount: number) => {};
 const noopHeldAttachment = (_attachment: ChatFileAttachment) => {};
 
-/** Release send-time end space to re-enable LegendList follow; a held anchor otherwise strands following-end. */
+/**
+ * Drops the send-time anchored end space. That space is what holds a sent
+ * message near the top while its turn streams, and it keeps LegendList's
+ * maintainScrollAtEnd switched off for as long as it is installed. Tool
+ * activity and every return to the live edge release the anchor, otherwise
+ * the timeline settles into "following-end" with nothing following anything.
+ */
 function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
   current: T,
 ): T {
@@ -1655,7 +1665,6 @@ export default function ChatView(props: ChatViewProps) {
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
     [environments],
   );
-  // Per-run edit drafts preserve the thread's unsent draft; stored attachment removals wait for save.
   const [editingQueuedRun, setEditingQueuedRun] = useState<{
     readonly threadId: ThreadId;
     readonly runId: RunId;
@@ -1698,7 +1707,6 @@ export default function ChatView(props: ChatViewProps) {
     status: threadStatus,
   });
   const threadDetailLoading = threadSyncPhase === "loading";
-  // Keep the newest usage report between turns so the meter does not disappear (#8144).
   const activeThreadLiveTokenUsage = useMemo(
     () => latestProviderTurnTokenUsage(serverProjection?.providerTurns ?? []),
     [serverProjection?.providerTurns],
@@ -1728,7 +1736,9 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveCommittedServerUserMessageIds(serverVisibleTurnItems),
     [serverVisibleTurnItems],
   );
-  // Queued messages have no turn item until startup; include persisted messages to retire cancelled optimistic rows.
+  // Queued messages have no turn item until their run starts, so the
+  // turn-item-derived set alone can never retire their optimistic rows —
+  // cancelling such a run would leave a phantom "pending" queue row behind.
   const serverAcknowledgedUserMessageIds = useMemo(() => {
     const ids = new Set(committedServerMessageIds);
     for (const message of serverProjection?.messages ?? []) {
@@ -1857,7 +1867,6 @@ export default function ChatView(props: ChatViewProps) {
     ownerKey: string;
   } | null>(null);
   const [heldWorktreeSetup, setHeldWorktreeSetup] = useState<WorktreeSetupSnapshot | null>(null);
-  // A draft id survives bootstrap thread-id rotation; resend only after cancellation restores its message.
   const [workLocallyResendDraftId, setWorkLocallyResendDraftId] = useState<DraftId | null>(null);
   // The draft route reuses this component across drafts, so a resend recorded
   // for one draft must not fire when the user comes back to it later.
@@ -1937,11 +1946,9 @@ export default function ChatView(props: ChatViewProps) {
     [],
   );
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLDivElement | null>(null);
-  // Hold the expanded composer inset while it rests so expansion cannot cover newly exposed rows.
   const [composerTimelineInset, setComposerTimelineInset] = useState(0);
   const composerTimelineInsetRef = useRef(0);
   const composerRestingRef = useRef(false);
-  // False while a status bar stands in for the composer (a native subagent).
   const composerMountedRef = useRef(true);
   const [scrollToEndClearance, setScrollToEndClearance] = useState(0);
   const isAtEndRef = useRef(true);
@@ -1949,7 +1956,6 @@ export default function ChatView(props: ChatViewProps) {
     () => resolveTimelineIsAtEnd(legendListRef.current?.getState()) ?? isAtEndRef.current,
     [],
   );
-  // Rest the composer only when there is reading space to give back.
   const [timelineOverflows, setTimelineOverflows] = useState(false);
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
@@ -2024,7 +2030,9 @@ export default function ChatView(props: ChatViewProps) {
     ? null
     : ((draftId ? localDraftErrorsByDraftId[draftId]?.message : null) ?? null);
   const localServerError = localServerErrorsByThreadKey[routeThreadKey]?.message ?? null;
-  // Move draft errors on promotion so failed sends stay visible; collisions use the latest write.
+  // Draft errors are keyed by draftId while server errors are keyed by thread
+  // key, so a pending draft entry must migrate when the server thread loads or
+  // a failed send would silently disappear on promotion.
   useEffect(() => {
     if (!serverThread || !draftId) {
       return;
@@ -2141,7 +2149,9 @@ export default function ChatView(props: ChatViewProps) {
   const threadError = isServerThread
     ? (localServerError ?? serverRuntime?.lastError ?? null)
     : localDraftError;
-  // Mask the displayed error: clearing its local shadow would reveal the persisted session.lastError again.
+  // Dismissals can only mask the shown error, never clear it: a server thread
+  // keeps its error in session.lastError, so clearing the local shadow would
+  // just fall through to the persisted one.
   const threadErrorBannerKey = getThreadErrorBannerKey(routeThreadKey, threadError);
   const visibleThreadError = shouldShowThreadErrorBanner(
     routeThreadKey,
@@ -2150,12 +2160,13 @@ export default function ChatView(props: ChatViewProps) {
   )
     ? threadError
     : null;
-  // The session mask has no subscription and setThreadError may bail; tick to hide the banner immediately.
+  // Dismissing only mutates the session-scoped mask set, which does not trigger
+  // a render on its own; setThreadError(null) can also bail when the local
+  // shadow is already empty and the banner is driven purely by
+  // session.lastError. Bump a tick so the banner hides immediately.
   const [, setThreadErrorBannerDismissTick] = useState(0);
   const defaultRuntimeMode = resolveProjectSettings(settings, activeThread?.projectId ?? null)
     .settings.defaultRuntimeMode;
-  // Implicit drafts follow their current project/environment, including retargets.
-  // Explicit composer choices and existing server threads retain their permissions.
   const runtimeMode =
     composerRuntimeMode ??
     (isServerThread ? activeThread?.runtimeMode : undefined) ??
@@ -2207,6 +2218,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeEnvironmentServerBrowser = useEnvironmentSupportsServerBrowser(
     activeThreadRef?.environmentId ?? null,
   );
+  // Electron hosts its own browser tabs; other clients need the environment to host them.
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
     container: workspaceLayoutElement,
@@ -2229,7 +2241,10 @@ export default function ChatView(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
-  // LegendList never recomputes anchored filler geometry; release settled runs to prevent phantom scroll range.
+  // LegendList sizes the anchored end-space filler for the geometry at anchor
+  // time and never recomputes it, so a lingering anchor leaves stale filler
+  // height behind the composer — phantom scroll range on threads whose content
+  // fits.
   const anchorRunSettled = useMemo(() => {
     if (timelineAnchorMessageId === null) return false;
     const anchorRun = serverProjection?.runs.find(
@@ -2256,8 +2271,6 @@ export default function ChatView(props: ChatViewProps) {
   useLayoutEffect(() => {
     const explicitThreadRef = explicitDiffOpenRef.current;
     explicitDiffOpenRef.current = null;
-    // Generic openings always show Changes, including tab fallbacks and thread changes.
-    // A timeline click instead opens the specific turn/file the user requested.
     if (diffOpen && activeThreadRef && explicitThreadRef !== activeThreadRef) {
       useDiffPanelStore.getState().selectGitScope(activeThreadRef, "branch");
     }
@@ -2449,8 +2462,6 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const removeClonedProject = useRemoveClonedProject();
-  // The banner mirrors the server's clone state, so a request that never got
-  // there needs its own feedback.
   const runProjectCloneAction = useCallback(
     async (
       title: string,
@@ -2888,7 +2899,10 @@ export default function ChatView(props: ChatViewProps) {
     if (!Number.isNaN(lastVisitedAt) && lastVisitedAt >= threadUpdatedAt) return;
 
     if (serverThread.lastVisitedAt !== undefined) {
-      // Dedupe before the command echo lands. Rewinding unread keeps updatedAt, so it stays unread until new activity.
+      // Dedupe per watermark — the effect re-runs before the command's echo
+      // lands. The dedupe also keeps a mark-unread on the open thread sticky:
+      // the rewind leaves updatedAt untouched, so the already-dispatched key
+      // skips a fresh visit until new activity lands or the thread is reopened.
       const dispatchKey = `${routeThreadKey}:${serverThread.updatedAt}`;
       if (lastDispatchedVisitRef.current === dispatchKey) return;
       const dispatch = () => {
@@ -2899,7 +2913,6 @@ export default function ChatView(props: ChatViewProps) {
           input: { threadId: serverThread.id, visitedAt: serverThread.updatedAt },
         });
       };
-      // Completions change unread state immediately; throttle streaming bumps with the newest watermark.
       const latestRunCompletedAtMs = serverThread.latestRun?.completedAt
         ? Date.parse(serverThread.latestRun.completedAt)
         : NaN;
@@ -2931,8 +2944,6 @@ export default function ChatView(props: ChatViewProps) {
     visitThreadMutation,
   ]);
 
-  // Once a thread selects an environment, never substitute the primary
-  // environment's config while the selected environment is still loading.
   const serverConfig = activeThread
     ? (activeEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
@@ -3085,7 +3096,6 @@ export default function ChatView(props: ChatViewProps) {
       items.push({
         id: `server-version:${serverUpdateEnvironmentId}`,
         variant: updateFailed ? "error" : "default",
-        // Prioritize update progress over passive notices, but keep activity attached.
         priority: updateInProgress ? "urgent" : "notice",
         icon: <ComposerServerUpdateIcon status={serverUpdateState.status} />,
         title:
@@ -3408,13 +3418,13 @@ export default function ChatView(props: ChatViewProps) {
     hasComposerAttachments: composerHasAttachments,
   });
   const activePendingApproval = pendingApprovals[0] ?? null;
-  // Store only the open moment so rows stay live; any resumption that spends quota invalidates the panel.
   const [usageLimitsPanel, setUsageLimitsPanel] = useState<{
     readonly key: string;
     readonly threadKey: string;
     readonly now: number;
   } | null>(null);
-  // Keep the panel during reconnect; include approvals/questions in its key because answers resume quota spending.
+  // A pending approval or question is part of the key: once it is answered,
+  // from this client or any other, the agent resumes and spends quota.
   const usageLimitsKey =
     activeProviderInstanceId === null || (isServerThread && activeThread === undefined)
       ? null
@@ -3496,7 +3506,6 @@ export default function ChatView(props: ChatViewProps) {
     usageLimitSources,
     usageLimitsKey,
   ]);
-  // Responses can resolve after navigating away; only the originating thread's panel clears.
   const clearUsageLimitsFor = useCallback(
     (threadKey: string) =>
       setUsageLimitsPanel((current) =>
@@ -3544,7 +3553,6 @@ export default function ChatView(props: ChatViewProps) {
     (isSendBusy || phase === "connecting" || phase === "running") &&
     compactRequestIsActive &&
     !compactionSettled;
-  // Rewinding must not add a Thinking row to the timeline.
   const isWorking =
     phase === "running" ||
     isSendBusy ||
@@ -3593,8 +3601,6 @@ export default function ChatView(props: ChatViewProps) {
   const activeRunPreparing = activeActivityRun?.status === "preparing";
   const sendQueuesBehindSetup =
     isServerThread && (activeRunPreparing || activeActivityRun?.status === "starting");
-  // Such a send skips the local dispatch, so this keeps its thread's composer busy while it is
-  // in flight.
   const [setupQueueSendThreadKey, setSetupQueueSendThreadKey] = useState<string | null>(null);
   useEffect(() => {
     attachmentPreviewHandoffByMessageIdRef.current = attachmentPreviewHandoffByMessageId;
@@ -3905,8 +3911,6 @@ export default function ChatView(props: ChatViewProps) {
   const worktreeSetupOwnerKey = draftId ?? routeThreadKey;
   const worktreeSetupActive =
     worktreeSetupRef !== null && worktreeSetupRef.ownerKey === worktreeSetupOwnerKey;
-  // Keep the sending environment during local draft setup; revisiting a
-  // canonical thread subscribes by its durable identity.
   const setupTarget = worktreeSetupActive ? worktreeSetupRef : routeThreadRef;
   const worktreeSetupQuery = useEnvironmentQuery(
     worktreeSetupActive ||
@@ -3942,11 +3946,11 @@ export default function ChatView(props: ChatViewProps) {
     live: liveWorktreeSetup,
     recorded: null,
     turnStarted: activeActivityRun?.startedAt != null,
-    // Counts the optimistic send too, so the row retires the moment the
-    // follow-up is on screen rather than when the server echoes it back.
     followUpSent: timelineMessages.filter((message) => message.role === "user").length > 1,
   });
-  // Async setup scripts can outlive agent startup; hold sends only until handoff, or queue on the durable thread.
+  // Sends wait for the agent handoff, not for the setup script: an async script
+  // keeps the snapshot running while the agent already works, and a follow-up
+  // must not be held behind a slow install.
   const worktreeSetupBlocksSend =
     !sendQueuesBehindSetup &&
     (worktreeSetup !== null
@@ -3973,7 +3977,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const onRetryWorkspacePreparation = useCallback(
     (runId: RunId) => {
-      // One retry per failed run: a second click lands after the run is preparing again.
       if (!activeThreadRef || retryingWorkspacePreparationRunIds.has(runId)) return;
       retryingWorkspacePreparationRunIds.add(runId);
       void retryWorkspacePreparation({
@@ -4021,7 +4024,10 @@ export default function ChatView(props: ChatViewProps) {
   const captureDraftHeroComposerRect = draftHeroTransition.captureComposerRect;
   const { turnDiffSummaries } = useTurnDiffSummaries(serverProjection);
 
-  /** Include completed commands: shell tools can mutate files without reporting paths. */
+  /**
+   * File tools are explicit; completed commands are included because a shell
+   * command can mutate the workspace without reporting the paths it touched.
+   */
   const workspaceMutationId = useMemo(() => {
     let itemId: string | null = null;
     for (let index = serverVisibleTurnItems.length - 1; index >= 0; index -= 1) {
@@ -4165,7 +4171,9 @@ export default function ChatView(props: ChatViewProps) {
     : null;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
-  // Remember Git status so a non-Git strip does not mount then drop on every visit.
+  // Git status arrives after the composer paints. A checkout seen earlier in
+  // this session answers from memory, so a non-Git project does not mount the
+  // branch strip and then drop it.
   const liveIsGitRepo = gitStatusQuery.data?.isRepo;
   useEffect(() => {
     if (gitStatusCwd !== null && liveIsGitRepo !== undefined) {
@@ -4173,7 +4181,9 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
-  // Native subagents take approvals/questions on their parent; replace their composer with a status bar.
+  // A provider-native subagent cannot take messages: a status bar replaces the
+  // composer and its strips. Its approvals and questions are asked on the
+  // top-level parent thread.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
@@ -4199,7 +4209,6 @@ export default function ChatView(props: ChatViewProps) {
           providerSubagentModels,
           reportedModelSelection,
         );
-  // Keep a hidden off-flow strip mounted to measure whether relocated composer controls fit.
   const mountComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
     persistInActiveThreads: settings.persistComposerContextStrip,
@@ -4272,7 +4281,6 @@ export default function ChatView(props: ChatViewProps) {
                     (activeProviderInstanceId === null ||
                       provider.instanceId === activeProviderInstanceId) &&
                     provider.driver === selectedProvider &&
-                    // The destination project may override the machine switch.
                     (environment.serverConfig?.settings
                       ? resolveProjectProviderInstanceEnabled(
                           environment.serverConfig.settings,
@@ -4394,7 +4402,6 @@ export default function ChatView(props: ChatViewProps) {
           return;
         const projectRef = scopeProjectRef(target.environmentId, project.id);
         if (activeProjectIsScratch) {
-          // Scratch projects are machine-local, so move their logical mapping too.
           setLogicalProjectDraftThreadId(
             deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings),
             projectRef,
@@ -4644,7 +4651,6 @@ export default function ChatView(props: ChatViewProps) {
           },
     );
   }, []);
-  // Preserve dirty queue edits in an empty thread draft if another client cancels or starts the run.
   useEffect(() => {
     if (editingQueuedRun === null) return;
     if (activeThread?.id !== editingQueuedRun.threadId) {
@@ -5396,7 +5402,10 @@ export default function ChatView(props: ChatViewProps) {
     }
     useRightPanelStore.getState().open(activeThreadRef, "device");
   }, [activeThreadRef, deviceState.onboardingCompleted, deviceState.hostStatus]);
-  // Baseline existing device sessions so reloads cannot resurrect dismissed tabs; defer devices with missing summaries.
+  // The first snapshot is a baseline: persisted tabs restore themselves, and
+  // existing sessions must not resurrect closed tabs. A session whose device
+  // summary has not arrived yet stays out of the baseline so a later snapshot
+  // opens it.
   const autoShowFloatingPreview = useClientSettings(selectAutoShowFloatingPreview);
   const previousDeviceSessions = useRef(new Map<string, Set<string>>());
   useEffect(() => {
@@ -5988,7 +5997,9 @@ export default function ChatView(props: ChatViewProps) {
     (surfaces: readonly RightPanelSurface[]) => {
       if (!activeThreadRef) return;
       for (const surface of surfaces) {
-        // Without preview access, close only the local surface; server records await an authorized client or restart.
+        // Without preview access only the local surface goes away. The
+        // server record is in-memory bookkeeping, not a live view, and stays
+        // listed until a client with the scope closes it or the server restarts.
         if (canOperatePreview && surface.kind === "preview" && surface.resourceId) {
           void closePreviewSession({
             closePreview,
@@ -6266,13 +6277,17 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  // LegendList briefly reports isAtEnd=false during initial settling; debounce showing the pill to prevent flashes.
+  // Debounce *showing* the scroll-to-bottom pill so it doesn't flash during
+  // thread switches. LegendList fires scroll events with isAtEnd=false while
+  // initialScrollAtEnd is settling; hiding is always immediate.
   const showScrollDebouncer = useRef(
     new Debouncer(() => setShowScrollToBottom(true), { wait: 150 }),
   );
   const timelineScrollIntentRef = useRef<"toward-end" | "away-from-end" | null>(null);
   const timelineScrollModeRef = useRef<TimelineScrollMode>("following-end");
-  // LegendList follows independently of refs, so manual navigation must disable it through render state.
+  // State mirror of the follow mode refs. LegendList's maintainScrollAtEnd
+  // re-pins on its own (independent of the refs), so the timeline needs a
+  // render-visible flag to switch it off once the user scrolls away.
   const [timelineLiveFollowEnabled, setTimelineLiveFollowEnabled] = useState(true);
   const pendingTimelineAnchorRef = useRef<MessageId | null>(null);
   const positionedTimelineAnchorRef = useRef<MessageId | null>(null);
@@ -6305,12 +6320,20 @@ export default function ChatView(props: ChatViewProps) {
       anchorScrollRestoreFrameRef.current = null;
     }
     if (wasProgrammaticScrollMode) {
-      // A missing-item scroll cancels LegendList's deferred imperative queue without moving the view to a stale target.
+      // While following or anchoring, our scrollToEnd/scrollToOffset calls can
+      // sit in LegendList's pending-imperative-scroll queue (it defers them
+      // while layout settles) and fire seconds later with stale targets,
+      // yanking the view away after the user scrolled. Starting a new
+      // imperative scroll cancels everything queued; targeting an item that
+      // is not in the data makes the new request itself resolve without ever
+      // scrolling, so this is a pure cancel.
       void legendListRef.current?.scrollToItem({
         item: TIMELINE_SCROLL_CANCEL_SENTINEL,
         animated: false,
       });
-      // Browser smooth scrolling outlives the queue; halt it with an instant write at the same position.
+      // An already-started animated scroll (behavior: smooth) keeps running in
+      // the browser regardless of the queue; a same-position instant write is
+      // the only way to halt it where it is.
       const scrollNode = legendListRef.current?.getScrollableNode() as
         | { scrollTop?: number }
         | null
@@ -6407,8 +6430,6 @@ export default function ChatView(props: ChatViewProps) {
   const onComposerPageScrollRelease = useCallback(() => {
     pageScrollControllerRef.current?.releaseActiveKey();
   }, []);
-  // Live-follow stays active after send/thread-open until an actual list scroll
-  // gesture opts out.
   const scrollToEnd = useCallback((animated = false) => {
     cancelPositionRestoreRef.current?.();
     isAtEndRef.current = true;
@@ -6445,13 +6466,17 @@ export default function ChatView(props: ChatViewProps) {
         const handleManualNavigation = () => {
           cancelTimelineLiveFollowForUserNavigationRef.current();
         };
-        // Break follow only if the gesture can move away: no scroll event at the pinned edge means no chance to re-arm (#5566).
+        // The gestures below must only break follow when they can actually move
+        // the viewport away from the live edge (#5566): a spurious break while
+        // pinned at the end produces no scroll event, never re-arms, and
+        // streaming silently stops following.
         const contentScrollsUp = () => timelineRealContentOverflowsViewport();
-        // Streaming briefly flips strict isAtEnd; use the re-arm band so pinned gestures cannot strand follow.
+        // The follow re-arm band, not the strict flag: streaming growth makes
+        // isAtEnd flicker false for a frame before the follow scroll catches
+        // up, and a gesture landing in that window while still pinned would
+        // otherwise break follow with no scroll event left to re-arm it.
         const viewportIsAwayFromEnd = () =>
           resolveTimelineIsAtEnd(legendListRef.current?.getState()) === false;
-        // Only an upward wheel is a navigation intent; wheeling down while
-        // following either does nothing (at the end) or moves toward it.
         const handleWheel = (event: WheelEvent) => {
           if (event.ctrlKey || !isTimelineScrollTarget(event.target, scrollNode, event.deltaY))
             return;
@@ -6467,13 +6492,18 @@ export default function ChatView(props: ChatViewProps) {
             handleManualNavigation();
           }
         };
-        // Touch direction is unavailable here; break follow only after the viewport leaves the end band.
+        // Touch direction isn't observable here (touchmove fires on any
+        // finger motion, scrolling or not), so break only once the drag has
+        // actually carried the viewport out of the end band — an upward flick
+        // gets there within its first few events and later touchmoves break.
         const handleTouchMove = () => {
           if (viewportIsAwayFromEnd()) {
             handleManualNavigation();
           }
         };
-        // Scrollbar drags target the scroll node and have no wheel/touch event; content clicks break follow only away from the end.
+        // Scrollbar drags produce no wheel/touch events; they are the only
+        // pointerdowns whose target is the scroll node itself rather than a
+        // message row.
         const handlePointerDown = (event: PointerEvent) => {
           if (event.target === scrollNode) {
             if (contentScrollsUp()) {
@@ -6485,7 +6515,10 @@ export default function ChatView(props: ChatViewProps) {
             handleManualNavigation();
           }
         };
-        // Keyboard scrolling bypasses pointer events; hear it at document too because message clicks can leave body focused.
+        // Keyboard scrolling (PageUp/Home/ArrowUp) bypasses wheel and
+        // pointer events entirely; without this the timeline yanks back to
+        // the end on the next stream chunk. Clicking message text can leave
+        // DOM focus on body, so these keys must also be heard at document.
         const handleKeyDown = (event: KeyboardEvent) => {
           if (
             !(event.target instanceof Node) ||
@@ -6679,7 +6712,6 @@ export default function ChatView(props: ChatViewProps) {
       timelineScrollModeRef.current = "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
-      // Returning to the live edge ends turn anchoring so streaming follows again (#6519).
       setTimelineAnchor(releaseChatTimelineAnchor);
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
@@ -6738,13 +6770,15 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen]);
 
-  // Preserve typing targets and terminals on refocus; skip mobile so returning never raises its keyboard.
+  // Mobile is left alone so returning to the app does not raise the keyboard.
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
     let frame: number | null = null;
     const onWindowFocus = () => {
       if (frame !== null) window.cancelAnimationFrame(frame);
-      // Focus restoration happens after the window event; wait an extra frame so composer focus expands it.
+      // The element that held focus receives it again after the window's own event, and the
+      // composer ignores that same frame so a restored focus does not lift a scroll-collapsed
+      // composer. Wait one more frame so this focus counts as a request to expand it.
       frame = window.requestAnimationFrame(() => {
         frame = window.requestAnimationFrame(() => {
           frame = null;
@@ -6796,7 +6830,9 @@ export default function ChatView(props: ChatViewProps) {
     optimisticUserMessages,
   ]);
 
-  // Promotion drops draftId but keeps this instance; key by thread so its in-flight dispatch survives.
+  // Keyed on the thread, not the draft: a draft's promotion to its server
+  // route keeps this instance and drops `draftId`, and the send it is still
+  // dispatching must survive that swap.
   useEffect(() => {
     setOptimisticUserMessages((existing) => {
       for (const message of existing) {
@@ -6909,12 +6945,15 @@ export default function ChatView(props: ChatViewProps) {
     },
     [composerOverlayElement],
   );
-  // Child layout effects publish the current resting flag first; height still belongs to the previous layout until measured.
+  // The composer reports its resting flag from a layout effect, which runs
+  // before this component's own layout effects and before any resize
+  // observation, so every measurement below sees the flag for its layout.
+  // Only the flag is stored here: the stored height still belongs to the
+  // previous layout, and the composer publishes the new layout's height
+  // itself once it has measured it.
   const onComposerRestingChange = useCallback((resting: boolean) => {
     composerRestingRef.current = resting;
   }, []);
-  // A held reservation belongs to the previous thread's draft. Rebuild it from
-  // this thread's overlay so a tall draft elsewhere does not pad this one.
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
     composerTimelineInsetRef.current = 0;
@@ -6931,8 +6970,6 @@ export default function ChatView(props: ChatViewProps) {
     updateHeight();
     return observeResize(composerOverlayElement, updateHeight);
   }, [composerOverlayElement, publishComposerOverlayHeight, showScrollToBottom]);
-  // Swapping the composer for the status bar (or back) changes what the
-  // overlay holds, so rebuild the reservation from the new content.
   useLayoutEffect(() => {
     if (composerMountedRef.current === composerMounted) return;
     composerMountedRef.current = composerMounted;
@@ -7026,8 +7063,6 @@ export default function ChatView(props: ChatViewProps) {
     if (activeThreadRef === null || activeThreadWokeAt === null) return;
     acknowledgeThreadWoke(activeThreadRef, activeThreadWokeAt);
   }, [acknowledgeThreadWoke, activeThreadRef, activeThreadWokeAt]);
-  // Mirror of the sidebar's Woke pill for the open thread. Same watermark as
-  // the sidebar, so an acknowledgement from any device hides it.
   const activeThreadLocalVisitedAt = useUiStateStore((store) =>
     activeThreadKey === null ? undefined : store.threadLastVisitedAtById[activeThreadKey],
   );
@@ -7040,7 +7075,9 @@ export default function ChatView(props: ChatViewProps) {
     if (activeThreadShell?.settledOverride === "settled") return false;
     const wokeAtMs = Date.parse(activeThreadWokeAt);
     if (Number.isNaN(wokeAtMs)) return false;
-    // Floor visits at completion to prevent a one-frame wake flash; invalid stored dates must not hide wakes.
+    // Having the thread open counts as a visit at completedAt (the effect above
+    // stamps it); folding that floor in here keeps a completion- triggered wake
+    // from flashing a banner for one frame before the stamp lands.
     const storedVisitMs = activeThreadLastVisitedAt ? Date.parse(activeThreadLastVisitedAt) : NaN;
     const completedAtMs = activeLatestRun?.completedAt
       ? Date.parse(activeLatestRun.completedAt)
@@ -7061,7 +7098,6 @@ export default function ChatView(props: ChatViewProps) {
   const unsettleThreadMutation = useOrchestrationCommand(threadEnvironment.unsettle, {
     reportFailure: false,
   });
-  // Navigation must not let a late thread A response clear thread B's pending state.
   const [unsettlingThreadKey, setUnsettlingThreadKey] = useState<string | null>(null);
   const isUnsettling = unsettlingThreadKey !== null && unsettlingThreadKey === activeThreadKey;
   const handleUnsettleActiveThread = useCallback(async () => {
@@ -7139,8 +7175,6 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThreadRef, activeThreadShell, unsnoozeThreadMutation, updateThreadMetadata]);
   const [isRestoringThreadBranch, setIsRestoringThreadBranch] = useState(false);
   const [branchRestoreConfirmOpen, setBranchRestoreConfirmOpen] = useState(false);
-  // Once revealed for a given mismatch, the banner stays mounted until the
-  // mismatch changes or resolves, so clearing the draft doesn't flicker it.
   const [revealedBranchMismatchKey, setRevealedBranchMismatchKey] = useState<string | null>(null);
   // Dismissal lives in a module-level set (survives remounts); this tick just
   // forces a re-render so the banner leaves immediately.
@@ -7165,8 +7199,6 @@ export default function ChatView(props: ChatViewProps) {
       if (showBranchMismatchBanner) {
         return activeBranchMismatchKey;
       }
-      // Hysteresis is scoped to an uninterrupted mismatch: reset when the
-      // mismatch resolves or changes so a recurrence re-gates on intent.
       return revealed !== null && revealed !== activeBranchMismatchKey ? null : revealed;
     });
   }, [activeBranchMismatchKey, showBranchMismatchBanner]);
@@ -7242,7 +7274,10 @@ export default function ChatView(props: ChatViewProps) {
     switchGitRef,
     updateThreadMetadata,
   ]);
-  // Background work can outlive a completed turn, leaving this banner as its only stop control.
+  // Background work (subagent fleets, workflow runs, watch loops, dev servers) can outlive
+  // the turn; once it settles, the composer stop button is gone, so this
+  // banner is the only visible stop affordance. The interrupt path also
+  // accepts a completed run while its provider still has background work.
   const activeBackgroundTasks = !isWorking && activeThread ? pendingBackgroundTasks : [];
   const [stoppingBackgroundWorkKey, setStoppingBackgroundWorkKey] = useState<string | null>(null);
   const isStoppingBackgroundWork =
@@ -7315,8 +7350,6 @@ export default function ChatView(props: ChatViewProps) {
     onOpenRelatedThread,
   ]);
 
-  // Commands such as /compact and /goal clear run as their own turn. The draft
-  // and its attachments stay local.
   const sendStandaloneCommand = useCallback(
     async (text: string, failureMessage: string) => {
       if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
@@ -7399,8 +7432,6 @@ export default function ChatView(props: ChatViewProps) {
       startThreadTurn,
     ],
   );
-  // A native /goal keeps the agent working across turns. Stop pauses a Codex
-  // goal; once the thread is idle the row offers the native follow-ups.
   const activeGoal = activeThreadShell?.goal ?? null;
   const goalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (!activeThread || activeGoal === null) return null;
@@ -7410,7 +7441,6 @@ export default function ChatView(props: ChatViewProps) {
       variant: "default",
       priority: "activity",
       icon: <TargetIcon />,
-      // Usage stays in the title so a long objective cannot clip it.
       title:
         presentation.usage === null
           ? presentation.title
@@ -7460,7 +7490,6 @@ export default function ChatView(props: ChatViewProps) {
         />
       ),
       title: presentation.title,
-      // A single named item is already in the title.
       description:
         presentation.items.length === 1 && presentation.items[0]?.childThreadId === undefined
           ? undefined
@@ -7509,7 +7538,7 @@ export default function ChatView(props: ChatViewProps) {
     isStoppingBackgroundWork,
     onOpenRelatedThread,
   ]);
-  // Memoize the list footer to skip unrelated parent renders; nowMinute still refreshes relative time.
+  // Memoized: it is the timeline's list footer, and a new element re-renders that footer.
   const threadStatusLine = useMemo(() => {
     void nowMinute;
     return activeThreadSnoozed ? (
@@ -7603,7 +7632,6 @@ export default function ChatView(props: ChatViewProps) {
           ? "Compaction is unavailable for this provider"
           : "Compacting is unavailable right now"
     : null;
-  // Held queues and multi-model sends cannot compact first, so hide the offer for them.
   const resumeCompactionTokens =
     activeContextWindow &&
     !resumeCompactionPermanentlyDismissed &&
@@ -7621,7 +7649,6 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
-  // Clear opt-outs only after a successful send so retries retain the full-history choice.
   const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -7685,7 +7712,6 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
-  // Within each priority tier, earlier items sit front-most; branch mismatch trails system notices.
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = [
@@ -7693,7 +7719,6 @@ export default function ChatView(props: ChatViewProps) {
       goalBannerItem,
       backgroundWorkBannerItem,
     ].filter((item) => item !== null);
-    // The user asked for this one, so it leads the notice tier instead of trailing it.
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
@@ -7974,7 +7999,6 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
-      // Drafts and servers without thread search leave Mod+F to the browser.
       if (command === "chat.find" && isServerThread && serverConfig?.threadFind === true) {
         event.preventDefault();
         event.stopPropagation();
@@ -8136,8 +8160,6 @@ export default function ChatView(props: ChatViewProps) {
 
       if (command === "thread.editQueuedMessage") {
         if (routeKind === "draft") return;
-        // Anywhere else in the draft the key keeps moving the caret, so a
-        // second press from the first paragraph reaches the queue.
         if (!composerRef.current?.isCaretAtStart()) return;
         if (!queuedRunsControlRef.current?.editLatest(event.repeat)) return;
         event.preventDefault();
@@ -8245,7 +8267,8 @@ export default function ChatView(props: ChatViewProps) {
     });
   }, [toggleRightPanel, toggleRightPanelMaximized]);
 
-  // Resting composers blur after timeline clicks; redirect otherwise-dropped plain-text pastes here.
+  // Paste-to-focus: the resting composer blurs on a click into the timeline,
+  // so a paste that follows has no editable target and would be dropped.
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
       if (
@@ -8645,8 +8668,6 @@ export default function ChatView(props: ChatViewProps) {
     },
   ) => {
     e?.preventDefault();
-    // Typed out in full rather than picked from the menu. Attachments or contexts
-    // mean the user is sending a prompt, so those go through as usual.
     if (
       usageLimitsOffered &&
       usageLimitsKey !== null &&
@@ -8788,8 +8809,6 @@ export default function ChatView(props: ChatViewProps) {
             ...sendContextPreviewAnnotations,
             {
               ...directAnnotation.annotation,
-              // Claim an attached crop only when the screenshot really rides
-              // along; a cap-dropped image must not produce a lying prompt.
               screenshot:
                 directAnnotation.annotation.screenshot &&
                 (annotationImageAppended || annotationImageAlreadyAttached)
@@ -9021,7 +9040,7 @@ export default function ChatView(props: ChatViewProps) {
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
         return;
       }
-      // Copy sent context before clearing; failure must restore it without aliasing later mutations.
+      // Snapshot exactly what was sent, copied, so later mutations cannot alias the backup.
       const followUpPromptSnapshot = promptRef.current;
       const followUpTerminalContexts = [...sendableComposerTerminalContexts];
       const followUpReviewComments = [...composerReviewComments];
@@ -9070,7 +9089,6 @@ export default function ChatView(props: ChatViewProps) {
       }
       return;
     }
-    // Providers without the legacy toggle receive their native commands unchanged.
     const standaloneSlashCommand =
       sendInteractionModeEnabled &&
       composerImages.length === 0 &&
@@ -9137,7 +9155,6 @@ export default function ChatView(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const composerThreadContextsSnapshot = [...composerThreadContexts];
-    // Expired terminal excerpts are not sent; their chips leave the text with them.
     const messageTextForSend = composerTerminalContexts
       .filter((context) => !composerTerminalContextsSnapshot.includes(context))
       .reduce(
@@ -9146,7 +9163,9 @@ export default function ChatView(props: ChatViewProps) {
         promptForSend,
       )
       .trim();
-    // Use local ids optimistically; wire ids are upload ids or local ids for data URLs, then persistence rebinds them.
+    // Records bind attachments by the id each side knows: the local id for the optimistic
+    // row, the upload id (or local id on the data-URL path) on the wire; the server
+    // rebinds them to the persisted id.
     const buildOutgoingMessageContext = (attachmentIds: ReadonlyArray<string>) =>
       buildMessageContext({
         terminalContexts: composerTerminalContextsSnapshot,
@@ -9163,7 +9182,9 @@ export default function ChatView(props: ChatViewProps) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
-    // Stale Claude sessions compact first; queue the message because steering into /compact is rejected.
+    // A stale Claude session compacts before this message so the turn does not re-read the
+    // old history. The message queues behind the /compact run, since steering into it is
+    // rejected.
     const compactBeforeSend =
       resumeCompactionTokens !== null &&
       !keepFullHistory &&
@@ -9321,13 +9342,11 @@ export default function ChatView(props: ChatViewProps) {
       );
       return;
     }
-    // A send queued behind setup leaves the first send's dispatch and setup card alone.
     if (sendQueuesBehindSetup) {
       setSetupQueueSendThreadKey(activeThreadKey);
     } else {
       beginLocalDispatch({
         preparingWorktree: multipleModelSelections !== null || Boolean(baseBranchForWorktree),
-        // Only a draft has a background submission to hide behind its hero.
         submissionIntent:
           submissionIntent === "background" && !isLocalDraftThread
             ? "foreground"
@@ -9648,9 +9667,6 @@ export default function ChatView(props: ChatViewProps) {
           },
     );
     if (!shouldQueueBehindActiveRun) {
-      // A sent turn returns to the live edge and anchors its new transcript
-      // row. Queued input stays in the composer queue and must not move the
-      // timeline away from the provider work already in flight.
       isAtEndRef.current = true;
       timelineScrollModeRef.current = "anchoring-new-turn";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
@@ -9831,7 +9847,10 @@ export default function ChatView(props: ChatViewProps) {
                 ),
               );
               if (context === undefined) return {};
-              // Re-read capabilities after upload awaits: reconnects can switch to servers requiring legacy context payloads.
+              // Read the capability at dispatch time: the upload and persistence
+              // awaits above can span a server reconnect that changes it. Servers
+              // from before inline context drop the records and forward the links
+              // as literal text, so their turns carry the payload the legacy way.
               const supportsInlineMessageContext =
                 appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment
                   .capabilities.inlineMessageContext === true;
@@ -10159,8 +10178,6 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
-      // The option replaces the custom answer. Anything typed there is the
-      // user's text, so it goes back to the thread draft instead of vanishing.
       const displacedAnswer =
         pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
       const currentPrompt =
@@ -10369,8 +10386,6 @@ export default function ChatView(props: ChatViewProps) {
       settingsResult._tag === "Failure" ? settingsResult : null;
 
     if (failure === null) {
-      // Keep the mode toggle and plan-follow-up banner in sync immediately
-      // while the same-thread implementation turn is starting.
       setComposerDraftInteractionMode(
         scopeThreadRef(activeThread.environmentId, threadIdForSend),
         nextInteractionMode,
@@ -10605,7 +10620,6 @@ export default function ChatView(props: ChatViewProps) {
   const onProviderModelSelect = useCallback(
     (instanceId: ProviderInstanceId, model: string, options?: { focusComposer?: boolean }) => {
       if (!activeThread) return;
-      // Scope model normalization to the configured instance; unknown ids must not select another driver.
       const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
       const resolvedDriverKind = entry?.driver ?? null;
       if (
@@ -10644,8 +10658,6 @@ export default function ChatView(props: ChatViewProps) {
         if (options?.focusComposer !== false) scheduleComposerFocus();
         return;
       }
-      // Restore this model's own remembered options; without any, start it
-      // from its default rather than carrying the previous model's over.
       const rememberedOptions =
         useComposerDraftStore.getState().stickyOptionsByModelByProvider[instanceId]?.[
           resolvedModel
@@ -10726,7 +10738,8 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  // Key Work locally cancellation by draft route: bootstrap already created a server thread whose failed dispatch restores the message.
+  // The draft is a server thread for the whole setup (the bootstrap created
+  // it), so this keys off the route, not `isLocalDraftThread`.
   const onWorktreeSetupWorkLocally = useCallback(() => {
     if (!worktreeSetup || worktreeSetup.phase !== "running" || !draftId) {
       return;
@@ -10782,7 +10795,10 @@ export default function ChatView(props: ChatViewProps) {
       optimisticUserMessages,
     ],
   );
-  // Wait through transient onSend blockers before resending; user-fixable validation failures must not auto-retry.
+  // Every state that makes `onSend` bail and wait is part of the readiness
+  // check, so the flag survives a reconnect, a reverting checkpoint, or a
+  // feedback upload in between. What remains inside `onSend` are the checks
+  // that need the user to change something, and those should not auto retry.
   const workLocallyResendReady =
     workLocallyResendDraftId !== null &&
     workLocallyResendDraftId === draftId &&
@@ -10951,7 +10967,10 @@ export default function ChatView(props: ChatViewProps) {
         error="Update this environment's T3 Code server to browse pull requests."
       />
     ) : renderedRightPanelSurface?.kind === "pull-request" ? (
-      // The surface tab owns closing. Only the thread's own PR can omit checkout; other linked PRs need it.
+      // The thread context also drops the checkout button, so it is only right for the thread's
+      // own pull request, whose branch is already under the reader's feet. A link the agent wrote
+      // can open any other one here, and that one has to be checkable out like it is anywhere
+      // else.
       <PullRequestDetailPanel
         getShortcutContext={getShortcutContext}
         shortcutsEnabled={
@@ -11155,7 +11174,6 @@ export default function ChatView(props: ChatViewProps) {
             "flex shrink-0",
             panelAnimationsActive &&
               "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
-            // Remove the closed control from flex flow, keeping its fade anchored away from the terminal toggle.
             rightPanelOpen
               ? "pointer-events-auto opacity-100"
               : "pointer-events-none absolute right-full mr-1 opacity-0",
@@ -11288,7 +11306,6 @@ export default function ChatView(props: ChatViewProps) {
                 </div>
               </div>
             ) : null}
-            {/* Banners overlay the timeline without changing its content height. */}
             <div className="chat-banner-lane pointer-events-none absolute top-0 z-20 flex flex-col">
               <ProviderStatusBanner
                 status={visibleProviderStatus}
@@ -11426,7 +11443,6 @@ export default function ChatView(props: ChatViewProps) {
                   : { historyControls: threadHistoryControls })}
               />
 
-              {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && !isThreadFindActive && (
                 <div
                   className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
@@ -11450,7 +11466,6 @@ export default function ChatView(props: ChatViewProps) {
               )}
             </div>
 
-            {/* Input bar — centered for an empty draft, docked after sending. */}
             <div
               ref={setComposerOverlayElement}
               inert={isRevertingCheckpoint}
@@ -11590,8 +11605,6 @@ export default function ChatView(props: ChatViewProps) {
                               resumeCompactionTokens={resumeCompactionTokens}
                               keepFullHistory={keepFullHistory}
                               onToggleKeepFullHistory={toggleKeepFullHistory}
-                              // With attachments or contexts aboard the pick just inserts the
-                              // text, so it sends as a prompt like the typed path would.
                               onUsageLimitsCommand={
                                 usageLimitsOffered &&
                                 usageLimitsKey !== null &&
@@ -11913,7 +11926,10 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
             inlineSize={previewPanelInlineSize}
-            // Match the closed controls' effective right inset so the cluster does not shift when the sheet opens.
+            // Same effective inset as the closed-state titlebar controls
+            // (pr-3 in the tab bar plus this pixel equals the absolute
+            // right inset plus mr-px), so the cluster does not creep when
+            // the sheet opens.
             layoutControls={
               rightPanelOpen ? (
                 <div className="mr-px flex items-center">{panelToggleControls}</div>
@@ -12018,7 +12034,6 @@ export default function ChatView(props: ChatViewProps) {
   );
 }
 
-/** Keeps the thread's preview tabs synced while no browser panel is mounted. */
 function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
   usePreviewSession(props.threadRef);
   return null;

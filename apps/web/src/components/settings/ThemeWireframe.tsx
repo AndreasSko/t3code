@@ -29,7 +29,6 @@ function ThemeWireframePane({
         style={{ backgroundColor: colors.sidebar, boxShadow: `inset -1px 0 0 ${line}` }}
       />
 
-      {/* Sidebar: search, then thread rows */}
       <span
         className="absolute left-[3%] top-[8%] h-[8%] w-[16%] rounded-md"
         style={{ backgroundColor: colors.surface, boxShadow: `inset 0 0 0 1px ${line}` }}
@@ -47,7 +46,6 @@ function ThemeWireframePane({
         style={{ backgroundColor: colors.messageSurface, opacity: 0.5 }}
       />
 
-      {/* Conversation */}
       <span
         className="absolute right-[28%] top-[11%] h-[9%] w-[24%] rounded-lg"
         style={{ backgroundColor: colors.messageSurface }}
@@ -61,7 +59,6 @@ function ThemeWireframePane({
         style={{ backgroundColor: line }}
       />
 
-      {/* Composer */}
       <span
         className="absolute bottom-[8%] left-[26%] right-[6%] flex h-[15%] items-center justify-between rounded-md px-1"
         style={{
@@ -79,7 +76,6 @@ function ThemeWireframePane({
         />
       </span>
 
-      {/* Orchestrator island floating over the composer */}
       <span
         className="absolute right-[5%] top-[8%] h-[46%] w-[20%] rounded-lg"
         style={{
@@ -113,7 +109,6 @@ export function ThemeWireframe({
   className,
   panes,
 }: {
-  /** Sizing (height) for the frame; the pane geometry is percentage based. */
   className?: string;
   panes: ReadonlyArray<{ colors: ThemeCardPreviewColors; clip?: "left" | "right" }>;
 }) {

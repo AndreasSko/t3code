@@ -4,7 +4,10 @@ import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
 
 import { cn } from "~/lib/utils";
 
-/** Mixed is presentational; callers decide what a click applies to all selected targets. */
+/**
+ * It is presentational: the caller still decides what a click sets, usually on
+ * for everyone.
+ */
 function Switch({
   className,
   size = "default",

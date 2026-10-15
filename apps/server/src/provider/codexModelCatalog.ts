@@ -15,7 +15,10 @@ const CodexModelAdapter = Schema.Struct({
 });
 const decodeCodexModelAdapter = Schema.decodeUnknownOption(CodexModelAdapter);
 
-/** Older CLIs omit unknown models; minVersion lets the picker explain which update unlocks them. */
+/**
+ * Codex lists only the models its own build knows, so a model released after
+ * the installed CLI never shows up.
+ */
 function codexUpdateRequiredModels(
   catalog: ModelCatalog.ProviderCatalog | undefined,
   draft: ServerProviderDraft,

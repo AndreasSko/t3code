@@ -30,12 +30,18 @@ import * as Stream from "effect/Stream";
 
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 
-/** Clones outlive their starting request; snapshots stay in memory.
- * Finished clones expire after a grace window; failures stay available for retry until restart. */
+/**
+ * Snapshots are memory only. A done clone is dropped after a short grace
+ * window; a failed one stays until it is retried or the server restarts, since
+ * the empty project is the durable record the user can act on.
+ */
 export class ProjectCloneTracker extends Context.Service<
   ProjectCloneTracker,
   {
-    /** Validates before creating the project, then starts its clone in the background. */
+    /**
+     * Fails before creating anything when the destination or repository is
+     * unusable so the caller can report it inline.
+     */
     readonly start: (
       input: ProjectCloneStartInput,
       hooks: ProjectCloneHooks,
@@ -45,9 +51,11 @@ export class ProjectCloneTracker extends Context.Service<
     >;
     /** Interrupts a running clone and deletes the partial checkout. */
     readonly cancel: (projectId: ProjectId) => Effect.Effect<boolean>;
-    /** Restarts a failed or cancelled clone into the same destination. */
     readonly retry: (projectId: ProjectId) => Effect.Effect<boolean, SourceControlRepositoryError>;
-    /** On project deletion, interrupts its clone and removes only an unfinished checkout. */
+    /**
+     * Stops tracking a project's clone, interrupting it if it still runs and
+     * removing an unfinished checkout.
+     */
     readonly discard: (projectId: ProjectId) => Effect.Effect<void>;
     readonly get: (projectId: ProjectId) => Effect.Effect<ProjectCloneSnapshot | null>;
     /** Emits every tracked clone first, then the full list after each change. */
@@ -55,7 +63,10 @@ export class ProjectCloneTracker extends Context.Service<
   }
 >()("t3/project/ProjectCloneTracker") {}
 
-/** Caller-owned hooks keep the tracker independent of orchestration and preserve the request's origin. */
+/**
+ * The tracker never depends on the engine directly: the WebSocket handler
+ * dispatches with the client's origin, and the tracker only needs the outcome.
+ */
 export interface ProjectCloneHooks {
   readonly createProject: (input: {
     readonly projectId: ProjectId;
@@ -63,7 +74,6 @@ export interface ProjectCloneHooks {
     readonly workspaceRoot: string;
     readonly createdAt: string;
   }) => Effect.Effect<void, OrchestrationDispatchCommandError>;
-  /** Runs after a successful clone so cached repository identity and git status refresh. */
   readonly onCloned: (input: {
     readonly projectId: ProjectId;
     readonly workspaceRoot: string;
@@ -91,7 +101,6 @@ interface TrackedClone {
   };
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
   const clones = yield* Ref.make(new Map<ProjectId, TrackedClone>());
@@ -194,7 +203,13 @@ export const make = Effect.gen(function* () {
       if (phase === "done") yield* scheduleRemoval(projectId);
     });
 
-  /** `onExit` records interrupted clones too; mark git completion before hooks so late Cancel keeps the checkout. */
+  /**
+   * Runs in its own fiber; the tracker records the outcome through `onExit`,
+   * which still runs when the fiber is interrupted (a `matchCause` handler
+   * would be skipped). Once git has finished the clone is marked done before
+   * the post-clone hook runs, so a late Cancel cannot tear down a complete
+   * checkout.
+   */
   const runClone = (projectId: ProjectId, tracked: TrackedClone) =>
     repositories
       .cloneRepository(
@@ -251,8 +266,6 @@ export const make = Effect.gen(function* () {
         sequence: ++sequence,
       };
       const claimed = yield* Ref.modify(clones, (current) => {
-        // A second start for the same project, or for a destination another
-        // clone already owns, must not race two gits into one directory.
         const conflict = Array.from(current.values()).some(
           (tracked) =>
             tracked.snapshot.projectId === input.projectId ||
@@ -407,6 +420,12 @@ export const make = Effect.gen(function* () {
 
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
+/**
+ * A project whose clone has not landed has no files to work in. Every
+ * dispatch transport (WebSocket, HTTP) runs this before normalizing so no
+ * client can start a thread on an empty tree, and no attachment copies are
+ * made for a command that is about to be refused.
+ */
 export const rejectCommandsDuringClone = (
   tracker: ProjectCloneTracker["Service"],
   command: { readonly type: string; readonly projectId?: ProjectId; readonly bootstrap?: unknown },

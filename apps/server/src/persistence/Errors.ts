@@ -67,7 +67,9 @@ export class PersistenceDecodeError extends Schema.TaggedError<PersistenceDecode
   }
 }
 
-/** Use node:sqlite's fixed condition description, never the driver's payload-bearing message. */
+/**
+ * Use node:sqlite's fixed description, never the driver message.
+ */
 function sqliteCondition(cause: unknown): string | undefined {
   let value = cause;
   for (let depth = 0; depth < 4 && Predicate.isObject(value); depth += 1) {
@@ -84,7 +86,10 @@ function sqliteCondition(cause: unknown): string | undefined {
   return undefined;
 }
 
-/** Diagnostics must exclude rejected payloads: expose only schema issue tags or normalized SQLite conditions. */
+/**
+ * A rejected payload must never reach diagnostics, so a schema failure contributes only its
+ * issue tags, and a driver failure only its normalized condition.
+ */
 function describeSqlCause(cause: unknown): string | undefined {
   if (Schema.isSchemaError(cause)) return summarizeSchemaIssue(cause.issue);
   return sqliteCondition(cause);

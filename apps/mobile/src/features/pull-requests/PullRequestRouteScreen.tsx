@@ -607,7 +607,8 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                   getItemType={(row) =>
                     row.key.endsWith(":body") ? row.key : row.key.split(":")[0]
                   }
-                  // Animating the overview body fights description clipping and collapse-scroll correction.
+                  // The overview body contains the clipped description and owns collapse scroll
+                  // correction. Animating that cell fights both; file rows still fade individually.
                   itemLayoutAnimation={tab === "overview" ? undefined : PR_ROW_LAYOUT}
                   onLoad={() => setListAnimationsReady(true)}
                   renderItem={({ item }) => (
@@ -847,7 +848,6 @@ export function PullRequestFileRouteScreen({
     canHighlight: true,
   });
   const [NativeDiffView] = useState(() => resolveNativeReviewDiffView());
-  // File-picker targets can be on unloaded diff pages.
   useEffect(() => {
     if (!targetFile) loadMore();
   }, [targetFile, loadMore]);

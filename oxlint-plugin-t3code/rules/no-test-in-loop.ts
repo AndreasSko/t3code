@@ -33,7 +33,10 @@ const testCallName = (callee: unknown): Option.Option<string> => {
   return Option.some(`${object.value.name}.${property.value}`);
 };
 
-// Stop at function boundaries so a looped group does not also report its nested tests.
+/**
+ * A loop around a `describe` is reported on the `describe`, so the tests inside
+ * it stay quiet.
+ */
 const isInsideLoop = (node: ESTree.Node): boolean => {
   let current = node.parent;
   while (current) {

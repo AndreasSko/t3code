@@ -74,8 +74,12 @@ export const IsExecutable = Context.Reference<boolean>("@t3tools/shared/HostProc
 });
 
 /**
- * Includes hostname-resolved addresses: Firefox locks may record 127.0.1.1 from /etc/hosts,
- * even when no interface owns it. Failed lookups leave just the interface addresses.
+ * Every IP address this machine answers to: the interface addresses, plus
+ * whatever the resolver returns for the machine's own hostname. The latter
+ * matters because a hostname can map to an address no interface carries —
+ * Debian-style hosts put `127.0.1.1` in `/etc/hosts` — and a program that
+ * records "its" address by resolving its hostname (Firefox's profile lock
+ * does) will write that one. "Is this address ours" has to accept both.
  */
 export const Addresses = Context.Reference<Effect.Effect<ReadonlySet<string>>>(
   "@t3tools/shared/HostProcess/Addresses",

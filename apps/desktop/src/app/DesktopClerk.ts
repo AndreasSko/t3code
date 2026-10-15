@@ -135,8 +135,11 @@ export const make = Effect.gen(function* () {
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
       const runPromise = Effect.runPromiseWith(context);
 
-      // The bridge already quits secondary instances asynchronously; interrupt bootstrap
-      // before whenReady can fire.
+      // The SDK bridge holds Electron's single-instance lock (acquired at
+      // bridge creation) so OAuth deep-link callbacks on Windows/Linux are
+      // forwarded to the running app. In a secondary instance the bridge has
+      // already begun quitting the app; app.quit() is asynchronous, so stop
+      // bootstrap here before whenReady can fire.
       if (!bridge.isPrimaryInstance) {
         yield* electronApp.quit;
         return yield* Effect.interrupt;

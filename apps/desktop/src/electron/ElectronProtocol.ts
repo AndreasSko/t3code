@@ -78,8 +78,11 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "https://challenges.cloudflare.com",
   ];
 
-  // Environment origins are chosen at runtime, so restrict network schemes rather than hosts.
-  // GLTFLoader needs blob URLs for embedded textures.
+  // The renderer connects directly to user-configured environments in addition to
+  // the build-configured Clerk, relay, and OTLP endpoints. Those environment
+  // origins are not known when this response policy is created, so restrict
+  // connections by the network schemes the client supports instead of by host.
+  // GLTFLoader fetches embedded textures through blob URLs after parsing the model.
   const connectSources = ["'self'", "blob:", "http:", "https:", "ws:", "wss:"];
 
   return [
@@ -156,8 +159,8 @@ const netFetch = (url: string, init: RequestInit) =>
     catch: (cause) => new ElectronProtocolFetchError({ cause }),
   });
 
-// Vite restarts can refuse connections; retry GET/HEAD after 50ms, then 150ms,
-// retaining the last failure.
+// The dev renderer target can briefly refuse connections while Vite restarts:
+// retry idempotent requests after 50ms, then 150ms, and keep the last failure.
 const fetchWithTransientRetry = (url: string, init: RequestInit) =>
   netFetch(url, init).pipe(
     Effect.retry({ schedule: Schedule.exponential("50 millis", 3), times: 2 }),
@@ -208,7 +211,6 @@ const proxyRequest = Effect.fn("desktop.protocol.proxyRequest")(function* (
   return withContentSecurityPolicy(response, contentSecurityPolicy);
 });
 
-// SPA routes fall back to index.html, but asset-shaped misses must remain 404s.
 const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
   request: Request,
   assetDirectory: string,
@@ -269,7 +271,6 @@ export const make = Effect.gen(function* () {
                   contentSecurityPolicy,
                 );
               }
-              // Reject with net.fetch's own error, as an unproxied fetch would.
               return runPromise(
                 proxyRequest(request, input.targetOrigin, contentSecurityPolicy).pipe(
                   Effect.catchTags({

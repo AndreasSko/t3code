@@ -1,5 +1,3 @@
-/** GitCafe has no self-hosted installs, so production/staging hosts are fixed. */
-
 export const GITCAFE_HOSTS = ["git.cafe", "staging.git.cafe"] as const;
 export type GitCafeHost = (typeof GITCAFE_HOSTS)[number];
 

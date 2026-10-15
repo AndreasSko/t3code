@@ -1,7 +1,5 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 
-/** The shared continuation grammar keeps store edits consistent between composer modes. */
-
 export interface ComposerListEdit {
   /** Expanded (plain string) offsets into the prompt. */
   start: number;
@@ -47,7 +45,9 @@ function parseListMarker(line: string): { marker: ListMarker; markerEnd: number 
   return null;
 }
 
-/** Increment with delimiter and zero padding intact; leave oversized numbers as typed. */
+/**
+ * Shared with the rich editor's native split so both modes count the same way.
+ */
 export function nextOrderedMarkerText(marker: string): string {
   const numberText = marker.slice(0, -1);
   const delimiter = marker.slice(-1);
@@ -92,7 +92,10 @@ function currentLine(value: string, cursor: number): { start: number; end: numbe
   return { start, end, text: value.slice(start, end) };
 }
 
-/** Return null for non-list lines, marker positions, and inline-chip interiors to allow a plain newline. */
+/**
+ * Returns null for non-list lines, carets inside the marker, and carets inside an inline chip —
+ * all fall through to a plain newline.
+ */
 export function listContinuationForEnter(value: string, cursor: number): ComposerListEdit | null {
   if (!Number.isInteger(cursor) || cursor < 0 || cursor > value.length) return null;
   const line = currentLine(value, cursor);
@@ -111,7 +114,10 @@ export function listContinuationForEnter(value: string, cursor: number): Compose
   };
 }
 
-/** Shift+Tab remains the plan-mode toggle; only unmodified Tab reaches this helper. */
+/**
+ * Ranged selections, non-list lines, and carets inside an inline chip fall through (Shift+Tab
+ * stays the plan-mode toggle and is handled before this is consulted).
+ */
 export function listIndentForTab(
   value: string,
   start: number,

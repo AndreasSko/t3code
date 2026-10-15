@@ -9,6 +9,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 
 import { openPreviewSession } from "./openPreviewSession";
 
+/** Creates a new browser tab. Reopening an existing tab is a separate UI action. */
 export async function addBrowserSurface<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;

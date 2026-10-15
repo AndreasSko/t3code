@@ -1,7 +1,3 @@
-/**
- * Native session files let Pi's TUI and T3 resume the same thread.
- * agent_end is not terminal; confirm idle after agent_settled because detached compaction can start as it unwinds.
- */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
@@ -230,7 +226,6 @@ function contentText(content: unknown): string {
 
 const MAX_STRUCTURED_TOOL_OUTPUT_BYTES = 64 * 1024;
 
-/** Preserve complete structured JSON only when its size and traversal remain bounded. */
 function isBoundedStructuredToolValue(value: unknown): boolean {
   let bytes = MAX_STRUCTURED_TOOL_OUTPUT_BYTES;
   let nodes = 4_096;
@@ -381,41 +376,26 @@ interface ActivePiTurn {
   messageOrdinal: number;
   readonly streamItems: Map<string, PiStreamItemState>;
   readonly toolArgs: Map<string, unknown>;
-  /**
-   * First-seen time per `toolCallId`. Later update/end events reuse it so a
-   * tool keeps one start timestamp and reports a real duration.
-   */
   readonly toolStartedAt: Map<string, DateTime.Utc>;
   interrupted: boolean;
   /** Cancellation of the latest native run; new work can recover before settlement. */
   nativeAborted: boolean;
-  /**
-   * Whether any agent run activity was observed. Command-only prompts (pure
-   * extension slash commands) never start an agent run and never emit
-   * `agent_settled`; their deferred prompt ack plus an idle probe settles
-   * the turn instead.
-   */
   sawAgentActivity: boolean;
-  /** A user prompt joined provider-native work whose settlement may already be queued. */
   adoptedWake: boolean;
-  /** Only slash-command prompts can complete without starting an agent run. */
   readonly promptMayBeCommandOnly: boolean;
   /** Pi reports context as unknown immediately after compaction; keep its estimate for the meter. */
   latestCompactionAfterTokens: number | null;
   lastLiveUsedTokens: number | null;
-  /** Invalidates idle snapshots when new work starts after a settle probe. */
   settleProbeGeneration: number;
   /** An extension may start compaction immediately after Pi emits agent_settled. */
   settleWhenIdle: boolean;
   sawCompaction: boolean;
-  /** RPC compact is in flight; Pi abort does not cancel it. */
   manualCompactInFlight: boolean;
   activeCompaction: PiCompactionState | null;
   activeProviderRetry: PiProviderRetryState | null;
   failure: ReturnType<typeof makeProviderFailure> | null;
   /** Native retry can recover its work without accepting a rejected joining prompt. */
   rejectedPromptFailure: ReturnType<typeof makeProviderFailure> | null;
-  /** Session-tree refs read just before Stop terminates Pi, when no read is possible later. */
   stopTreeRefs?: PiTurnTreeRefs | null;
 }
 
@@ -423,7 +403,6 @@ interface PiTurnTreeRefs {
   /** Omitted keeps the synthetic ref; null means the turn left nothing on the active branch. */
   readonly nativeTurnRef: OrchestrationV2ProviderRef | null | undefined;
   readonly leafId: string | null;
-  /** Set after a native rewind: every user entry still on the active branch. */
   readonly retainedNativeTurnIds: ReadonlyArray<string> | undefined;
 }
 
@@ -574,8 +553,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       // Keep that intent beyond turn finalization so the later stdout close is
       // not mistaken for an unexpected transport failure.
       let stopRequested = false;
-      // Native work is held until an orchestrator-owned continuation or user
-      // turn attaches. The guard remains for sessions with no routable owner.
       let unsolicitedActivityDetected = false;
       let pendingWake: PiWake | null = null;
       let rollbackBarrier: Deferred.Deferred<
@@ -596,15 +573,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       );
       let appliedModel: string | null = null;
       let appliedThinking: string | null = null;
-      /** Last thread title synced into pi's session name (`/resume` listing). */
       let appliedSessionName: string | null = null;
-      /** Extension failures raised during startup are attached to the next turn. */
       const outOfTurnExtensionErrors: Array<PiRpcRecord> = [];
-      /**
-       * Leaf entry id of the pi session tree as of the last turn boundary.
-       * Turn-start user entries are located relative to it, giving each
-       * provider turn a durable native ref for session-tree rollback.
-       */
       let lastKnownLeaf: string | null = null;
       /**
        * Set when a `get_entries` capture failed. Pi may have advanced past
@@ -741,10 +711,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         };
       };
 
-      /**
-       * Settled context usage comes from get_session_stats (#8144).
-       * Bound this optional read; unsupported providers leave the last reported meter intact.
-       */
       const readTokenUsage = (fallbackUsedTokens: number | null, updatedAt: DateTime.Utc) =>
         request({ type: "get_session_stats" }, 2_000).pipe(
           Effect.map((stats) => tokenUsageFromStats(stats, fallbackUsedTokens, updatedAt)),
@@ -752,9 +718,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         );
 
       /**
-       * Pi attaches the current message's cumulative usage to every streaming
-       * update (0.84.2+). Emit it on the running turn only when the total
-       * changes, so the meter moves live without a burst of no-op updates.
+       * Pi attaches the current message's cumulative usage to every streaming update (0.84.2+).
        */
       const reportLiveUsage = (turn: ActivePiTurn, usage: unknown) =>
         Effect.gen(function* () {
@@ -1138,12 +1102,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         }
       });
 
-      /**
-       * Observe the result shape from Pi's official example subagent extension.
-       * The extension runs children with --no-session, so these entries are
-       * visible in T3's shared subagent UI without inventing a child thread.
-       * Unknown or changed result shapes stay ordinary dynamic tool output.
-       */
       const emitSubagentTasks = Effect.fnUntraced(function* (
         turn: ActivePiTurn,
         toolCallId: string,
@@ -1317,7 +1275,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           method !== "input" &&
           method !== "editor"
         ) {
-          // Terminal decoration has no matching T3 surface.
           yield* Effect.logDebug("Ignoring pi extension UI update.", { method });
           return;
         }
@@ -1489,7 +1446,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         });
       });
 
-      /** One `get_entries` listing, or null when the request failed or named no leaf. */
       const listSessionEntries = (since: string | null, timeoutMs: number) =>
         request({ type: "get_entries", ...(since === null ? {} : { since }) }, timeoutMs).pipe(
           Effect.map((data) => {
@@ -1503,16 +1459,10 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         );
 
       /**
-       * Locate this turn's first user entry and the new leaf in pi's session
-       * tree. The user-entry id becomes the provider turn's native ref (the
-       * point `fork` rolls back to); the leaf becomes the conversation head.
-       * `get_entries` is append-ordered and keeps abandoned branches, so both
-       * come from walking the leaf's `parentId` chain, never from list order.
-       * A leaf that no longer descends from the previous one means something
-       * outside T3 rewound the session, such as an extension calling
-       * `navigateTree`. The user entries left on the active branch are then
-       * returned so orchestration can roll back runs that fell off it.
-       * Pure bookkeeping: failures degrade to the synthetic refs.
+       * Locate this turn's first user entry and the new leaf in pi's session tree. The user-entry
+       * id becomes the provider turn's native ref (the point `fork` rolls back to); the leaf
+       * becomes the conversation head. `get_entries` is append-ordered and keeps abandoned
+       * branches, so both come from walking the leaf's `parentId` chain, never from list order.
        */
       const captureTurnTreeRefs = Effect.fnUntraced(function* (
         timeoutMs = PI_REQUEST_TIMEOUT_MS,
@@ -1528,9 +1478,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         // continues past it, so its ancestry needs the whole tree.
         const tree = rewound && !fullListing ? yield* listSessionEntries(null, timeoutMs) : listing;
         if (listing === null || turnWalk === null || tree === null) {
-          // The read failed or its ancestry loops. Pi may have advanced past
-          // `lastKnownLeaf` meanwhile, so the cursor can no longer be trusted
-          // to bound a single turn.
           leafCursorStale = true;
           return null;
         }
@@ -1546,12 +1493,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             ? walkPiBranch(tree.entries, listing.leafId, null)
             : undefined;
         return {
-          // Without a trustworthy cursor the walk spans more than one turn, so
-          // its earliest user entry belongs to an earlier turn. Keep the
-          // synthetic ref rather than pointing rollback too far back; the next
-          // turn gets an accurate ref again. A turn that left nothing on the
-          // active branch (a command, or a rewind) gets no ref: a rollback
-          // past it needs no fork of its own.
+          // Without a trustworthy cursor the walk spans more than one turn, so its earliest user
+          // entry belongs to an earlier turn. Keep the synthetic ref rather than pointing
+          // rollback too far back; the next turn gets an accurate ref again.
           nativeTurnRef: cursorWasStale
             ? undefined
             : turnStartEntryId !== undefined
@@ -2027,8 +1971,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             return;
           }
           case "response": {
-            // Correlated responses never reach the pump; an id-less response
-            // is the deferred ack of a fire-and-forget prompt/steer/compact.
             const command = recordString(event, "command");
             if (command === "compact") {
               const pendingCompact = pendingCompactResponses.shift();
@@ -2144,8 +2086,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             return;
           }
           case "t3.settle_probe": {
-            // New work increments the generation before the pump can consume
-            // a stale idle snapshot, so only a current snapshot may settle.
             const data = event["data"];
             const probeFailed = event["probeFailed"] === true;
             const settleAfterAgentActivity = event["settleAfterAgentActivity"] === true;
@@ -2199,9 +2139,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         Effect.catchCause((cause) =>
           sessionEventPermit.withPermits(1)(
             Effect.gen(function* () {
-              // Transport death finalizes any live turn. Stop-with-restart
-              // closes the provider stream cleanly; only an unexpected death
-              // is surfaced as an event-stream failure.
+              // Stop-with-restart closes the provider stream cleanly; only an unexpected death is
+              // surfaced as an event-stream failure.
               const state = threadState;
               if (rollbackBarrier !== null)
                 yield* Deferred.fail(
@@ -2364,8 +2303,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 updatedAt: createdAt,
               };
         threadState = { providerThread, activeTurn: null };
-        // Baseline the session-tree leaf so the first turn's user entry can
-        // be located with a `since` cursor instead of a full entry scan.
         const baselineEntries = yield* request({ type: "get_entries" }).pipe(
           Effect.orElseSucceed(() => undefined),
         );
@@ -2386,8 +2323,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       const applySelection = Effect.fnUntraced(function* (modelSelection: ModelSelection) {
         const thinking = getModelSelectionStringOptionValue(modelSelection, "thinking");
         if (modelSelection.model === PI_INHERIT_MODEL_SLUG) {
-          // Returning to "Pi default" after an explicit pick has to replay the
-          // captured baseline, otherwise Pi stays on the last model applied.
           if (appliedModel !== null && baselineModel !== null) {
             const restoredModel = yield* request({ type: "set_model", ...baselineModel });
             contextWindow = rememberModelContextWindow(restoredModel);
@@ -2520,6 +2455,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 }),
             ),
           ),
+        // The run executor routes a bare `/compact` here instead of startTurn.
         // Pi's start path already turns that text into the RPC compact call.
         compactThread: (turnInput) =>
           runtime.startTurn({
@@ -2551,9 +2487,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               turnInput.message.createdBy === "agent" &&
               turnInput.message.creationSource === "provider";
             if (!continuation) yield* applySelection(turnInput.modelSelection);
-            // Mirror the thread title into pi's session name so the session
-            // stays identifiable in pi's own /resume listing. Best-effort:
-            // naming must never block a turn.
             if (turnInput.appThread.title !== appliedSessionName) {
               yield* request({
                 type: "set_session_name",
@@ -2688,7 +2621,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                   yield* handleSessionEvent(event);
                 }
               } else if (continuation) {
-                // A user turn, teardown, or newer binding already took the wake.
                 yield* finalizeTurn(state);
               }
               if (outOfTurnExtensionErrors.length > 0) {
@@ -2780,8 +2712,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         interruptTurn: (interruptInput) =>
           Effect.gen(function* () {
             const turn = threadState?.activeTurn ?? null;
-            // Stop on a settled turn: Pi runs nothing between prompts, so
-            // nothing of that turn is left to stop.
             if (turn === null && interruptInput.requestRuntimeRestart === true) {
               if (pendingWake !== null)
                 yield* sessionEventPermit.withPermits(1)(stopPendingWake(pendingWake));
@@ -3120,9 +3050,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             if (beforeEntry === undefined) {
               return yield* protocolError("Pi fork boundary has no captured session-tree entry");
             }
-            // CLI --fork uses Pi's own session format and sets the destination
-            // cwd. RPC switch_session/clone alone would retain the source cwd.
-            // This short-lived process never prompts or runs user extensions.
+            // CLI --fork uses Pi's own session format and sets the destination cwd. RPC
+            // switch_session/clone alone would retain the source cwd.
             const forkLaunch = buildPiRpcLaunch({
               launchArgs: resolvedLaunchArgs.args,
               environment: options.environment,
@@ -3216,7 +3145,6 @@ interface PiSessionEntry {
   readonly isUserMessage: boolean;
 }
 
-/** Index a `get_entries` listing, rejecting ambiguous ancestry. */
 function piSessionEntries(entries: unknown): ReadonlyMap<string, PiSessionEntry> | null {
   const byId = new Map<string, PiSessionEntry>();
   if (!Array.isArray(entries)) return null;
@@ -3235,14 +3163,6 @@ function piSessionEntries(entries: unknown): ReadonlyMap<string, PiSessionEntry>
   return byId;
 }
 
-/**
- * Walk pi's active branch from `leafId` towards the root through `entries`,
- * stopping at `stopAt`. Returns how many entries it passed, the user entries
- * among them (newest first), and whether the walk reached `stopAt`. Leaving a
- * partial listing anywhere else means the branch does not descend from `stopAt`.
- * Returns null when the `parentId` chain loops, which only corrupted session
- * data can produce; callers treat that like a failed listing.
- */
 function walkPiBranch(
   entries: ReadonlyMap<string, PiSessionEntry>,
   leafId: string | null,
@@ -3267,12 +3187,10 @@ function walkPiBranch(
 }
 
 /**
- * Resolve the pi session-tree entry `fork` should re-root at for a rollback.
- * Turns without a ref left nothing on the active branch, so the boundary is
- * the first discarded turn that has one. Returns `null` when no such turn
- * follows the target (nothing to discard) and `undefined` when the boundary
- * turn has no captured entry ref (only turn-boundary refs recorded by
- * `captureTurnTreeRefs` are strong).
+ * Turns without a ref left nothing on the active branch, so the boundary is the first discarded
+ * turn that has one. Returns `null` when no such turn follows the target (nothing to discard) and
+ * `undefined` when the boundary turn has no captured entry ref (only turn-boundary refs recorded
+ * by `captureTurnTreeRefs` are strong).
  */
 function piRollbackForkEntry(input: {
   readonly target:
@@ -3290,10 +3208,6 @@ function piRollbackForkEntry(input: {
   return ref.nativeId;
 }
 
-/**
- * Human-readable output for one subagent-extension task result: the last
- * assistant text from its transcript, or the error/stderr when it failed.
- */
 function piSubagentOutput(result: unknown): string {
   const stopReason = recordString(result, "stopReason");
   const failed =

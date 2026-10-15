@@ -478,7 +478,10 @@ export const make = Effect.gen(function* () {
       ),
     createRepository: (input) => {
       const repository = parseRepositorySpecifier(input.repository);
-      // Azure controls access per project/organization; az repos create has no repository visibility flag.
+      // Azure Repos access is governed by project/organization permissions.
+      // `az repos create` does not expose a per-repository visibility flag, so
+      // the generic source-control visibility input is intentionally not
+      // translated into CLI args for this provider.
       return executeJson({
         cwd: input.cwd,
         args: [

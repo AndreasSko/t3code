@@ -66,8 +66,10 @@ export function latestNativeContextUsage(
 }
 
 /**
- * Reuse native occupancy across selection changes, not the old window/compaction limit.
- * Do not substitute byte length for missing measurement; new threads inherit no occupancy.
+ * Occupancy of the native transcript survives a model or option change.
+ * The previous model's window and compaction threshold do not: a byte-length
+ * stand-in for the missing measurement overstates the transcript and refuses
+ * switches that still fit. A new native thread has no occupancy to carry.
  */
 export function contextUsageForHandoff(input: {
   readonly sameNativeThread: boolean;
@@ -102,8 +104,10 @@ export function attachmentTokenAllowance(attachments: ReadonlyArray<ChatAttachme
   );
 }
 
-// One UTF-8 byte per token is pessimistic, not a tokenizer guarantee. Unknown windows
-// allow 128k with a quarter reserved for tools/work; current input is never truncated.
+// One UTF-8 byte per token is deliberately pessimistic for byte-based tokenizers,
+// including multilingual text. It is not a tokenizer or a guarantee for arbitrary
+// custom models. Unknown windows use a 128k allowance, reserving a quarter for
+// tools, instructions and subsequent work. Current input is never truncated.
 export function handoffBudget(input: {
   readonly tokenCap: number;
   readonly userText: string;
@@ -249,8 +253,7 @@ export function selectHistory(input: {
     selected.add(index);
     remaining -= cost;
   };
-  // Prioritize latest request/answer and original constraints; omit oversized items
-  // whole so they remain available through thread_read.
+  // Oversized items are omitted whole and remain available through thread_read.
   tryAdd(messages.findLastIndex((message) => message.role === "user"));
   tryAdd(messages.findLastIndex((message) => message.role === "assistant"));
   tryAdd(messages.findIndex((message) => message.role === "user"));

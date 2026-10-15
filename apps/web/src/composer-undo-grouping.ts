@@ -3,16 +3,21 @@ import type { Transaction } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 
 /**
- * ProseMirror joins adjacent edits, including store rewrites; split undo groups on change-kind switches and
- * after one second so typing, deletion, and rewrites remain separate steps.
+ * ProseMirror's history only starts a new undo step after a pause or when an
+ * edit is not next to the last one, so typing, backspacing and typing again
+ * without pausing is one step, and a store rewrite of the whole document
+ * (autocomplete inserting a chip, list continuation) makes every later edit
+ * "adjacent" and joins it.
  */
 export const COMPOSER_UNDO_GROUP_DELAY = 1000;
 
 export type ComposerChangeKind = "insert" | "delete" | "other";
 
 /**
- * Our paste/cut paths replace ProseMirror's clipboard handling; tag every dispatch to keep separate undo
- * steps.
+ * ProseMirror tags these itself only on its built-in clipboard paths; the
+ * composer's `handlePaste` and cut handler replace those paths, so each of
+ * their dispatches must call this, or the change merges with the typing or
+ * deleting around it.
  */
 export function markAsClipboardEdit(tr: Transaction, event: "paste" | "cut"): Transaction {
   return tr.setMeta("uiEvent", event);
@@ -37,8 +42,7 @@ function changeKindOf(tr: Transaction): ComposerChangeKind | null {
 }
 
 /**
- * Run before applying tr. Change-kind switches and one-off edits start undo steps; undo/redo also reset
- * grouping.
+ * Must run before the transaction is applied.
  */
 export function groupUndoByChangeKind(
   tr: Transaction,

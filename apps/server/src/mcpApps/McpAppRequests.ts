@@ -26,8 +26,13 @@ import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionMana
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpAppModelContext from "./McpAppModelContext.ts";
 
-/** Route only to the app's own server through the live provider session.
- * Never start a stopped session: viewing an app must not spend a provider turn. */
+/**
+ * The app is resolved from the tool call that produced it, so it reaches only
+ * that server, and each request runs through the thread's live provider
+ * session, whose MCP client owns the connection and its credentials. A stopped
+ * session is reported, never started: an app view must not spend a provider
+ * turn.
+ */
 export class McpAppRequests extends Context.Service<
   McpAppRequests,
   {
@@ -161,11 +166,13 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError((cause) => fail(input.threadId, "request-failed", cause)));
   });
 
+  // Context is state for the agent's next turn, so it needs the app but not a
+  // live session. Text blocks are kept as written and structured content as
+  // JSON; other content kinds are not declared by the host.
   const descendsFrom = Effect.fn("McpAppRequests.descendsFrom")(function* (
     threadId: ThreadId,
     ancestorId: ThreadId,
   ) {
-    // A repeated thread indicates a corrupt fork cycle and proves no lineage.
     const seen = new Set<ThreadId>();
     let current: ThreadId | null = threadId;
     while (current !== null && !seen.has(current)) {
@@ -180,8 +187,6 @@ const make = Effect.gen(function* () {
     return false;
   });
 
-  // Model context is next-turn state and needs no live provider session;
-  // preserve text and JSON structured content.
   const updateModelContext = Effect.fn("McpAppRequests.updateModelContext")(function* (
     input: McpAppUpdateModelContextInput,
   ) {

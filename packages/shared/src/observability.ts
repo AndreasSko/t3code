@@ -21,8 +21,8 @@ export const layerOtlpSerialization = (protocol: OtlpProtocol) =>
   protocol === "http/protobuf" ? OtlpSerialization.layerProtobuf : OtlpSerialization.layerJson;
 
 /**
- * Resolve export settings per signal so credentials and wire formats stay
- * paired with the endpoint whose source selected them.
+ * Held per signal rather than per process, so a wire format or a credential cannot be paired by
+ * hand with an endpoint that came from somewhere else.
  */
 export interface SignalExport {
   readonly protocol: OtlpProtocol;
@@ -280,7 +280,6 @@ const TRACE_ATTRIBUTE_TRUNCATED_LENGTH = 200;
 const TRACE_ATTRIBUTE_TRUNCATION_SUFFIX = "…[truncated]";
 const ALWAYS_TRUNCATED_TRACE_ATTRIBUTES: ReadonlySet<string> = new Set(["db.query.text"]);
 
-// Accepts normalized JSON values and preserves references when no string needs truncation.
 function truncateNestedValue(value: unknown): unknown {
   if (typeof value === "string") {
     return value.length <= TRACE_ATTRIBUTE_MAX_LENGTH
@@ -305,8 +304,8 @@ function truncateNestedValue(value: unknown): unknown {
 }
 
 /**
- * Bound serialized trace size without mutating live-span attributes shared with other tracers.
- * Nested arrays and objects are copied only when a string changes.
+ * Returns a new record when anything was clamped; never mutates the input (the live span's
+ * attributes are shared with other tracers).
  */
 export function truncateTraceAttributes(attributes: TraceAttributes): TraceAttributes {
   let truncated: Record<string, unknown> | undefined;
@@ -766,8 +765,11 @@ function parseBigInt(input: string): bigint {
 }
 
 /**
- * OTLP headers use comma-separated W3C Baggage key=value pairs with percent-encoded values.
- * Split at the first = to preserve literal equals signs in values.
+ * Parses the `OTEL_EXPORTER_OTLP_HEADERS` wire format used by
+ * `T3CODE_OTLP_HEADERS`: W3C Baggage `key=value` pairs joined by commas, with
+ * percent-encoded values. Each pair splits at its first `=` so an encoded or
+ * literal `=` inside a value survives, and whitespace around the separators is
+ * ignored.
  */
 export const OtlpHeadersFromString = Schema.String.pipe(
   Schema.decodeTo(

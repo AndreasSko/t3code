@@ -19,8 +19,11 @@ const CHECK_TIMEOUT = "5 seconds";
 export class OtlpEndpointCheck extends Context.Service<
   OtlpEndpointCheck,
   {
-    /** Send an empty export with the running protocol; use credentials only
-     * at their exact endpoint and never follow redirects. */
+    /**
+     * Posts an empty export for the signal to `url` from this server, with the
+     * running signal's protocol. Receivers accept an empty export without
+     * storing anything.
+     */
     readonly check: (input: OtlpEndpointCheckInput) => Effect.Effect<OtlpEndpointCheckResult>;
   }
 >()("t3/observability/OtlpEndpointCheck") {}
@@ -61,8 +64,9 @@ const make = Effect.gen(function* () {
       return emptyExport(serialization, signal);
     }).pipe(Effect.provide(layerOtlpSerialization(signalExport.protocol)));
     const startedAt = yield* Clock.currentTimeMillis;
-    // Read status then close scope so open bodies cannot hold connections;
-    // disable tracing to keep endpoint URLs and credential headers out of spans.
+    // Only the status matters. The scope aborts the request once it is read, so a receiver
+    // that keeps its body open cannot hold the connection. Tracing stays off, as it does for
+    // real exports, because request spans record the URL and custom credential headers.
     const response = yield* HttpClient.withScope(httpClient)
       .post(url, { body, headers })
       .pipe(

@@ -56,12 +56,10 @@ import { constantTimeEquals, verifyWebhookSignature } from "./webhookVerificatio
 
 export const WEBHOOK_ROUTE_PREFIX = "/api/hooks";
 const WEBHOOK_DELIVERY_RETENTION = 50;
-/** Body bytes kept in the delivery log. */
 const WEBHOOK_DELIVERY_LOG_BODY_LIMIT = 64 * 1024;
-/** Prompt characters kept in the delivery log. */
 const WEBHOOK_DELIVERY_LOG_PROMPT_LIMIT = 64 * 1024;
 const WEBHOOK_MAX_QUEUED_PER_TASK = 20;
-/** Enforce locally too: callers can bypass the relay via the public tunnel. */
+/** Accepted deliveries per task per minute, enforced here as well as on the relay because the tunnel hostname is public too. */
 const WEBHOOK_RATE_LIMIT_PER_MINUTE = 60;
 
 /**
@@ -74,7 +72,10 @@ interface WebhookOrigin {
 
 const ENDPOINT_KEY = /^[0-9a-f]{16}$/;
 
-/** Uses the managed tunnel key so public hook URLs do not reveal the environment id. */
+/**
+ * The relay finds the environment by its managed tunnel's key (the tunnel
+ * name's last segment), so the URL never reveals the environment id.
+ */
 export function relayHookBaseUrl(input: {
   readonly relayUrl: string;
   readonly tunnelName: string | undefined;
@@ -94,14 +95,12 @@ export class ScheduledTaskWebhookOrigin extends Context.Reference<Effect.Effect<
   },
 ) {}
 
-/** `reason` is shown in the delivery log. */
 class WebhookDeliverySkipped extends Data.TaggedError("WebhookDeliverySkipped")<{
   readonly reason: string;
 }> {}
 
 interface RateWindow {
   readonly accepted: ReadonlyArray<number>;
-  /** Whether a rejection was already logged in this window. */
   readonly rejectedLogged: boolean;
 }
 
@@ -111,12 +110,12 @@ export interface WebhookTriggerRequest extends WebhookRequest {
   readonly body: Uint8Array;
   /** Set by T3 Connect; the same id is never dispatched twice. */
   readonly relayDeliveryId?: string;
-  /** When the relay received a held request; defaults to now. */
   readonly receivedAt?: string;
 }
 
-/** Unknown hooks and wrong tokens both return `not_found`. */
-/** Metrics outcome returned as `x-t3-hook-outcome`; never contains request contents. */
+/**
+ * Sent back to the relay as `x-t3-hook-outcome`; never request contents.
+ */
 export type WebhookDeliveryOutcome =
   | "accepted"
   | "duplicate"
@@ -133,7 +132,6 @@ export type WebhookTriggerResult =
   | {
       readonly _tag: "accepted";
       readonly deliveryId: ScheduledTaskWebhookDeliveryId;
-      /** A 202 covers more than a started run; this says which. */
       readonly outcome: "accepted" | "duplicate" | "prompt_too_long";
     }
   | { readonly _tag: "not_found" }
@@ -209,7 +207,7 @@ export class ScheduledTaskService extends Context.Service<
   ScheduledTaskService,
   {
     readonly list: () => Effect.Effect<ScheduledTaskListResult, ScheduledTaskError>;
-    /** Emits a full snapshot on subscribe and after each change. */
+    /** Emits the full task list on subscribe and again after every change (CRUD, run transitions, reschedules). */
     readonly subscribeList: () => Stream.Stream<ScheduledTaskListResult, ScheduledTaskError>;
     readonly upsert: (
       input: ScheduledTaskUpsertInput,
@@ -223,7 +221,6 @@ export class ScheduledTaskService extends Context.Service<
     readonly runNow: (
       input: ScheduledTaskRunNowInput,
     ) => Effect.Effect<ScheduledTaskRunNowResult, ScheduledTaskError>;
-    /** Invalidates the old webhook URL immediately. */
     readonly rotateWebhookToken: (
       input: ScheduledTaskRotateWebhookTokenInput,
     ) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
@@ -233,7 +230,11 @@ export class ScheduledTaskService extends Context.Service<
     readonly getWebhookDelivery: (
       input: ScheduledTaskGetWebhookDeliveryInput,
     ) => Effect.Effect<ScheduledTaskGetWebhookDeliveryResult, ScheduledTaskError>;
-    /** Returns once logged; dispatch continues in the background to meet sender timeouts. */
+    /**
+     * Verifies, logs and dispatches one webhook request. Returns as soon as the
+     * delivery is logged; the run itself continues in the background so senders
+     * with short timeouts get their answer immediately.
+     */
     readonly triggerWebhook: (
       request: WebhookTriggerRequest,
     ) => Effect.Effect<WebhookTriggerResult, ScheduledTaskError>;
@@ -350,7 +351,9 @@ export const listDueTasks = Effect.fn("ScheduledTaskService.listDueTasks")(funct
     const decoded = yield* Effect.result(decodeRow(row));
     if (Result.isSuccess(decoded)) {
       const task = decoded.success;
-      // next_run_at accepts arbitrary strings; reject invalid DateTimes before the poll's unsafe parse.
+      // next_run_at is a freeform string at the schema level; a stored value
+      // that cannot parse as a DateTime would defect the poll below, so the
+      // row is skipped here like any other corrupt row.
       if (task.nextRunAt === null || Option.isSome(DateTime.make(task.nextRunAt))) {
         tasks.push(task);
       } else {
@@ -388,7 +391,9 @@ export const layer = Layer.effect(
     const webhookQueued = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
     const webhookRateWindows = yield* Ref.make<ReadonlyMap<ScheduledTaskId, RateWindow>>(new Map());
     const activeRuns = yield* Ref.make<ReadonlySet<ScheduledTaskId>>(new Set());
-    // Each signal re-emits the full list, so a slow subscriber needs only the latest.
+    // Sliding(1) coalesces the dirty-signal: every notification triggers a
+    // full list() re-emit anyway, so a slow subscriber only ever needs the
+    // latest signal — an unbounded backlog would just grow memory.
     const changesPubSub = yield* PubSub.sliding<void>(1);
     const notifyChanged = PubSub.publish(changesPubSub, undefined).pipe(Effect.asVoid);
 
@@ -420,7 +425,6 @@ export const layer = Layer.effect(
       ORDER BY updated_at DESC, task_id ASC
     `;
 
-    // Strict decode for the API surface: a corrupt row is a visible error.
     const listRows = Effect.fn("ScheduledTaskService.listRows")(function* () {
       const rows = yield* selectAllRows();
       const origin = yield* readWebhookOrigin;
@@ -455,7 +459,6 @@ export const layer = Layer.effect(
       WHERE task_id = ${id}
     `;
 
-    /** Missing tasks return null; load and decode errors propagate. */
     const findTask = Effect.fn("ScheduledTaskService.findTask")(function* (id: ScheduledTaskId) {
       const rows = yield* getRows(id).pipe(
         Effect.mapError((cause) =>
@@ -492,8 +495,11 @@ export const layer = Layer.effect(
       return task;
     });
 
-    // Omit run-state columns so saves preserve concurrent transitions.
-    // Check existence in this write so a stale edit cannot resurrect a deleted task.
+    // Run-state columns (last_run_*, run_count) are intentionally absent from
+    // the conflict clause: they are owned by the run transitions below, and a
+    // concurrent settings save must not overwrite an in-flight increment.
+    // Check existence in the write itself so an edit cannot undo a deletion
+    // that landed after upsert loaded the previous task.
     const saveTask = (
       task: ScheduledTask,
       requireExisting: boolean,
@@ -604,8 +610,9 @@ export const layer = Layer.effect(
           ),
         );
 
-    // Targeted UPDATEs keep completing runs from resurrecting deleted tasks
-    // or clobbering concurrent edits to their definitions.
+    // Run-state transitions use targeted UPDATEs (never the full-row upsert) so
+    // a completing run cannot resurrect a deleted task or clobber concurrent
+    // edits to the task definition.
     const markRunning = (id: ScheduledTaskId, startedAtIso: string) =>
       sql<{ task_id: string }>`
         UPDATE scheduled_tasks
@@ -649,14 +656,19 @@ export const layer = Layer.effect(
         ),
       );
 
-    // Release running rows after failures so polls cannot skip them forever.
-    // Dispatch may have happened: advance next_run_at and count the attempt to prevent replay.
+    // Best-effort escape hatch: if anything fails between markRunning and
+    // markCompleted, write a full terminal record so runDueTasks neither skips
+    // the task forever (it filters out 'running' rows) nor re-fires it
+    // immediately: the dispatch may already have gone out, so next_run_at must
+    // advance and run_count must count the attempt.
     const releaseStuckRun = (task: ScheduledTask, message: string) =>
       Effect.gen(function* () {
         const now = yield* localNow;
-        // Honor in-flight schedule edits; use the run snapshot only if the re-read fails.
+        // Compute the next occurrence from the current row so a schedule
+        // edited while the run was in flight is honoured; fall back to the
+        // run's snapshot only if the re-read itself fails.
         const reread = yield* Effect.result(findTask(task.id));
-        if (Result.isSuccess(reread) && reread.success === null) return; // deleted — nothing to release
+        if (Result.isSuccess(reread) && reread.success === null) return;
         const source = Result.isSuccess(reread) && reread.success !== null ? reread.success : task;
         yield* sql`
           UPDATE scheduled_tasks
@@ -699,7 +711,9 @@ export const layer = Layer.effect(
         const startedAt = yield* localNow;
         const startedAtIso = iso(startedAt);
 
-        // Re-read before changing run state; deleted, paused, or postponed tasks must not fire.
+        // The in-memory snapshot may be stale: re-read before touching run
+        // state. The task may have been deleted, paused, or postponed since
+        // the poll loaded it — none of those may fire.
         const active = yield* findTask(task.id);
         if (active === null) {
           if (webhook !== undefined) {
@@ -707,8 +721,6 @@ export const layer = Layer.effect(
               reason: "The task was deleted before this delivery ran.",
             });
           }
-          // A manual run on a just-deleted task must fail loudly, not report
-          // a successful run that never dispatched.
           if (trigger !== "scheduled") {
             return yield* taskError("Schedule task not found.", { taskId: task.id });
           }
@@ -726,7 +738,9 @@ export const layer = Layer.effect(
         ) {
           return active;
         }
-        // Queued deliveries must not run paused tasks or tasks whose identity or trigger changed.
+        // A queued delivery must not run a task that was paused, deleted and
+        // recreated under the same id, or switched to another trigger while
+        // it waited for its turn.
         if (webhook !== undefined) {
           const reason =
             active.createdAt !== task.createdAt
@@ -742,17 +756,20 @@ export const layer = Layer.effect(
         yield* markRunning(active.id, startedAtIso);
         yield* notifyChanged;
 
-        // Key webhook runs by delivery to prevent duplicate dispatch.
         const fireKey =
           webhook === undefined
             ? `${active.id}:${DateTime.toEpochMillis(startedAt)}:${trigger}`
             : `${active.id}:webhook:${webhook.deliveryId}`;
         const commandId = CommandId.make(`scheduled-task:${fireKey}`);
         const messageId = MessageId.make(`scheduled-task-message:${fireKey}`);
-        // Honor prompt/model/binding edits after polling; webhook prompts use the arrival-time row.
+        // Dispatch from the fresh row so prompt/model/binding edits made
+        // after the poll read are honoured. A webhook prompt was rendered
+        // from the row when the request arrived.
         const prompt = webhook?.prompt ?? active.prompt;
 
-        // Effect.exit captures defects and interruptions too, so markCompleted records failed dispatches.
+        // Effect.exit (not Effect.result) so defects and interruptions in the
+        // dispatch are also captured and recorded as a failed run instead of
+        // aborting before markCompleted.
         const result =
           active.threadId === null
             ? yield* Effect.exit(
@@ -795,7 +812,8 @@ export const layer = Layer.effect(
         const runSucceeded = result._tag === "Success";
         const lastRunStatus = runSucceeded ? ("succeeded" as const) : ("failed" as const);
         const lastRunError = runSucceeded ? null : errorMessage(result.cause);
-        // Compute the next run from the current schedule, honoring edits or deletions during dispatch.
+        // Re-read the task so the next run is computed from the schedule as it
+        // is *now* (the user may have edited or deleted it while we ran).
         const current = yield* findTask(task.id);
         const scheduleSource = current ?? task;
         const completed: ScheduledTask = {
@@ -808,7 +826,9 @@ export const layer = Layer.effect(
           runCount: scheduleSource.runCount + 1,
         };
         if (current !== null) {
-          // Guard by startedAtIso so a task recreated under the same id is not stamped by the old run.
+          // startedAtIso in the guard ensures this writes only to the row this
+          // run marked as running — a task deleted mid-run and recreated with
+          // the same id (idempotent commandId replay) must not be stamped.
           yield* markCompleted({
             id: task.id,
             completedAtIso: completed.updatedAt,
@@ -881,8 +901,12 @@ export const layer = Layer.effect(
       );
     });
 
-    // Interrupted dispatches may already have run, so advance next_run_at and count the attempt.
-    // Release running rows to avoid permanent skips; JSON schedules require per-row recovery.
+    // Recover from a crash or hard shutdown mid-run: rows stuck in 'running'
+    // would otherwise be skipped by the due-task filter forever. The dispatch
+    // may already have gone out before the crash, so next_run_at must advance
+    // and run_count must count the attempt — otherwise the first poll after
+    // every restart re-fires the interrupted task (same rationale as
+    // releaseStuckRun).
     yield* Effect.gen(function* () {
       const rows = yield* selectAllRows();
       const stuck = rows.filter((row) => row.last_run_status === "running");
@@ -905,7 +929,9 @@ export const layer = Layer.effect(
               `;
               return;
             }
-            // Release corrupt rows from running; the lenient poller skips them, preventing replay.
+            // The schedule cannot be decoded, so the next occurrence cannot
+            // be computed — still release the row so it is not stuck in
+            // 'running' (the lenient poller skips it, so it cannot re-fire).
             yield* Effect.logWarning(
               "Recovering undecodable schedule task row without rescheduling",
               { taskId: row.task_id, cause: decoded.failure },
@@ -967,9 +993,13 @@ export const layer = Layer.effect(
           ScheduledTaskId.make(
             input.commandId ? `scheduled-task:${input.commandId}` : `scheduled-task:${uuid}`,
           );
-        // Resolved ids preserve history on commandId replay; real load errors must propagate.
+        // Look up by the *resolved* id so idempotent creates (commandId replays)
+        // keep their run history, and so real load failures propagate instead
+        // of silently resetting an existing row.
         const existingTask = yield* findTask(id);
-        // Only schedule/enabled changes restart the clock; title or prompt edits must not postpone a due run.
+        // Keep the existing next_run_at when the schedule itself is untouched:
+        // editing a title or prompt must not postpone (or resurrect) a due
+        // run — only schedule/enabled changes restart the clock.
         const schedule: ScheduledTask["schedule"] =
           input.schedule.type === "webhook"
             ? {
@@ -989,11 +1019,12 @@ export const layer = Layer.effect(
           input.schedule.type === "webhook"
             ? yield* Effect.gen(function* () {
                 const existing = existingTask === null ? null : yield* findWebhookCredentials(id);
-                // Saving a webhook task keeps its URL; only rotate changes it.
                 const token = existing?.token ?? (yield* newWebhookToken);
                 const signature =
                   input.schedule.type === "webhook" ? input.schedule.signature : null;
-                // secretRef is consumed once; a replay keeps the secret stored by the original save.
+                // A secretRef is a value the user entered for an agent; this
+                // save consumes it, so it cannot be used again. A replay of a
+                // save that already used it keeps the secret that save stored.
                 const replay = input.commandId !== undefined && existing?.secret != null;
                 const fromRef =
                   signature?.secretRef === undefined
@@ -1107,7 +1138,6 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const task = yield* loadTask(input.id);
         if (task.schedule.type === "webhook") {
-          // There is no request to render the prompt from.
           return yield* taskError("Webhook tasks run when their URL receives a request.", {
             taskId: input.id,
           });
@@ -1274,7 +1304,10 @@ export const layer = Layer.effect(
         WHERE delivery_id = ${deliveryId}
       `.pipe(Effect.ignore);
 
-    /** The sliding minute counts valid-token requests, including rejected signatures. */
+    /**
+     * Sliding one-minute window counting every request with a valid token,
+     * including ones the signature check later rejects.
+     */
     const takeRateSlot = (id: ScheduledTaskId, nowMs: number) =>
       Ref.modify(
         webhookRateWindows,
@@ -1317,7 +1350,6 @@ export const layer = Layer.effect(
     // run; scoped to the service so shutdown interrupts it.
     const serviceScope = yield* Effect.scope;
 
-    /** Finer outcomes distinguish queue pressure and oversized prompts in operational metrics. */
     const observeDelivery = (
       request: WebhookTriggerRequest,
       outcome: WebhookDeliveryOutcome,
@@ -1383,8 +1415,9 @@ export const layer = Layer.effect(
         if (schedule.type !== "webhook") return yield* notFound;
 
         const now = yield* localNow;
-        // Callers can forge relay headers through the public tunnel; clamp receivedAt to now
-        // so future timestamps cannot bypass max age or pin delivery-log entries.
+        // Anyone can reach the tunnel directly and set the relay's header, so
+        // a receive time is never later than now: a future one would pin the
+        // delivery in the log and slip past the task's max age.
         const receivedAt =
           request.receivedAt === undefined
             ? now
@@ -1405,8 +1438,11 @@ export const layer = Layer.effect(
                 )}`
             : `delivery:relay:${request.relayDeliveryId}`,
         );
-        // Retain claims longer than relay retries, independently of the trimmed delivery log.
-        // Release retryable rate-limited claims so the relay can deliver them again.
+        // A held request may already have reached this environment directly
+        // before a timeout; it runs once. Claimed in its own table, kept longer
+        // than the relay holds a request, because the delivery log is trimmed.
+        // A rate-limited delivery stays held on the relay, so it must give up
+        // its claim or the next pass would treat it as already delivered.
         const releaseClaim = <A>(result: A) =>
           request.relayDeliveryId === undefined
             ? Effect.succeed(result)
@@ -1414,8 +1450,10 @@ export const layer = Layer.effect(
                 DELETE FROM scheduled_task_webhook_relay_deliveries
                 WHERE relay_delivery_id = ${request.relayDeliveryId}
               `.pipe(Effect.ignore, Effect.as(result));
-        // Claiming through forking must be uninterruptible: sender timeouts could otherwise
-        // leave a claimed delivery that never runs or a queue slot that never releases.
+        // From the claim until the run is forked nothing may interrupt: a
+        // request dropped in between (the relay hangs up after its timeout)
+        // would leave a claimed delivery that never runs, or a queue slot that
+        // is never released.
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
             if (request.relayDeliveryId !== undefined) {
@@ -1505,8 +1543,9 @@ export const layer = Layer.effect(
             }
 
             const rendered = renderWebhookPrompt(task.prompt, request);
-            // Oversized prompts cannot be retried, so retain their claims.
-            // Provider validation trims the prompt before checking its length.
+            // A provider refuses a turn this long, so it is not started. The
+            // delivery is not retryable, so the claim is kept. Providers trim
+            // the prompt before checking, so whitespace around it is free.
             if (rendered.prompt.trim().length > PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
               yield* log("dispatch_failed", {
                 signatureVerified: signature !== null,
@@ -1517,8 +1556,9 @@ export const layer = Layer.effect(
               yield* observe("prompt_too_long");
               return { _tag: "accepted" as const, deliveryId, outcome: "prompt_too_long" as const };
             }
-            // Bound parked fibers for stuck tasks; do not log refused requests
-            // that could push real deliveries out of the log.
+            // Bound the deliveries one task holds, so steady traffic to a stuck
+            // task cannot pile up parked fibers. A refused request is not logged,
+            // so it cannot push real deliveries out of the log.
             const queueKey = `${task.id}\u0000${task.createdAt}`;
             const queued = yield* Ref.modify(webhookQueued, (counts) => {
               const count = counts.get(queueKey) ?? 0;

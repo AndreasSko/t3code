@@ -20,9 +20,6 @@ const STANDS = [
   { id: "tent", label: "Tent stand" },
 ] as const;
 
-/** Folds move only the hinge: a vertical phone opens book-style into landscape,
- * while a horizontal phone opens laptop-style into portrait. Stands place and
- * rotate the device; pinching provides continuous hinge control. */
 export function DeviceDuoControls(props: {
   screen: DeviceScreenSize;
   state: DuoControlState;

@@ -3,8 +3,9 @@ import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
 /**
- * Open slugs let clients decode unknown hosts and use a generic presentation.
- * `unknown` denotes a remote the server cannot attribute.
+ * Open on purpose, like `ProviderDriverKind`: a server can report a host this client does not
+ * ship a definition for, and clients fall back to a generic presentation instead of failing to
+ * decode. `unknown` is what the server reports for a remote it cannot attribute to any host.
  */
 export const SourceControlProviderKind = TrimmedNonEmptyString.check(
   Schema.isMaxLength(64),
@@ -123,7 +124,6 @@ export const SourceControlProviderAuth = Schema.Struct({
   account: Schema.Option(TrimmedNonEmptyString),
   host: Schema.Option(TrimmedNonEmptyString),
   detail: Schema.Option(TrimmedNonEmptyString),
-  /** Every login the provider CLI holds, across hosts. Only GitHub reports these today. */
   accounts: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

@@ -1,6 +1,7 @@
 /**
- * Cursor's slow account API is cached on disk; reads return stale data while refreshing.
- * awaitRefresh waits for fresh data, and persisted history limits restarts to the newest edge.
+ * Cursor's account API is slow, so a read answers from the cached account
+ * history and marks itself `refreshing` while a background refresh runs;
+ * `awaitRefresh` waits for that refresh instead.
  */
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -33,7 +34,6 @@ import * as CursorAccountReader from "./CursorAccountReader.ts";
 
 const CURSOR_ACCOUNT_READ_ERROR = "Cursor account usage could not be read.";
 
-/** The cache file is narrowed by hand in `accountCache`, so JSON is enough here. */
 const decodeCacheFile = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>),
 );
@@ -65,14 +65,13 @@ const make = Effect.gen(function* () {
   const caches = new Map<string, CursorAccountCache>();
   let cacheDirty = false;
   /**
-   * Cache failures for a TTL so broken logins do not trigger repeated API calls.
-   * A null error means there is no login and no source to report.
+   * The last failed refresh per credential source, standing for a TTL so a
+   * client refetching a broken login does not refetch Cursor each time. A
+   * `null` error means there is no login: no source to report.
    */
   const failures = new Map<string, { readonly atMs: number; readonly error: string | null }>();
-  /** The refresh in flight per credential source, which every read joins. */
   const refreshes = new Map<string, Deferred.Deferred<void>>();
 
-  /** Loads the persisted caches once; concurrent first readers await the same load. */
   const ensureLoaded = yield* Effect.cached(
     fileSystem.readFileString(cachePath).pipe(
       Effect.flatMap((raw) => decodeCacheFile(raw)),
@@ -103,7 +102,6 @@ const make = Effect.gen(function* () {
   }).pipe(persistLock.withPermit, Effect.withSpan("CursorUsageAccounts.persist"));
 
   const pendingPersists = new Set<Fiber.Fiber<void>>();
-  /** Writes the caches in the background, after the read that dirtied them answers. */
   const schedulePersist = Effect.forkDetach(persist).pipe(
     Effect.map((fiber) => {
       pendingPersists.add(fiber);
@@ -113,7 +111,6 @@ const make = Effect.gen(function* () {
   const awaitPersisted = Effect.suspend(() => Fiber.awaitAll([...pendingPersists])).pipe(
     Effect.asVoid,
   );
-  // A write still running at shutdown finishes first, so the next start keeps it.
   yield* Effect.addFinalizer(() => awaitPersisted);
 
   const refreshAccount = Effect.fn("CursorUsageAccounts.refreshAccount")(function* (
@@ -201,7 +198,11 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  /** Reuse successes and failures within their TTL; awaitRefresh waits for a needed refresh. */
+  /**
+   * The account source. A cache inside its TTL, or a refresh that failed
+   * inside it, answers directly. Otherwise a refresh starts: `awaitRefresh`
+   * waits for it, and anything else answers from the cache marked `refreshing`.
+   */
   const accountSource = Effect.fn("CursorUsageAccounts.accountSource")(function* (
     credential: CursorCredentialSource,
     authPath: string,

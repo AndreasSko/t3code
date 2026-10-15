@@ -104,7 +104,6 @@ export function renderGhosttySnapshot(options: {
   readonly focused?: boolean;
   readonly selectionBackground?: string;
   readonly hoveredLinkRange?: GhosttyCellRange | null;
-  /** Vertical origin of row 0; defaults to the horizontal padding. */
   readonly originY?: number;
 }): void {
   const {

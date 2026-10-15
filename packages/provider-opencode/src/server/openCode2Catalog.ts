@@ -5,12 +5,20 @@ import * as Option from "effect/Option";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import type { OpenCode2Model } from "./status.ts";
 
-/** Cold catalogs take seconds to load; provider names must not delay model availability indefinitely. */
+/**
+ * A server loads its provider list with the rest of its catalog, which takes a couple of seconds
+ * on a cold start, and the model loader retries while the catalog is empty anyway.
+ */
 const PROVIDER_NAME_TIMEOUT = "3 seconds";
 
 /**
- * Provider catalogs overlap, so provider names distinguish otherwise identical model rows.
- * Names are optional decoration: a failed or slow provider read must not hide models.
+ * One instance fronts several providers: OpenCode Zen, OpenCode Go, and whatever the user added
+ * themselves. Their catalogues overlap, so a model's name alone cannot say which provider listed
+ * it and two rows for it read the same. A server that cannot name its providers still lists its
+ * models, so the provider read is optional: a model whose provider went unnamed keeps only its id,
+ * which the status check then uses as the label. The models carry the payload and the names are
+ * decoration, so a provider read is bounded as well as optional: one that never answers must not
+ * hold the models back.
  */
 export const loadOpenCode2Catalog = (
   client: OpenCodeClient,

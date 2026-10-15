@@ -36,7 +36,11 @@ const VIEWPORTS = [
   }),
 ];
 
-/** Browser tab settings are sent through the environment so every client sees the same tab. */
+/**
+ * The browser tab's menu: appearance, zoom, viewport, a hard reload, and its profile's site
+ * data. Each runs through the environment, as on web and desktop, so every client and agent
+ * sees the same tab. None need control.
+ */
 export function BrowserTabMenu({
   environmentId,
   tab,

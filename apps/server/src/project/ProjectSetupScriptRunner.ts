@@ -33,8 +33,11 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly cwd: string;
   /** False when the script's `async` flag asks the agent to wait for it. */
   readonly async: boolean;
-  /** Present only with `observeCompletion`; null exit code means the terminal ended before the sentinel.
-   * Successful scripts close their shell if it is idle. */
+  /**
+   * The exit code is null when the terminal exited or was closed before the sentinel arrived. Only
+   * present when `observeCompletion` was requested. An exit code of 0 closes the setup shell if it
+   * has nothing left running.
+   */
   readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
 }
 
@@ -64,7 +67,6 @@ export interface ProjectSetupScriptRunnerInput {
     readonly workspaceRoot: string;
     readonly scripts: ReadonlyArray<ProjectScript>;
   };
-  /** Observe exit codes and cleaned output through the terminal stream for the setup card. */
   readonly observeCompletion?: {
     readonly onOutputLine?: (line: string) => Effect.Effect<void>;
   };
@@ -116,10 +118,12 @@ export class ProjectSetupScriptRunner extends Context.Service<
 >()("t3/project/ProjectSetupScriptRunner") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
-/** Per-run random tokens prevent script output from spoofing completion. */
+/**
+ * Each run gets its own random token so script output cannot spoof completion, and the sentinel
+ * pattern is built per run from it.
+ */
 const COMPLETION_SENTINEL_PREFIX = "__T3_SETUP_DONE__";
 const OUTPUT_LINE_MAX_LENGTH = 400;
-/** A partial line longer than this is a byte stream, not a line. Keep only the tail. */
 const PARTIAL_LINE_MAX_LENGTH = 4_096;
 
 function completionSentinel(token: string): string {
@@ -145,7 +149,10 @@ function stripTerminalControl(text: string): string {
 
 type CompletionShell = "posix" | "fish" | "powershell";
 
-/** Match TerminalManager's shell choice: $SHELL on POSIX, PowerShell on Windows. */
+/**
+ * The manager takes `$SHELL` on POSIX and PowerShell on Windows, falling back to other shells only
+ * when that one fails to spawn.
+ */
 function resolveCompletionShell(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
@@ -158,8 +165,12 @@ function resolveCompletionShell(
   return "posix";
 }
 
-/** A complete block prevents comments, heredocs, and stdin reads from swallowing the sentinel.
- * `\r` sends Enter to shell line editors. */
+/**
+ * The command runs inside a block and the block closes on its own line, so a trailing `# comment`
+ * or a heredoc terminator in the command cannot swallow the sentinel. The shell reads the whole
+ * block before running any of it, so a script that reads stdin cannot consume the sentinel line
+ * either. Lines are separated by `\r` because that is the Enter key for every shell's line editor.
+ */
 function wrapCommandForCompletion(
   command: string,
   shell: CompletionShell,
@@ -242,7 +253,12 @@ export const make = Effect.gen(function* () {
         }
         if (event.type === "output") {
           lineBuffer += event.data;
-          // Bare carriage returns redraw progress lines; split wrapper echoes on the same boundaries.
+          // A bare carriage return is how installers redraw a progress line in
+          // place; each redraw becomes a short line of its own instead of
+          // being glued into one long one. The wrapper echo is filtered per
+          // segment too, which is why `echoedWrapperLines` is split on the
+          // same `\r`: a line editor repainting the typed command yields the
+          // same segments.
           const lines = lineBuffer.split(/\r\n|\r|\n/);
           lineBuffer = lines.pop() ?? "";
           // A script that never prints a newline must not grow this forever.
@@ -354,7 +370,9 @@ export const make = Effect.gen(function* () {
         project: { cwd: project.workspaceRoot },
         worktreePath: input.worktreePath,
       }),
-      // Before clients attach, truecolor probes can hang waiting for replies; advertise only 256 colors.
+      // Setup can run before a client attaches. Truecolor probes in tools such
+      // as Vite+ wait for terminal replies that nobody can send at that point.
+      // Keep TERM's 256-color support without advertising truecolor here.
       COLORTERM: "",
     };
     const observe = input.observeCompletion;
@@ -376,7 +394,6 @@ export const make = Effect.gen(function* () {
         terminalId,
         cwd,
         worktreePath: input.worktreePath,
-        // Setup may run before a terminal client attaches to answer color probes.
         env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
       })
       .pipe(
@@ -417,11 +434,9 @@ export const make = Effect.gen(function* () {
               cause,
             }),
         ),
-        // Nothing will ever settle the completion if the command never ran.
         Effect.tapError(() => Effect.sync(() => observed?.unsubscribe())),
       );
 
-    // Keep failed shells open for inspection; clean runs leave their output in terminal history.
     const completion = observed?.completion.pipe(
       Effect.tap(({ exitCode }) =>
         exitCode === 0

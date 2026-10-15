@@ -20,7 +20,11 @@ function chainKeyOf(chain: ThreadPullRequestChain): string {
   return `${bottom.host}/${bottom.repository}#${bottom.number}`;
 }
 
-/** Sort stacks by their newest layer, then render each stack bottom-to-top. */
+/**
+ * A stack sorts by its most recent layer and then reads bottom to top beneath that slot, so
+ * the layer you would review first is at the bottom of the indent and a fresh push anywhere
+ * in the stack floats the whole stack up.
+ */
 export function pullRequestListLines(
   chains: ReadonlyArray<ThreadPullRequestChain>,
 ): ReadonlyArray<PullRequestListLine> {

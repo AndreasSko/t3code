@@ -205,7 +205,10 @@ type StyledDiffCodeViewProps<LAnnotation> = (
 ) & {
   readonly options?: StyledDiffCodeViewOptions<LAnnotation>;
   readonly viewerRef?: Ref<CodeViewHandle<LAnnotation, undefined>>;
-  /** Appended inside the viewer shadow root to customize chrome owned by the viewer. */
+  /**
+   * Appended to the shared stylesheet inside the viewer's shadow root, for a surface that has
+   * to restyle chrome the viewer owns — such as replacing its per-file line counts.
+   */
   readonly unsafeCSSExtra?: string;
 };
 
@@ -236,11 +239,16 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
           itemMetrics: {
             diffHeaderHeight: 32,
             hunkSeparatorHeight: 24,
-            // Expanded-file paths fall back to spacing; zero it too to avoid an extra 8px header gap.
+            // Pierre uses its general file spacing as a fallback in expanded-file layout paths.
+            // Keep it zero alongside the explicit paddingTop or expanding the first file can
+            // reintroduce the library's default 8px gap above its header.
             spacing: 0,
             paddingTop: 0,
-            // Pierre always paints an 8px --diffs-gap-fallback below each file;
-            // include it in virtual height or the list end becomes unreachable.
+            // Unlike the gap above, the 8px under a file's last line is painted
+            // unconditionally by Pierre's stylesheet (`--diffs-gap-fallback`), so the metric has
+            // to count it: at zero every expanded file's virtual height ran 8px short of its
+            // rendered height, and the end of the list sat past the reachable scroll range —
+            // one clipped file row per expanded file above it.
             paddingBottom: 8,
           },
           layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },

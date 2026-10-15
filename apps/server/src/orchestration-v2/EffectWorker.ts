@@ -39,8 +39,13 @@ export class OrchestrationEffectExecutionError extends Schema.TaggedError<Orches
 ) {}
 
 /**
- * Interrupt errors indicating an inactive or already-stopping session are terminal; retrying delays recovery.
- * Restart also detaches and starts, so swallowing its start failure could lose the replacement turn.
+ * Pure interrupt races with hard process teardown or a dead session produce
+ * "not active" protocol errors. Retrying those only delays recovery.
+ *
+ * Do not apply this to `provider-turn.restart`: that compound effect also runs
+ * detach and start. Swallowing a start failure that happens to mention
+ * "is not active" would drop the outbox item without ever starting the
+ * replacement turn.
  */
 export function isNonRetryableProviderTurnControlFailure(
   effectType: string,
@@ -59,8 +64,8 @@ export function isNonRetryableProviderTurnControlFailure(
 
 export interface OrchestrationEffectExecutorV2Shape {
   /**
-   * Runs one claimed effect. `willRetry` is true when the worker will retry a
-   * failure, so a step can fail and try again instead of settling the run.
+   * `willRetry` is true when the worker will retry a failure, so a step can
+   * fail and try again instead of settling the run.
    */
   readonly execute: (
     effect: EffectOutbox.OrchestrationEffectV2,
@@ -310,7 +315,11 @@ export const layerExecutor: Layer.Layer<
                           : { senderThreadId: message.senderThreadId }),
                       })
                       .pipe(
-                        // A disabled instance cannot retry this follow-up; keep the completed turn's result.
+                        // The turn that just completed leaves no further retry
+                        // target once the instance is off: the completed turn
+                        // stands as the thread's result instead of going
+                        // through the outbox's bounded retry on a refusal that
+                        // retrying cannot change.
                         Effect.catchTags({
                           ThreadManagementProviderInstanceDisabledError: (disabledError) =>
                             Effect.logInfo(
@@ -417,9 +426,6 @@ export const layerExecutor: Layer.Layer<
                   : { restoreFiles: effect.request.restoreFiles }),
               })
               .pipe(
-                // The last failed attempt tells waiting clients it failed,
-                // instead of leaving them to time out. Clients get a fixed
-                // message; the worker logs the full cause for each attempt.
                 Effect.tapCause((cause) =>
                   willRetry || Cause.hasInterruptsOnly(cause)
                     ? Effect.void
@@ -695,8 +701,10 @@ export const layerWithOptions = (
             return false;
           }
           const effect = claimed.value;
-          // Register cancellation before reading durable state so a cancellation
-          // committed during the read can still prevent execution.
+          // Arm the process-local cancellation signal before re-reading durable
+          // state. A cancellation that commits after the row read has begun can
+          // then still win the execution race instead of falling into the gap
+          // between the read and signal registration.
           const cancellation = outbox
             .awaitCancellation(effect.id)
             .pipe(Effect.as("cancelled" as const));
@@ -713,8 +721,10 @@ export const layerWithOptions = (
               ),
               Duration.millis(Math.max(0, claimedAt - eligibleAt)),
             );
-            // Recheck durable cancellation after registering the Deferred to cover
-            // cancellations committed between claiming the row and signal registration.
+            // Cancellation can commit after the durable claim but before the
+            // process-local Deferred is registered. Re-read the authoritative row
+            // once before starting external work; later cancellations use the
+            // Deferred raced below.
             if (yield* wasCancelled(effect.id)) {
               yield* outbox.clearCancellation(effect.id);
               return true;

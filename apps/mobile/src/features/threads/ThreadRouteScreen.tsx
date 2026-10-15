@@ -152,7 +152,6 @@ function OpeningThreadLoadingScreen() {
 type ThreadRouteScreenRouteProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
-  /** A prompt link's draft text. See useThreadPromptLink. */
   readonly prompt?: string | string[];
 }>;
 
@@ -218,7 +217,6 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     return <OpeningThreadLoadingScreen />;
   }
 
-  // Shell data can render chrome before message detail; do not block the thread on its history fetch.
   if (selectedThread !== null && selectedThreadKey === routeThreadKey) {
     return <ThreadRouteContent {...props} selectedThreadDetailState={selectedThreadDetailState} />;
   }
@@ -408,7 +406,9 @@ function ThreadRouteContent(
     useCallback(() => {
       return () => {
         if (props.renderInspector === undefined) {
-          // Clear inspectors after native pushes so returning from Files/Review/Terminal cannot reserve an empty pane.
+          // Inspectors are contextual to this chat destination. Clear the
+          // hidden chat copy after a native push so returning from Files,
+          // Review, or Terminal cannot reserve an empty trailing pane.
           setInspectorSelection(null);
         }
       };
@@ -550,7 +550,9 @@ function ThreadRouteContent(
     },
     [fileInspector.supported, navigation, selectedThread],
   );
-  // iOS inspector panes own status-bar-underlapping native headers; other platforms pad below the inset.
+  // The workspace inspector column spans the full window height. On iOS the
+  // panes bring their own nested native headers (which underlap the status
+  // bar); elsewhere the pane content pads itself below the top inset.
   const safeAreaInsets = useSafeAreaInsets();
   const inspectorHeaderInset = Platform.OS === "ios" ? 0 : safeAreaInsets.top;
   const GitInspector = useCallback(
@@ -609,7 +611,9 @@ function ThreadRouteContent(
     ],
   );
   const activeInspectorRenderer = inspectorMode === null ? undefined : renderInspectorStack;
-  // Render inspectors outside the chat navigator so its native toolbar stays anchored to the chat pane.
+  // Hand the inspector to the workspace so it renders beside the navigator,
+  // outside this screen's native header — the terminal/git/files toolbar
+  // stays anchored to the chat pane instead of floating above the inspector.
   useRegisterWorkspaceInspector(activeInspectorRenderer);
 
   const handleOpenConnectionEditor = useCallback(() => {
@@ -814,7 +818,9 @@ function ThreadRouteContent(
     if (!creation?.creation || routeThreadIdentity === null) {
       return;
     }
-    // Open the rejected creation's recovery draft by id; a fresh draft would hide the restored content.
+    // The drain restored the prompt and attachments into the recovery draft
+    // the rejected creation owns. Open that draft by id: without it the sheet
+    // mints a fresh empty one and the restored content is unreachable.
     try {
       await recoverFailedThreadDraft(creation);
     } catch (error) {
@@ -880,7 +886,8 @@ function ThreadRouteContent(
         input: { threadId: selectedThread.id },
       });
       if (result._tag !== "Success" || !result.value.cancelled) return;
-      // Accepted launches survive setup cancellation; reuse the server-owned prompt and uploads.
+      // V2 accepts the launch before setup runs, so cancellation never rejects
+      // the original outbox delivery. Reuse the server-owned prompt and uploads.
       const metadata = makeTurnCommandMetadata();
       const launched = await startLocalThread({
         environmentId: selectedThread.environmentId,
@@ -946,7 +953,9 @@ function ThreadRouteContent(
     return <OpeningThreadLoadingScreen />;
   }
 
-  // Queued creation has no server thread yet; its subscription not-found error is expected.
+  // A queued creation renders as ready content: its prompt is the whole
+  // conversation until the server creates the thread. The subscription's
+  // not-found error for that window is expected, not a load failure.
   const contentPresentation =
     creationState !== null
       ? { kind: "ready" as const }

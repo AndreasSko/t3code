@@ -339,7 +339,13 @@ function normalizeT3McpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
-// ACP providers vary T3 tool prefixes and separators; the known-tool inventory gates loose matching.
+/**
+ * ACP agents disagree on how the injected T3 server prefixes its tools:
+ * `mcp__t3-code__x` (Claude/Cursor), `t3-code.x` (Codex), plus single
+ * underscore, colon, slash, dash, and space separators seen from registry
+ * agents. The prefix match is deliberately loose because the display-name
+ * inventory is the real gate; unknown tools stay on the generic renderer.
+ */
 function resolveT3McpToolName(value: string): string | null {
   const label = normalizeT3McpToolLabel(value);
   const mcpMatch = /^mcp__(?<server>.+?)__(?<tool>.+)$/i.exec(label);
@@ -373,7 +379,6 @@ function resolveT3McpToolName(value: string): string | null {
   return longest;
 }
 
-/** The bare T3 tool name (`html_render`) for any provider's spelling of it. */
 export function resolveT3McpToolId(toolName: string | null | undefined): string | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
   return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? name : null;

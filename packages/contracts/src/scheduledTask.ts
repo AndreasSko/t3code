@@ -89,7 +89,6 @@ const ScheduledTaskWebhookSchedule = Schema.Struct({
     description: "Run when the task's webhook URL receives a request.",
   }),
   signature: Schema.NullOr(ScheduledTaskWebhookSignature),
-  // Optional so rows saved before this setting existed still decode.
   maxDeliveryAgeMinutes: Schema.optional(Schema.NullOr(WebhookMaxDeliveryAgeMinutes)),
 }).annotate({
   description:
@@ -123,8 +122,8 @@ const ScheduledTaskUpsertWebhookSchedule = Schema.Struct({
 });
 
 /**
- * Accept stored sub-minute intervals so users can still disable, edit or delete them
- * after write validation raises the minimum.
+ * Read model for persisted schedules. Keep accepting legacy sub-minute rows so
+ * users can list, disable, edit, or delete them after the write minimum changes.
  */
 export const ScheduledTaskSchedule = Schema.Union([
   ScheduledTaskIntervalSchedule,
@@ -136,7 +135,6 @@ export const ScheduledTaskSchedule = Schema.Union([
 });
 export type ScheduledTaskSchedule = typeof ScheduledTaskSchedule.Type;
 
-/** Mutation model: newly created or updated interval schedules run at most once per minute. */
 export const ScheduledTaskUpsertSchedule = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("interval").annotate({
@@ -271,7 +269,6 @@ export const ScheduledTaskWebhookDeliverySummary = Schema.Struct({
   outcome: ScheduledTaskWebhookDeliveryOutcome,
   /** True when a configured signature matched; false when none was configured. */
   signatureVerified: Schema.Boolean,
-  /** Template placeholders that had no value in this request and rendered empty. */
   missingFields: Schema.Array(Schema.String),
   error: Schema.NullOr(Schema.String),
 });
@@ -281,7 +278,6 @@ export const ScheduledTaskWebhookDelivery = Schema.Struct({
   ...ScheduledTaskWebhookDeliverySummary.fields,
   query: Schema.String,
   headers: Schema.Record(Schema.String, Schema.String),
-  /** Body as UTF-8 text, cut at the log limit; see bodyTruncated. */
   body: Schema.String,
   bodyTruncated: Schema.Boolean,
   renderedPrompt: Schema.NullOr(Schema.String),

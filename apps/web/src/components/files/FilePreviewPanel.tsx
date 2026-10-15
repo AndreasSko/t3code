@@ -209,8 +209,11 @@ function WorkspaceImagePreview(props: {
   );
 }
 
-/** Opaque-origin HTML frames cannot reach app sessions or storage. Workspace
- * files may load sibling assets; host files outside the workspace are served alone. */
+/**
+ * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
+ * the app's session or storage. A file inside the workspace may load sibling
+ * assets; a host file outside it is served on its own.
+ */
 function WorkspaceBrowserPreview(props: {
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
@@ -402,10 +405,13 @@ function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): 
     ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
 }
 
-/** Retry fresh mounts for up to 30 additional animation frames while contents and line metrics hydrate asynchronously. */
 const REVEAL_MAX_ATTEMPTS = 30;
-/** Hold the target against late editor-focus or restoration scroll resets;
- * hold it for 20 animation frames, and cancel on user input. */
+/**
+ * After scrolling to the target, hold it for a short window so late
+ * programmatic scroll resets (editable-editor focus and state restoration)
+ * cannot silently snap the file back to the top. Real user input cancels the
+ * guard immediately.
+ */
 const REVEAL_GUARD_FRAMES = 20;
 const REVEAL_GUARD_TOLERANCE_PX = 2;
 
@@ -558,7 +564,9 @@ function useFileLineReveal(
             return;
           }
 
-          // Missing fresh-mount contents would clamp to line 1 and wrongly mark the reveal handled.
+          // Contents and line metrics can lag the first post-render on fresh
+          // mounts; clamping against missing contents would scroll to line 1
+          // and wrongly mark the request handled.
           const currentContents = instance.file?.contents;
           const line =
             currentContents === undefined ? null : clampFileLine(currentContents, revealLine);
@@ -614,8 +622,11 @@ function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: F
   return lines <= DEFAULT_TOKENIZE_MAX_LENGTH;
 }
 
-/** Wait for worker highlights before editing to avoid main-thread highlighting;
- * a failed worker falls back to the main thread. */
+/**
+ * Pierre highlights an active edit session on the main thread, so each version
+ * of the file becomes editable only once it has rendered the worker's
+ * highlight. A failed worker highlight falls back to main-thread highlighting.
+ */
 function useEditableAfterHighlight(file: FileContents) {
   const workerPool = useWorkerPool();
   const [highlightedFile, setHighlightedFile] = useState<FileContents | null>(null);
@@ -1051,7 +1062,9 @@ export default function FilePreviewPanel({
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
-  // Read media paths too: assets.png can be a directory, detected by the server stat before reading.
+  // The read still runs: a folder named `assets.png` is only knowable as a folder
+  // from the read failure, and the server stats before reading, so a folder costs
+  // an open and a stat and returns no body.
   const file = useProjectFileQuery(
     environmentId,
     cwd,
@@ -1059,8 +1072,11 @@ export default function FilePreviewPanel({
     attachment === undefined && relativePath !== null,
   );
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
-  // Folder chat links arrive as file surfaces: reveal them in the workspace tree
-  // and keep refresh enabled to detect replacement by a file. Host paths keep the read error.
+  // A chat link cannot tell a folder from a file, so a folder arrives here as
+  // a file surface and the read fails. Keep the breadcrumbs, drop the preview
+  // pane, and let the tree fill the surface with the folder revealed. Mutation
+  // refresh stays on so the surface notices if the path becomes a file. A host
+  // path cannot be revealed in the workspace tree, so it keeps the read error.
   const isDirectory = file.isNotFile && !isHostFile;
   const previewPath = isDirectory ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
@@ -1069,7 +1085,6 @@ export default function FilePreviewPanel({
     explorerOpen,
     attachmentOpen: attachment !== undefined,
   });
-  // Persist the rendered-markdown preference across thread switches.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
@@ -1085,7 +1100,9 @@ export default function FilePreviewPanel({
     true,
     Schema.Boolean,
   );
-  // Reveal ids restart at one per file; pair with the path so dismissals cannot swallow the next file.
+  // Paired with the path on purpose: each file surface counts its reveals from
+  // one, so a bare id would let a dismissed reveal on one file swallow the first
+  // reveal on the next.
   const [handledReveal, setHandledReveal] = useState<{ path: string; requestId: number } | null>(
     null,
   );
@@ -1138,8 +1155,9 @@ export default function FilePreviewPanel({
     enabled:
       attachment === undefined &&
       relativePath !== null &&
-      // Skip media/PDF reads on workspace mutations, but refresh similarly named folders
-      // to detect when they become files.
+      // Media and PDFs never show their contents, so re-reading them on every
+      // workspace mutation is waste. A folder named like one still re-reads, so
+      // it notices when the path becomes a file.
       (isDirectory || (!isMedia && !isPdf)) &&
       !selectedFilePending,
     mutationId: workspaceMutationId,
@@ -1400,7 +1418,9 @@ export default function FilePreviewPanel({
             </div>
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
-              // Key file switches so Markdown disclosure and wrap state cannot carry into the next document.
+              // Markdown reconciles in place across text updates, so a file
+              // switch needs a new key or the previous file's disclosure and
+              // wrap state carries into the next document.
               <RenderedMarkdownSurface
                 key={relativePath}
                 environmentId={environmentId}

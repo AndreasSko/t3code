@@ -39,7 +39,6 @@ export function parseComposerContextHref(
   return { kind, contextId: contextId as ComposerContextId };
 }
 
-/** Labels must survive a Markdown link: no brackets or line breaks, bounded, never empty. */
 export function sanitizeComposerContextLabel(label: string, kind: ComposerContextKind): string {
   const cleaned = label
     .replace(/[[\]\\\r\n]/g, " ")
@@ -63,7 +62,6 @@ export interface ComposerContextReferenceOccurrence {
   kind: ComposerContextKind;
   contextId: ComposerContextId;
   label: string;
-  /** Whether the occurrence used the `![...]` image form. */
   image: boolean;
   source: string;
   start: number;
@@ -92,7 +90,6 @@ export function collectComposerContextReferences(
   return occurrences;
 }
 
-/** Text sent in place of an empty prompt when a message is attachments only. */
 export const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
 
@@ -126,7 +123,6 @@ function kindDisplayName(kind: ComposerContextKind): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-/** `[Image: shot.png; ref=ctx_1]` — readable in place, with the id the payload is keyed by. */
 export function formatComposerContextProviderMarker(
   kind: ComposerContextKind,
   label: string,
@@ -305,7 +301,6 @@ export function projectComposerContextForProvider(input: {
   return `${body}\n\n<${CONTEXT_ENVELOPE_TAG} version="1">\n${entries.join("\n")}\n</${CONTEXT_ENVELOPE_TAG}>`;
 }
 
-/** Preserve context bindings when uploads become thread-owned attachments. */
 export function remapComposerContextAttachments(
   context: import("@t3tools/contracts").OrchestrationMessageContext | undefined,
   before: ReadonlyArray<{ readonly id?: string | undefined }>,

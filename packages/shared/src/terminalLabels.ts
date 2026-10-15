@@ -26,8 +26,13 @@ export function resolveTerminalSessionLabel(
   return getTerminalLabel(terminalId);
 }
 
-/** Clients allocate ids and pass them to terminal.open/attach.
- * Without metadata, append a UUID to avoid reusing an unseen host session. */
+/**
+ * Ids are ALWAYS chosen by the client and sent explicitly on every
+ * `terminal.open` / `terminal.attach` call — the server never allocates.
+ *
+ * Returns the lowest unused `term-N` number. When metadata is unavailable,
+ * callers append a UUID so an unseen host session cannot be reused accidentally.
+ */
 export function nextTerminalId(
   existingTerminalIds: ReadonlyArray<string>,
   uniqueSuffix?: string,

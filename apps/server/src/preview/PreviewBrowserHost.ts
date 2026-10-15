@@ -1,4 +1,3 @@
-/** Disable Chrome's sandbox only when the operator sets T3CODE_SERVER_BROWSER_SANDBOX=0. */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -6,7 +5,6 @@ import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-/** The subcommand that sets the host up; callers render it, with `sudo`, for how T3 was launched. */
 export const SETUP_SUBCOMMAND = "browser setup";
 
 /** What Chrome prints before aborting when it cannot sandbox itself. */
@@ -20,8 +18,8 @@ const USERNS_RESTRICTION = "/proc/sys/kernel/apparmor_restrict_unprivileged_user
 export const APPARMOR_PROFILE_PATH = "/etc/apparmor.d/t3-chrome-headless-shell";
 
 /**
- * Permit Chrome's sandbox user namespace in any T3 home and pinned version.
- * As in Ubuntu's Chrome profile, unconfined adds nothing beyond userns.
+ * Modelled on the profile Ubuntu ships for Google Chrome; `unconfined` adds
+ * nothing beyond `userns`.
  */
 export const APPARMOR_PROFILE = `# Written by \`t3 browser setup\`: lets T3 Code's headless browser use Chrome's sandbox.
 abi <abi/4.0>,
@@ -35,8 +33,8 @@ profile t3-chrome-headless-shell /**/tools/chrome-headless-shell/*/*/chrome-head
 `;
 
 /**
- * Dependencies come from the headless shell's deb.deps; Ubuntu 24.04 and Debian 13 use t64 aliases.
- * Setup chooses whichever name the host's apt offers.
+ * Ubuntu 24.04 and Debian 13 renamed some with a `t64` suffix; setup installs
+ * whichever name the host's apt offers.
  */
 export const DEBIAN_PACKAGES: ReadonlyArray<ReadonlyArray<string>> = [
   ["libnss3"],
@@ -82,7 +80,6 @@ const MISSING_LIBRARY = /^\s*(\S+) => not found$/gm;
 /** glibc's loader abort, naming the first library it could not load. */
 const LOADER_ERROR = /error while loading shared libraries: ([^:\s]+)/;
 
-/** Diagnose sandbox or shared-library launch failures; undefined means neither explains the failure. */
 export const diagnoseLaunchFailure = Effect.fn("PreviewBrowserHost.diagnoseLaunchFailure")(
   function* (input: {
     readonly executable: string;
@@ -102,8 +99,9 @@ export const diagnoseLaunchFailure = Effect.fn("PreviewBrowserHost.diagnoseLaunc
 );
 
 /**
- * Probe --version before ldd: NixOS's nix-ld can provide libraries ldd reports missing.
- * Consult ldd only after the real loader fails.
+ * The browser's own `--version` decides whether any are missing; `ldd` only
+ * lists them after the real loader fails, because it can report libraries a
+ * host provides another way (NixOS's nix-ld).
  */
 export const missingLibraries = Effect.fn("PreviewBrowserHost.missingLibraries")(function* (
   executable: string,
@@ -124,7 +122,6 @@ export const missingLibraries = Effect.fn("PreviewBrowserHost.missingLibraries")
   return listed.length > 0 ? listed : [loaderError];
 });
 
-/** User-namespace restrictions are readable without root, so startup can check for the required AppArmor profile. */
 export const sandboxBlocked = Effect.gen(function* () {
   if ((yield* HostProcess.Platform) !== "linux") return false;
   const fs = yield* FileSystem.FileSystem;

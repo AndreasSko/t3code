@@ -9,7 +9,6 @@ import {
 import { showAndroidShowcaseAgentActivity } from "../agent-awareness/androidNotifications";
 import { showcaseAndroidActivityData } from "./showcaseAgentActivity";
 
-/** Stages lock-screen activity; the runner then locks iOS or opens the Android notification shade. */
 export async function stageShowcaseAgentActivity(
   activity: AgentActivityProps,
   now: number,
@@ -20,7 +19,6 @@ export async function stageShowcaseAgentActivity(
     ios: { allowAlert: true, allowBadge: true, allowSound: true },
   });
   if (!permission.granted) return `notification permission ${permission.status}`;
-  // Revisiting a scene must not stack delivered alerts.
   await Notifications.dismissAllNotificationsAsync();
 
   if (Platform.OS === "android") {
@@ -31,7 +29,6 @@ export async function stageShowcaseAgentActivity(
   }
   if (Platform.OS !== "ios") return `unsupported platform ${Platform.OS}`;
 
-  // A retried or revisited scene must not stack a second card.
   await Promise.all(getAgentLiveActivities().map((existing) => existing.end("immediate")));
   // ActivityKit only starts activities while the app is foreground, which
   // holds here: the runner locks the device after the scene reports ready.

@@ -74,7 +74,9 @@ export function CommandPaletteResults(props: CommandPaletteResultsProps) {
   );
 }
 
-/** Scroll to the nearest edge clear of the fade; unmounted rows use the list's own scrolling. */
+/**
+ * Rows outside the rendered window fall back to the list's own scrolling.
+ */
 export function scrollCommandPaletteRowIntoView(list: LegendListRef | null, rowIndex: number) {
   const element = list?.getState?.().elementAtIndex(rowIndex);
   if (element instanceof HTMLElement) {
@@ -89,7 +91,11 @@ interface CommandPaletteVirtualizedResultsProps extends Omit<CommandPaletteResul
   listRef: RefObject<LegendListRef | null>;
 }
 
-/** Pass flat items to the virtualized Command root; use listRef for highlights and handle Enter when rows are unmounted. */
+/**
+ * The parent passes the flat item order to the Command root as `items` with
+ * `virtualized`, scrolls keyboard highlights into view through `listRef`, and
+ * runs Enter itself since the row may be unmounted.
+ */
 export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualizedResultsProps) {
   const { listRef } = props;
   const [scrollFade, setScrollFade] = useState({ top: false, bottom: false });

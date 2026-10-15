@@ -75,8 +75,6 @@ const LOCATION_PRESETS = [
   { label: "Tokyo", latitude: 35.6762, longitude: 139.6503 },
 ] as const;
 
-/** Replace state with the device.action response so controls show only
- * values the device confirmed. */
 export function DeviceToolsPanel(props: {
   readonly controls: DeviceControls;
   readonly hostDiagnostics: string | undefined;

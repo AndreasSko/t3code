@@ -9,7 +9,11 @@ import {
   type MobileThemeVariables,
 } from "./mobileTheme";
 
-/** Material You starts from the default palette and overrides system roles; WebViews use system fonts because bundled fonts are unavailable. */
+/**
+ * Material You has no shared palette: it starts from the default one and takes the
+ * roles its system colors replace. WebViews cannot load the app's bundled fonts, so
+ * renders use system stacks.
+ */
 export function mobileHtmlRenderTheme(input: {
   readonly themeId: MobileThemeId;
   readonly appearance: MobileThemeAppearance;

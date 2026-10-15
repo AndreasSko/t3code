@@ -54,8 +54,6 @@ const waitForResumeRelease = process.env.T3_ACP_WAIT_FOR_RESUME_RELEASE === "1";
 const completeFirstPromptOnCancel = process.env.T3_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL === "1";
 const floodStderr = process.env.T3_ACP_FLOOD_STDERR === "1";
 const hangPromptForever = process.env.T3_ACP_HANG_PROMPT_FOREVER === "1";
-// Probe client filesystem support even when unadvertised; outcomes go to
-// T3_ACP_CLIENT_FS_PROBE_LOG_PATH.
 const clientFsProbePath = process.env.T3_ACP_CLIENT_FS_PROBE_PATH;
 const clientFsProbeLogPath = process.env.T3_ACP_CLIENT_FS_PROBE_LOG_PATH;
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -425,7 +423,8 @@ function modeState(): AcpCompat.SessionModeState {
   };
 }
 
-// Grok ACP advertises versioned model ids, never the CLI's "grok-build" name.
+// Mirrors the real Grok ACP: it advertises versioned model ids, never the CLI's own
+// "grok-build" product name. Native helper model switching has its own v1 fixture.
 const grokAcpModels: ReadonlyArray<AcpCompat.ModelInfo> = [
   {
     modelId: "grok-4.6",
@@ -856,8 +855,6 @@ const program = Effect.gen(function* () {
         });
       }
       if (emitTaskBackgroundedAfterCancel) {
-        // Grok cancel-as-detach: the foreground command is re-run as a
-        // background task that later completes on its own.
         yield* Effect.sync(() => {
           writeJsonRpcNotification("_x.ai/task_backgrounded", {
             sessionId: cancelledSessionId,
@@ -1736,7 +1733,6 @@ const program = Effect.gen(function* () {
         yield* say("| x |\n");
         yield* progress("completed", "done");
         yield* say("| 2 | y |\n");
-        // Agents can repeat a terminal update after the call finished.
         yield* progress("completed", "done");
         yield* say("| 3 | z |");
         return yield* finishPrompt(requestedSessionId, "end_turn");
@@ -1977,7 +1973,9 @@ const program = Effect.gen(function* () {
         return yield* finishPrompt(requestedSessionId, "end_turn");
       }
 
-      // A late duplicate terminal TaskOutput must not pin hasPendingBackgroundWork.
+      // In-turn monitor + TaskOutput hydrate, then a late post-finalize
+      // duplicate terminal TaskOutput for the same task. Exercises the
+      // already-handled short-circuit: must not pin hasPendingBackgroundWork.
       if (emitInTurnTaskOutputThenLateDuplicate) {
         const monitorToolCallId = "tool-call-monitor-1";
         yield* agent.client.sessionUpdate({
@@ -2027,7 +2025,6 @@ const program = Effect.gen(function* () {
             content: { type: "text", text: "Monitor listing ready in-turn." },
           },
         });
-        // Re-emit after deferred finalize (~2s) so the duplicate takes the post-settle wake path.
         yield* Effect.gen(function* () {
           yield* Effect.sleep("2500 millis");
           yield* Effect.sync(() => {
@@ -2071,8 +2068,6 @@ const program = Effect.gen(function* () {
           },
         });
 
-        // The detached fiber must outlive the prompt handler to replay Grok's
-        // CLI-injected monitor-event turn after settlement.
         yield* Effect.gen(function* () {
           yield* Effect.sleep("150 millis");
           yield* Effect.sync(() => {

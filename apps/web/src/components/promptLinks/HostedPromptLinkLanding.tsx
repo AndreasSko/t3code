@@ -60,8 +60,9 @@ function summarize(
   };
 }
 
-/** Hosted links choose an app, connected browser, or download page; null
- * means the link should open in this browser normally. */
+/**
+ * Returns that page, or null when the link should open in this browser as usual.
+ */
 export function useHostedPromptLinkLanding(enabled: boolean): ReactNode | null {
   const href = useLocation({ select: (location) => location.href });
   const { environments, isReady } = useEnvironments();
@@ -111,8 +112,8 @@ function HostedPromptLinkLanding({
   const onPhone = /android|iphone|ipad/i.test(navigator.userAgent);
   const autoOpenedRef = useRef(false);
 
-  // After "remember", later links hand straight to the app. The page stays as the way back
-  // when the app is not installed on this device.
+  // The page stays as the way back when the app is not installed on this
+  // device.
   useEffect(() => {
     if (!openInAppRemembered || !summary.ok || autoOpenedRef.current) return;
     autoOpenedRef.current = true;

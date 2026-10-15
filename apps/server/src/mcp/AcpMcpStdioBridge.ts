@@ -9,8 +9,10 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { discardResponseBody, responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
 
-// ACP stdio support is mandatory while HTTP/SSE is uneven, so bridge it.
-// Keep imports lean: this runs on the first-message critical path.
+/**
+ * ACP agents must support stdio MCP servers, while optional http/sse support is
+ * unevenly implemented.
+ */
 
 export class AcpMcpBridgeError extends Error {
   readonly _tag = "AcpMcpBridgeError";
@@ -59,13 +61,18 @@ export interface AcpMcpToolCallOptions {
   readonly fetchImplementation?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
-/** Fresh-session terminal fallback for ACP agents that fail to expose injected MCP servers. */
+/**
+ * Call one MCP tool through a fresh authenticated HTTP session.
+ *
+ * This is the terminal fallback for ACP agents that accept `mcpServers` in
+ * `session/new` but fail to expose those tools to their model. Compliant ACP
+ * agents continue to use the stdio bridge above.
+ */
 export function callAcpMcpTool(
   options: AcpMcpToolCallOptions,
 ): Effect.Effect<unknown, AcpMcpBridgeError> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   return Effect.gen(function* () {
-    // Sequential initialization precedes concurrent reads, so plain session locals suffice.
     let sessionId: string | null = null;
     let protocolVersion: string | null = null;
 
@@ -142,7 +149,6 @@ export function callAcpMcpTool(
 export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.Effect<void> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   return Effect.gen(function* () {
-    // Single-fiber dispatch and wire-order completions let plain locals hold session state.
     let sessionId: string | null = null;
     let protocolVersion: string | null = null;
     const running = new Set<Fiber.Fiber<void>>();
@@ -210,8 +216,10 @@ export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.
         }),
       );
 
-    // Order session setup only: responses to server SSE requests must bypass
-    // the barrier to avoid deadlock; initialized tool calls remain concurrent.
+    // Only session establishment is ordered; client responses to
+    // server-initiated SSE requests must bypass the barrier or they would
+    // deadlock the still-open HTTP exchange, and normal MCP calls stay
+    // concurrent after initialization.
     let sessionBarrier: Effect.Effect<void> = Effect.void;
     let sessionBarrierPending = false;
 
@@ -283,7 +291,10 @@ export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.
   });
 }
 
-/** Shared CLI runner; avoid heavy imports on the ACP first-message path. */
+/**
+ * Kept free of heavy imports: these commands run on the ACP first-message
+ * critical path.
+ */
 export async function runAcpMcpCliFastPath(
   command: "acp-mcp-bridge" | "acp-mcp-call",
   args: ReadonlyArray<string>,

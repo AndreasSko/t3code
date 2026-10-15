@@ -7,7 +7,6 @@ const DIRECTIVE_PATTERN =
 const TS_DIRECTIVE_PATTERN = /^\s*\*?\s*@ts-(?:expect-error|ignore|nocheck)(?![\w-])(.*)$/su;
 const EMPTY_COMMENT_PATTERN = /^[\s*]*$/u;
 
-/** Suppressions need a `-- reason` suffix, text after @ts-*, or an explanatory comment above. */
 export default defineRule({
   meta: {
     type: "suggestion",
@@ -28,8 +27,6 @@ export default defineRule({
           }
         }
 
-        // A comment directly above explains a directive, even across stacked directives and empty
-        // comment lines.
         const explainedAbove = (directive: ESTree.Comment) => {
           let above = ownLineCommentsByEndLine.get(directive.loc.start.line - 1);
           while (

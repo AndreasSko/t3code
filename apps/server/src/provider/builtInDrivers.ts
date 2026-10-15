@@ -26,7 +26,11 @@ export type BuiltInDriversEnv =
   | PiDriverEnv
   | MuseDriverEnv;
 
-/** Order only breaks UI presentation ties; instance lookup uses driverKind. */
+/**
+ * Ordered list of built-in drivers. Order matters only for tie-breaking in
+ * UI presentation — the registry itself is keyed by `driverKind`, so
+ * iteration order has no functional effect on instance lookup.
+ */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   CodexDriver,
   ClaudeDriver,
@@ -48,7 +52,10 @@ export type BuiltInUsageReadersEnv =
   | ProviderUsageReaderEnv<typeof CursorDriver>
   | ProviderUsageReaderEnv<typeof PiDriver>;
 
-/** Keep transcript readers before scan readers: aggregation keeps the first duplicate. */
+/**
+ * Aggregation keeps the first copy of a duplicate record, so the order is part
+ * of the result.
+ */
 export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
   AnyProviderDriver<BuiltInDriversEnv, BuiltInUsageReadersEnv>
 > = [

@@ -5,9 +5,14 @@ import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 export const SERVICE_LAUNCHER_PROTOCOL = 3 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
 export const SERVICE_STATE_FILE = "service-state.json";
-/** Mark explicit stops so the child can distinguish service removal from an update handoff. */
+/** Written by the launcher just before an explicit stop kills its child, so
+    the child can tell "the service is going away" from "the launcher is about
+    to start my replacement" while a pending update is recorded. */
 export const SERVICE_STOP_MARKER_FILE = ".service-stopping";
-/** Marks a repointed unit whose running version is stale; launcher startup clears it. */
+/** Written by `t3 update` when the unit was repointed at a new version but the
+    running service was deliberately left on the old one. The launcher removes
+    it when it starts (whoever restarted the service), so while it exists the
+    service is known to be behind its unit and status reports it that way. */
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 
 export interface PendingServiceUpdate {
@@ -26,7 +31,6 @@ export interface ServiceState {
   readonly update?: ServiceUpdateRecord;
 }
 
-/** Context is copied from launcher-owned state when a child is spawned. */
 export interface ServiceLauncherContext {
   readonly protocol: typeof SERVICE_LAUNCHER_PROTOCOL;
   readonly childVersion: string;
@@ -64,7 +68,6 @@ const EXACT_SERVICE_VERSION = new RegExp(
   `^${SEMVER_NUMBER}\\.${SEMVER_NUMBER}\\.${SEMVER_NUMBER}(?:-${SEMVER_PRERELEASE}(?:\\.${SEMVER_PRERELEASE})*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`,
 );
 
-/** Accepts exact SemVer only: never dist-tags or ranges passed to npm or filesystem paths. */
 export const isExactServiceVersion = (version: string): boolean =>
   EXACT_SERVICE_VERSION.test(version);
 
@@ -104,7 +107,6 @@ function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
   return undefined;
 }
 
-/** SemVer precedence for exact versions. Build metadata is ignored. */
 export function compareExactServiceVersions(left: string, right: string): number {
   const parse = (version: string) => {
     const withoutBuild = version.split("+", 1)[0] ?? version;

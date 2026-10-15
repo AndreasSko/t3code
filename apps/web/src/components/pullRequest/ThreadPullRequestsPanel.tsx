@@ -136,7 +136,9 @@ function LinkRow({
         setMenuPosition({ x: event.clientX, y: event.clientY });
         setMenuOpen(true);
       }}
-      // Cap stack indentation at 3 layers so deep stacks cannot run off the right edge.
+      // The step is capped: beyond a few layers the indent only says "still in the stack",
+      // which the connector line already does, and a sixteen-layer stack would otherwise
+      // stair-step off the right edge.
       style={{ paddingLeft: `${0.5 + Math.min(depth, 3) * 1.25}rem` }}
     >
       {depth > 0 ? <span aria-hidden className="-ml-2 h-6 w-px shrink-0 bg-border/70" /> : null}
@@ -191,7 +193,6 @@ function LinkRow({
               </>
             ) : null
           }
-          // Omit unreported checks/verdicts so unknown host state cannot appear successful.
           status={
             <PullRequestDiffStat
               additions={snapshot?.additions ?? 0}
@@ -227,7 +228,8 @@ function LinkRow({
               ) : null}
               {snapshot !== null ? (
                 <>
-                  {/* Preserve repository-name suffixes that distinguish rows sharing an owner. */}
+                  {/* Cut in the middle: rows from one owner differ in the repository name at the
+                      end, which a tail cut would hide. */}
                   <Tooltip>
                     <TooltipTrigger render={<span className="flex min-w-0 max-w-32 font-mono" />}>
                       <MiddleTruncate value={link.repository} showTitle={false} />
@@ -253,12 +255,14 @@ function LinkRow({
           visible={speedMode}
         />
       ) : null}
-      {/* Overlay hover actions without reserving a column on every row. */}
+      {/* Out of the row's flow, so no row reserves a column for a button only the hovered one
+          shows. */}
       <span
         className={cn(
           "absolute right-0 bottom-0.5 flex items-center rounded-r-md bg-background pr-1 pl-5",
           "[mask-image:linear-gradient(to_right,transparent,black_1rem)]",
-          // Invisible hover controls must not intercept touch taps on the row link.
+          // Hidden means untouchable too: on a touch screen there is no hover, and an invisible
+          // layer over the right of the row would otherwise swallow the tap meant for the link.
           "pointer-events-none opacity-0 group-hover/pr-row:pointer-events-auto group-hover/pr-row:opacity-100",
           "has-[[data-popup-open]]:pointer-events-auto has-[[data-popup-open]]:opacity-100",
           "has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100",

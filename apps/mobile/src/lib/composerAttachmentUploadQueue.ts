@@ -69,7 +69,12 @@ export function canUploadComposerAttachment(
   );
 }
 
-/** Failed uploads need retry or removal; in-flight uploads can queue because the outbox drain reuses or resends their bytes. */
+/**
+ * Only a failed upload blocks sending: the outbox drain would hit the same
+ * failure, so the user has to retry or remove the file first. An upload still
+ * in flight does not block; the message queues and the drain reuses the
+ * finished upload (or re-sends the local bytes) when it delivers.
+ */
 export function composerAttachmentUploadBlockReason(input: {
   readonly environmentId: EnvironmentId;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
@@ -140,7 +145,7 @@ export function createComposerAttachmentUploadQueue(options: {
         continue;
       const controller = new AbortController();
       setState(key, { status: "uploading", progress: 0 });
-      // Publish the job before starting upload work, which may complete synchronously.
+      // Publish the job before starting async work, including synchronous test transports.
       const done = Promise.resolve()
         .then(() =>
           options.upload(request, controller.signal, (progress) => {
@@ -199,7 +204,6 @@ export function createComposerAttachmentUploadQueue(options: {
       setState(key, undefined);
       pump();
     },
-    /** Wait for queued transfers before shutdown. */
     async settled() {
       while (jobs.size > 0) await Promise.all([...jobs.values()].map((job) => job.done));
     },

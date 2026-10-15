@@ -10,8 +10,9 @@ import {
 const PHOTO_JPEG_QUALITY = 0.85;
 
 /**
- * Decode, downscale, and encode natively so 12-48 MP HEIC photos don't cross the bridge
- * at full size. The long edge is capped at `IMAGE_ATTACHMENT_MAX_EDGE`.
+ * Decode, downscale, and encode run natively; only the bounded result crosses the bridge. Camera
+ * photos are 12-48 MP HEIC files, so a full-size conversion is both slow to transfer and far
+ * more than a model can use.
  */
 export async function renderPhoto(
   uri: string,
@@ -41,9 +42,9 @@ export async function renderPhoto(
 }
 
 /**
- * Downscales oversized PNG/JPEG images in their own format. Returns null when already within
- * `IMAGE_ATTACHMENT_MAX_EDGE`, unsupported, or native rendering fails; callers keep the original
- * bytes. Only the header is read for images that fit.
+ * Returns null when the image fits, is another format (GIF, WebP), or the native renderer fails,
+ * so the caller keeps the original bytes. Images inside the limit are never re-encoded: only the
+ * header is read to decide.
  */
 export async function fitComposerImage(image: {
   readonly uri: string;

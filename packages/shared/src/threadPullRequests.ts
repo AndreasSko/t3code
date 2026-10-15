@@ -97,13 +97,11 @@ function latestUpdatedAt(link: ThreadPullRequestLink): number {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
-/** The single pull request a one-slot surface (sidebar badge, tab icon, copy link) shows. */
 export type ThreadCurrentPullRequest =
   | { readonly kind: "single"; readonly link: ThreadPullRequestLink }
   | {
       readonly kind: "stack";
       readonly open: ReadonlyArray<ThreadPullRequestLink>;
-      /** Highest layer of the open set; the one "View PR" and copy-link target. */
       readonly top: ThreadPullRequestLink;
     };
 
@@ -120,7 +118,8 @@ export function resolveThreadCurrentPullRequest(
   if (open.length === 1) return { kind: "single", link: open[0]! };
   const chains = resolveThreadPullRequestChains(visible);
   if (open.length > 1) {
-    // Hermes lacks ES2023 array methods, so reverse a copy instead of using toReversed().
+    // `.reverse()` on a copy, not `.toReversed()`: this runs on Hermes, which has no ES2023
+    // array methods, and a TypeError here is fatal on every mobile launch that renders a stack.
     const openChains = chains
       .map((chain) => [...chain.layers].reverse().filter(isOpen))
       .filter((layers) => layers.length > 0)
@@ -206,8 +205,11 @@ export interface ThreadPullRequestChain {
   readonly layers: ReadonlyArray<ThreadPullRequestLink>;
 }
 
-/** Groups native stacks first, then chains base/head branches within each repository.
- * A link with no chain remains a one-layer stack. */
+/**
+ * Groups a thread's links into stacks. Native stacks come from the host and win; the rest
+ * are chained by matching one link's base branch to another's head branch within the same
+ * repository. A link that chains to nothing is a one-layer chain.
+ */
 export function resolveThreadPullRequestChains(
   links: ReadonlyArray<ThreadPullRequestLink>,
 ): ReadonlyArray<ThreadPullRequestChain> {
@@ -348,7 +350,6 @@ export function threadPullRequestsOf(thread: {
       ];
 }
 
-/** Apply a single-link sync without copying unrelated PRs into the event history. */
 export function applyThreadPullRequestLinkUpdate(
   thread: OrchestrationV2AppThread,
   updated: ThreadPullRequestLink,

@@ -7,7 +7,12 @@ import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-/** Defer costly PR link decoding so threads paint first; loadPullRequests fills initially absent links. */
+/**
+ * A shell snapshot whose threads may arrive before their pull request links are decoded. Those
+ * links are most of a large shell's decode cost and only feed PR badges, so the thread list can
+ * paint first. `loadPullRequests` then decodes the links by thread id; until it runs, those
+ * threads carry no `pullRequests`.
+ */
 export interface DeferredShellSnapshot extends OrchestrationV2ShellSnapshot {
   readonly loadPullRequests?: Effect.Effect<
     ReadonlyMap<ThreadId, ReadonlyArray<ThreadPullRequestLink>>
@@ -24,7 +29,10 @@ const decodeThreadLinks = Schema.decodeUnknownEffect(
 // Bounds each uninterrupted stretch of decoding, so taps and frames run between batches.
 const LINKS_PER_BATCH = 400;
 
-/** Mutates parsed rows to detach links in row order for deferPullRequests. */
+/**
+ * Removes each parsed thread row's pull request links from `snapshot` in place and returns
+ * them in row order, for `deferPullRequests` once the rows are decoded.
+ */
 export function detachPullRequests(snapshot: unknown): ReadonlyArray<unknown> {
   if (!Predicate.isObject(snapshot)) return [];
   const rows: unknown = snapshot.threads;
@@ -37,7 +45,9 @@ export function detachPullRequests(snapshot: unknown): ReadonlyArray<unknown> {
   });
 }
 
-/** Yields before decoding detached links; unreadable links leave their thread row usable. */
+/**
+ * A thread whose links cannot be read gets none; its row stays usable.
+ */
 export function deferPullRequests<S extends OrchestrationV2ShellSnapshot>(
   snapshot: S,
   rawLinks: ReadonlyArray<unknown>,

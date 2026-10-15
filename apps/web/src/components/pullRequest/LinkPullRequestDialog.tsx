@@ -21,7 +21,11 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 
-/** Own the dialog above transient entry points so closing a palette cannot unmount it. */
+/**
+ * Which thread has the link dialog open, set by whichever entry point asked (command palette,
+ * pull-requests surface, detail panel) and rendered once by the chat view so the dialog outlives
+ * a palette that closes the moment its command runs.
+ */
 const linkPullRequestDialogThreadAtom = Atom.make<ScopedThreadRef | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("pull-requests:link-dialog-thread"),
@@ -34,7 +38,6 @@ export function openLinkPullRequestDialog(threadRef: ScopedThreadRef): void {
 interface LinkPullRequestDialogProps {
   open: boolean;
   threadRef: ScopedThreadRef;
-  /** The thread's own project: bare numbers resolve against its repository. */
   projectId: string | null;
   onOpenChange: (open: boolean) => void;
 }
@@ -63,7 +66,10 @@ interface ResolvedLink {
   readonly url: string;
 }
 
-/** Bare PR numbers use the thread repository; URLs specify their own host and repository. */
+/**
+ * A URL carries its own host and repository; a bare `#123` can only mean the
+ * thread's own repository.
+ */
 export function resolveLinkPullRequestInput(input: {
   readonly reference: string;
   readonly project: {

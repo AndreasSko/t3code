@@ -7,8 +7,12 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { parse as parseYamlDocument } from "yaml";
 
-/** Match Python expanduser: USERPROFILE then HOMEDRIVE/HOMEPATH on Windows, HOME elsewhere.
- * Environment values stay literal, including spaces. */
+/**
+ * The home directory the agent expands `~` against, matching Python's
+ * `os.path.expanduser` in the launch environment T3 hands the process:
+ * `USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH`, on Windows and `HOME`
+ * elsewhere. Values are used verbatim; a path may contain spaces.
+ */
 export function resolveAntigravityUserHome(
   platform: NodeJS.Platform,
   environment: NodeJS.ProcessEnv,
@@ -24,8 +28,15 @@ export function resolveAntigravityUserHome(
   return environment.HOME || home;
 }
 
-/** GEMINI_HOME's config/skills precedes antigravity-cli/skills; private profiles link both to ~/.gemini.
- * ~/.agents/skills is not a user root; .agents/skills is project-scoped. */
+/**
+ * The agent's two user-global skill directories under a Gemini home, in
+ * native precedence order: `config/skills` is shared with the Antigravity IDE
+ * and CLI, and `antigravity-cli/skills` is where the `agy` CLI installs
+ * skills. The agent resolves both under `GEMINI_HOME`, which T3 points at a
+ * private profile, so the profile links these back to the user's `~/.gemini`.
+ * `~/.agents/skills` is not read: the agent only treats `.agents/skills` as a
+ * project directory.
+ */
 export function antigravityUserSkillDirectories(
   path: Path.Path,
   geminiHome: string,
@@ -108,7 +119,6 @@ function skillPathSortKey(entry: string) {
   );
 }
 
-/** Read only regular skill files, with a byte limit that applies during the read. */
 const readSkill = Effect.fn("readAntigravitySkill")(function* (
   skillPath: string,
   budget: ScanBudget,
@@ -140,8 +150,11 @@ const readSkill = Effect.fn("readAntigravitySkill")(function* (
   return bytes.toString("utf8");
 });
 
-/** First valid same-name skill wins across explicit roots and immediate children.
- * Typed read failures prevent caching partial workspace snapshots. */
+/**
+ * Match the official ACP's explicit skill roots. The first valid same-name skill
+ * wins. Each root loads its own SKILL.md or those in its immediate subdirectories.
+ * Read failures remain typed so workspace snapshots do not cache partial results.
+ */
 export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(function* (input: {
   readonly cwd: string;
   readonly userHome: string;

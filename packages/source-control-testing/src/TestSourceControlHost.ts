@@ -1,4 +1,3 @@
-/** Defaults/patchable settings with injected process/git operations; unexpected operations die. */
 import {
   DEFAULT_SERVER_SETTINGS,
   type ServerSettings,

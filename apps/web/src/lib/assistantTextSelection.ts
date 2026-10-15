@@ -79,8 +79,12 @@ export function createAssistantTextSelector(
 }
 
 /**
- * Match case-sensitive text after whitespace collapse, without trimming; positions use normalized UTF-16
- * units. Require one context match; saved offsets cannot break ties because they may drift.
+ * Matches case-sensitive text after collapsing each JS whitespace run to one
+ * space, without trimming. All positions and context lengths use UTF-16 units
+ * in that normalized stream, not markdown offsets or Unicode code points.
+ * `selector.text` can retain the original line breaks and code indentation.
+ * Repeated quotes require one match for all supplied context. Even matching
+ * saved offsets cannot break a context tie, since those offsets may have drifted.
  */
 export function findAssistantCitationText(
   text: string,
@@ -127,8 +131,8 @@ export function findAssistantCitationText(
 type TextChunk = { node: Text; start: number; end: number };
 
 /**
- * Use displayed DOM text with block/br breaks, excluding hidden/control content and layout-dependent
- * wrapping so reflow cannot move offsets.
+ * No layout reads, CSS-generated content, or soft-wrap line breaks enter the
+ * stream, so reflow cannot move it.
  */
 function readAssistantText(root: HTMLElement) {
   const parts: string[] = [];
@@ -178,6 +182,7 @@ function isUsableRange(root: HTMLElement, range: Range): boolean {
   ) {
     return false;
   }
+  // Interior controls are allowed; readAssistantText omits them from the stream.
   return true;
 }
 

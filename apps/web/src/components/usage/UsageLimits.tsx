@@ -229,7 +229,11 @@ export function useResetCredit(
   return { canManageProviders, confirming, setConfirming, busy, status, redeem };
 }
 
-/** Mount outside the button's popover: dialogs stack under it and closing it would unmount the confirmation. */
+/**
+ * Redeeming spends a credit the provider granted the user, so it never fires on a bare click.
+ * Mount it outside any popover that holds the button: dialogs stack under popovers, and closing
+ * the popover would unmount a dialog rendered inside it.
+ */
 export function ResetCreditDialog({
   open,
   onOpenChange,
@@ -262,7 +266,6 @@ export function ResetCreditDialog({
   );
 }
 
-/** `2 reset credits banked · next expires in 27d 23h`, or the short form for a popover. */
 export function resetCreditsSummary(
   credits: ServerProviderResetCredits,
   now: number,
@@ -321,7 +324,10 @@ export function ResetCredits({
   );
 }
 
-/** Advance now only on refresh; a live clock would repaint without changing a decision. */
+/**
+ * The page advances `now` on explicit refresh rather than ticking: a live clock would repaint the
+ * page for no decision-changing gain.
+ */
 export function UsageLimitsSection({
   selectedEnvironmentIds,
   hiddenProviders,
@@ -351,7 +357,6 @@ export function UsageLimitsSection({
             serverConfig: {
               ...config,
               providers: config.providers.filter((provider) => isVisible(provider.driver)),
-              // A hub left with no visible accounts is dropped, not reported as empty.
               usageLimitSources: config.usageLimitSources?.flatMap((source) => {
                 const accounts = source.accounts.filter((account) => isVisible(account.driver));
                 return accounts.length === 0 && source.accounts.length > 0

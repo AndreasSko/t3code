@@ -53,7 +53,10 @@ export function subscribeConfirmDialog(listener: () => void): () => void {
   };
 }
 
-/** Cleanup cancels confirmations left without a renderer host. */
+/**
+ * Registers the renderer host that can present themed confirmations. The
+ * returned cleanup function also cancels any request left without a host.
+ */
 export function registerConfirmDialogHost(): () => void {
   registeredHostCount += 1;
   let registered = true;
@@ -70,7 +73,9 @@ export function registerConfirmDialogHost(): () => void {
   };
 }
 
-/** Undefined means no themed confirmation host is mounted. */
+/**
+ * An undefined result means no themed host is currently available.
+ */
 export function requestConfirmDialog(
   message: string,
   options?: ConfirmDialogOptions,

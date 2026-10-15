@@ -53,7 +53,9 @@ export function resolveEnvironmentOptionLabel(input: {
   return runtimeLabel ?? savedLabel ?? input.environmentId;
 }
 
-// Even a lone remote environment needs an indicator so users can see where the project runs.
+// A remote (non-primary) environment is always surfaced, even when it is the
+// only environment available: with a single connected machine there is nothing
+// to pick, but the user still needs to see where the project runs.
 export function shouldShowEnvironmentIndicator(input: {
   activeEnvironment: Pick<EnvironmentOption, "isPrimary"> | null;
   canPickEnvironment: boolean;
@@ -68,7 +70,6 @@ export function shouldShowComposerContextStrip(input: {
   hasActiveProject: boolean;
   isGitRepo: boolean;
   showEnvironmentIndicator: boolean;
-  /** A collapsed composer's controls currently fit in their measured strip host. */
   hostsRestingComposerControls: boolean;
 }): boolean {
   return (
@@ -121,7 +122,8 @@ export interface PreviousWorktreeSeed {
   worktreePath: string;
 }
 
-// Archived threads stay hidden here so their worktrees do not resurface in the selector.
+// Archived threads don't compete — the rest of the UI hides them, so their worktrees shouldn't
+// resurface here.
 export function resolvePreviousWorktreeSeed(input: {
   threads: ReadonlyArray<{
     branch: string | null;
@@ -163,7 +165,6 @@ export function resolveEffectiveEnvMode(input: {
   activeWorktreePath: string | null;
   hasServerThread: boolean;
   draftThreadEnvMode: EnvMode | undefined;
-  /** The server publishes the worktree path only after setup completes. */
   preparingWorktree?: boolean;
 }): EnvMode {
   const { activeWorktreePath, hasServerThread, draftThreadEnvMode, preparingWorktree } = input;

@@ -14,11 +14,10 @@ export const HTML_RENDER_MAX_TITLE_LENGTH = 200;
 export interface HtmlRenderReference {
   readonly attachmentId: string;
   readonly title: string;
-  /** The agent's frame height in CSS pixels, and the cap on any measured height. */
   readonly height: number;
   /**
    * `[width, contentHeight]` pairs the server measured at publish, ascending by
-   * width. Absent when the preview browser was not installed yet.
+   * width.
    */
   readonly heights?: ReadonlyArray<readonly [width: number, height: number]>;
 }
@@ -98,8 +97,12 @@ function measuredHeight(heights: NonNullable<HtmlRenderReference["heights"]>, wi
 }
 
 /**
- * Fit the frame to the page so nested scrolling does not capture the reader's scroll.
- * Honor the agent's height cap only when it requests scrolling or measurements are absent.
+ * It is the page's own reported `contentHeight` when the client has one, else
+ * the server's measurement for that width. A page even a few pixels taller than
+ * its frame scrolls inside it and takes the reader's scroll, so the frame fits
+ * the page. The agent's height caps it only when it is below the page's height
+ * at the column width (the agent asked for a scrolling frame) or when the page
+ * was never measured.
  */
 export function htmlRenderFrameHeight(
   reference: HtmlRenderReference,
@@ -143,8 +146,8 @@ export const HTML_RENDER_DEFAULT_FONTS: HtmlRenderFonts = {
 };
 
 /**
- * Arial-metric faces approximate client system fonts so headless measurements
- * and preview screenshots wrap text close to the client.
+ * Arial-metric faces stand in for the system UI fonts readers see, so measured
+ * heights and preview screenshots wrap text close to how a client will.
  */
 export const HTML_RENDER_MEASURE_FONTS: HtmlRenderFonts = {
   sans: '"Liberation Sans", Arimo, Arial, Helvetica, sans-serif',
@@ -229,7 +232,6 @@ export function htmlRenderTheme(
   };
 }
 
-/** Agent-facing reference for the injected variables, used in tool descriptions. */
 export const HTML_RENDER_THEME_GUIDE = [
   "T3 injects its active theme as CSS custom properties on :root, and they follow the user's theme and light/dark mode live:",
   "--background (page background, identical to the thread around the frame), --foreground, --muted, --muted-foreground,",
@@ -250,7 +252,6 @@ export const HTML_RENDER_LAYOUT_GUIDE = [
   "Let content set the page's height. Avoid viewport-based heights such as 100vh or height:100% on html or body; the frame grows to fit the page, so they can make it grow again and again.",
 ].join(" ");
 
-// MCP Apps uses JSON-RPC over postMessage: https://github.com/modelcontextprotocol/ext-apps
 const HOST_CONTEXT_CHANGED_METHOD = "ui/notifications/host-context-changed";
 const OPEN_LINK_METHOD = "ui/open-link";
 const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
@@ -260,7 +261,6 @@ const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
 const SHORTCUTS_METHOD = "t3/notifications/shortcuts";
 const KEY_DOWN_METHOD = "t3/notifications/keydown";
 
-/** The content height in a framed render's `ui/notifications/size-changed` notification. */
 export function readHtmlRenderContentHeight(data: unknown): number | undefined {
   if (typeof data !== "object" || data === null) return undefined;
   const { jsonrpc, method, params } = data as Record<string, unknown>;
@@ -273,9 +273,8 @@ export function readHtmlRenderContentHeight(data: unknown): number | undefined {
 }
 
 /**
- * A render's `ui/open-link` request, if `data` is one with an http(s) URL. The
- * bootstrap adds the click's Cmd/Ctrl state, so a modifier click can leave the
- * app the way it does from a chat link.
+ * The bootstrap adds the click's Cmd/Ctrl state, so a modifier click can leave
+ * the app the way it does from a chat link.
  */
 export function readHtmlRenderLinkRequest(data: unknown):
   | {
@@ -296,7 +295,6 @@ export function readHtmlRenderLinkRequest(data: unknown):
     : undefined;
 }
 
-/** The key a framed render passed on in a `t3/notifications/keydown` notification. */
 export function readHtmlRenderKeyDown(data: unknown):
   | {
       readonly key: string;
@@ -361,7 +359,6 @@ export function htmlRenderThemeFragment(theme: HtmlRenderTheme): string {
   return `#${THEME_FRAGMENT_KEY}=${encodeURIComponent(JSON.stringify(theme))}`;
 }
 
-/** The `host-context-changed` notification a client posts into a mounted render when the theme changes. */
 export function htmlRenderThemeMessage(theme: HtmlRenderTheme) {
   return {
     jsonrpc: "2.0",
@@ -370,8 +367,6 @@ export function htmlRenderThemeMessage(theme: HtmlRenderTheme) {
   } as const;
 }
 
-// The frame scrolls a page taller than itself, but a scrollbar inside the
-// reply reads as a box within the thread, so it stays hidden.
 const BASE_CSS =
   "html{background:var(--background);color:var(--foreground);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;scrollbar-width:none}" +
   "html::-webkit-scrollbar{display:none}body{margin:0}code,kbd,pre,samp{font-family:var(--font-mono)}" +
@@ -403,8 +398,6 @@ const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("t3-theme"),
 function bootstrapMarkup(markup: string): string {
   const dark = htmlRenderTheme(T3_CODE_DARK_THEME_COLORS, "dark");
   const light = htmlRenderTheme(T3_CODE_LIGHT_THEME_COLORS, "light");
-  // Without a client-provided theme (a direct download, the headless preview
-  // without a fragment) the page follows the OS appearance.
   const defaultCss = `${rootRule(dark)}@media (prefers-color-scheme: light){${rootRule(light)}}${BASE_CSS}`;
   return [
     /<meta\s[^>]*charset/i.test(markup.slice(0, 4096)) ? "" : '<meta charset="utf-8">',
@@ -444,7 +437,6 @@ const blankNonMarkup = (html: string) => {
   return parts.join("");
 };
 
-/** Inject before authored styles and scripts so pages can override the theme defaults. */
 export function injectHtmlRenderBootstrap(html: string): string {
   const scan = blankNonMarkup(html);
   const markup = bootstrapMarkup(scan);

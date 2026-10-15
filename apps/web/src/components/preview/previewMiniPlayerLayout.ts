@@ -13,13 +13,16 @@ export const PREVIEW_MINI_PLAYER_EDGE_GAP = 12;
 export const PREVIEW_MINI_PLAYER_CORNER_RADIUS = 12;
 // The mini-player shell straddles this webview at 47 and 49: above --z-sheet, under dialogs (50).
 export const PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX = 48;
-// A fresh player is the largest box at the source aspect ratio that fits here.
 const PREVIEW_MINI_PLAYER_DEFAULT_BOX = { width: 320, height: 320 } as const;
 const PREVIEW_MINI_PLAYER_MIN_SIZE = { width: 240, height: 150 } as const;
 
 export interface PreviewMiniPlayerFrame extends PreviewMiniPlayerPosition, PreviewMiniPlayerSize {}
 
-/** Use the fixed viewport or floated webview size, which remains its CSS viewport. */
+/**
+ * The rendered size of what the floating player mirrors: the device viewport
+ * when one is set, otherwise the size the webview had when it was floated
+ * (`fittedSourceContent`), which the hosted webview keeps as its CSS viewport.
+ */
 export function resolvePreviewMiniPlayerSourceSize(
   viewport: PreviewViewportSetting,
   fittedSourceContent: BrowserSurfaceContentPresentation | null,
@@ -33,8 +36,12 @@ export function resolvePreviewMiniPlayerSourceSize(
   };
 }
 
-/** Respect device rotation; use the platform phone aspect until stream size
- * arrives and a nominal width above sensible player sizes. */
+/**
+ * The device screen as the user sees it, so a rotated phone floats as a
+ * landscape box. Before the stream reports its size the platform's usual phone
+ * shape stands in, matching the stream view's own placeholder aspect; the
+ * nominal width only keeps the source cap above any sensible player width.
+ */
 export function resolveDeviceMiniPlayerSourceSize(
   platform: DevicePlatform,
   screen: DeviceScreenSize | null,
@@ -50,8 +57,14 @@ export function resolveDeviceMiniPlayerSourceSize(
   return landscape ? { width: long, height: short } : { width: short, height: long };
 }
 
-/** Android skins paint black corner wedges (~13% of the short side on Pixel 9).
- * Match their clipping radius; edge-to-edge iOS streams keep the frame radius. */
+/**
+ * The Android emulator composites the skin's rounded corners into its
+ * framebuffer as black wedges (measured at ~13% of the short side on a
+ * Pixel 9), so its player clips at a matching phone-like radius; the sliver
+ * lost under the curve is status-bar padding. iOS simulators stream an
+ * edge-to-edge rectangle and keep the frame radius, which matters for iPads
+ * whose real corners are far tighter than a phone's.
+ */
 export function resolveDeviceMiniPlayerCornerRadius(
   platform: DevicePlatform,
   player: PreviewMiniPlayerSize,
@@ -68,7 +81,6 @@ interface HorizontalSpan {
   readonly right: number;
 }
 
-/** Container-coordinate obstacles reserve only covered columns, leaving margins open. */
 export interface PreviewMiniPlayerObstacles {
   readonly composer: (HorizontalSpan & { readonly height: number }) | null;
   readonly detailsCard: (HorizontalSpan & { readonly bottom: number }) | null;
@@ -83,7 +95,6 @@ const spanOf = (x: number, width: number): HorizontalSpan => ({ left: x, right: 
 
 const spansOverlap = (a: HorizontalSpan, b: HorizontalSpan) => a.left < b.right && a.right > b.left;
 
-/** The lowest row (before the edge gap) open to a player covering these columns. */
 function floorFor(
   span: HorizontalSpan,
   container: PreviewMiniPlayerSize,
@@ -95,14 +106,16 @@ function floorFor(
     : container.height;
 }
 
-/** The highest row (before the edge gap) open to a player covering these columns. */
 function ceilingFor(span: HorizontalSpan, obstacles: PreviewMiniPlayerObstacles): number {
   const { detailsCard } = obstacles;
   return detailsCard && spansOverlap(span, detailsCard) ? Math.max(0, detailsCard.bottom) : 0;
 }
 
-/** Positioned players use free rows in their own columns so tall frames
- * beside the composer survive layout; unpositioned players fit above it. */
+/**
+ * A player with a position keeps the rows its own columns have, so a tall frame parked beside
+ * the composer survives the next layout pass; without one it takes the rows above the composer,
+ * which every column has.
+ */
 const availableArea = (
   container: PreviewMiniPlayerSize,
   obstacles: PreviewMiniPlayerObstacles,
@@ -116,8 +129,11 @@ const availableArea = (
     PREVIEW_MINI_PLAYER_EDGE_GAP * 2,
 });
 
-/** Width controls size; preserve aspect ratio without letterboxing and
- * let tight containers override the minimum. */
+/**
+ * Width is the player's only free dimension; height always follows the source
+ * aspect ratio so the webview fills the box without letterboxing. The player
+ * may upscale the source, and a tight container wins over the minimum.
+ */
 function fitPreviewMiniPlayerWidth(
   desiredWidth: number,
   source: PreviewMiniPlayerSize,
@@ -178,8 +194,11 @@ const overlapsObstacle = (
   );
 };
 
-/** Clear obstacles by the shortest move; when no placement fits, stay below
- * the card so the player remains reachable. minimumX reserves space to its left. */
+/**
+ * When nothing leaves it clear it keeps its columns and sits below the card; the composer is
+ * where the user is typing, but a player under the card cannot be reached at all. minimumX
+ * reserves room to the player's left without changing its size.
+ */
 export function clampPreviewMiniPlayerPosition(
   position: PreviewMiniPlayerPosition,
   container: PreviewMiniPlayerSize,
@@ -234,8 +253,10 @@ export function clampPreviewMiniPlayerPosition(
   return best;
 }
 
-/** Clamp each layout without storing the result so narrow containers cannot
- * destroy chosen widths; unpositioned players align right below any details card. */
+/**
+ * Clamping happens here on every layout pass instead of being written back to the store, so a
+ * temporarily narrow container never destroys the user's chosen width.
+ */
 export function resolvePreviewMiniPlayerFrame(input: {
   readonly width: number | null;
   readonly position: PreviewMiniPlayerPosition | null;
@@ -255,7 +276,9 @@ export function resolvePreviewMiniPlayerFrame(input: {
     source,
     availableArea(
       container,
-      // Details-card clearance is placement, not sizing; relocate stored frames without shrinking them.
+      // A stored player keeps its size under the details card — the card's
+      // ceiling is a placement concern, not a sizing one, and the clamp pass
+      // relocates the frame into columns the card leaves open.
       position && width ? { composer: obstacles.composer, detailsCard: null } : obstacles,
       position && width ? spanOf(position.x, width) : null,
     ),
@@ -272,8 +295,11 @@ export function resolvePreviewMiniPlayerFrame(input: {
   return { ...clampPreviewMiniPlayerPosition(anchored, container, size, obstacles), ...size };
 }
 
-/** Preserve aspect ratio and anchor the opposite edge; plain edge drags
- * let the perpendicular axis shift within the full container. */
+/**
+ * The edge opposite the dragged one stays anchored, so growth stops at the container on that
+ * axis and the pointer keeps tracking the grabbed edge. On a plain edge drag the perpendicular
+ * axis may use the whole container, and the player shifts as needed to stay inside.
+ */
 export function resizePreviewMiniPlayer(input: {
   readonly start: PreviewMiniPlayerFrame;
   readonly direction: BrowserViewportResizeDirection;
@@ -296,7 +322,6 @@ export function resizePreviewMiniPlayer(input: {
   const south = direction.includes("south");
   const right = start.x + start.width;
   const bottom = start.y + start.height;
-  // Growth follows free rows in the current columns; clamp wider frames clear of new obstacles.
   const span = spanOf(start.x, start.width);
   const floor = floorFor(span, container, obstacles);
   const ceiling = ceilingFor(span, obstacles);

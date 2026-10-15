@@ -65,7 +65,6 @@ export function buildComposerSlashCommandItems(input: {
   readonly atMessageStart: boolean;
   readonly hasThread: boolean;
   readonly hasCompactableConversation?: boolean;
-  /** Whether T3 itself offers /usage-limits for the selected provider. */
   readonly offersUsageLimits?: boolean;
   readonly allowInteractionMode: boolean;
   readonly selectedProviderStatus: Pick<
@@ -192,19 +191,15 @@ export function useComposerCommandMenu({
   readonly draftMessage: string;
   readonly ownerKey: string | null;
   readonly environmentId: EnvironmentId | null;
-  /** Candidates for `@` thread suggestions. */
   readonly threadShells?: ReadonlyArray<EnvironmentThreadShell>;
-  /** Left out of `@` thread suggestions: a thread is never context for itself. */
   readonly currentThreadId?: ThreadId | null;
   readonly projectCwd: string | null;
   readonly pullRequestProjectId?: ProjectId | null;
   readonly pullRequestRepository?: string | null;
-  /** The thread's linked pull requests, offered in `#` suggestions from any repository. */
   readonly threadPullRequests?: ReadonlyArray<ThreadPullRequestLink>;
   readonly selectedProviderStatus: ServerProvider | null;
   readonly hasThread: boolean;
   readonly hasCompactableConversation: boolean;
-  /** Whether T3 itself offers /usage-limits for the selected provider. */
   readonly offersUsageLimits?: boolean;
   readonly enabled?: boolean;
   readonly onChangeDraftMessage: (value: string) => void;
@@ -218,7 +213,9 @@ export function useComposerCommandMenu({
     setSelection(nextSelection);
   }, []);
   useEffect(() => {
-    // Inserts record the caret after the new chip; clamping alone would leave it before the chip.
+    // An insert (attachment, terminal capture, review comment) rewrites the draft and records
+    // the caret that belongs after the new chip. Clamping alone would keep the old offset,
+    // which sits before it.
     const inserted = ownerKey ? readComposerDraftSelection(ownerKey, draftMessage) : null;
     if (inserted) {
       setSelection((current) =>
@@ -255,7 +252,8 @@ export function useComposerCommandMenu({
     selectedProviderStatus,
     projectCwd,
   );
-  // Throttle requests locally so a client clock ahead of the server cannot loop rescans.
+  // The last scan this composer asked for. A request inside the TTL is not
+  // repeated, so a client clock ahead of the server's cannot loop rescans.
   const workspaceRefreshKeyRef = useRef<{ key: string; requestedAt: number } | null>(null);
   const [workspaceRefreshRetry, setWorkspaceRefreshRetry] = useState<{
     key: string;

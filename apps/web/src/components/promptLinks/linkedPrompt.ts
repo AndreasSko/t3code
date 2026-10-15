@@ -14,7 +14,9 @@ export function warnAboutHiddenCharacters(prompt: LinkedPrompt): void {
   });
 }
 
-/** Ask before replacing user text. notes report unmet link requests, such as a model. */
+/**
+ * `notes` carry anything the link asked for and did not get, such as a model.
+ */
 export function placeLinkedPrompt(
   target: ComposerThreadTarget,
   prompt: LinkedPrompt,
@@ -23,7 +25,6 @@ export function placeLinkedPrompt(
   warnAboutHiddenCharacters(prompt);
   const place = () => {
     useComposerDraftStore.getState().setPrompt(target, prompt.text);
-    // It was not written here, so it must be read before it is sent.
     toastManager.add({
       type: "info",
       title: "Prompt added from a link",

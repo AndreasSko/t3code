@@ -14,7 +14,6 @@ function threadShellHasStarted(thread: ThreadStartMarkers | null | undefined): b
   );
 }
 
-/** Unstarted threads are unbound; started threads switch providers only when their session supports handoff. */
 export function threadAllowsProviderSwitch(input: {
   readonly thread: ThreadStartMarkers | null | undefined;
   readonly projection: OrchestrationV2ThreadProjection | null | undefined;

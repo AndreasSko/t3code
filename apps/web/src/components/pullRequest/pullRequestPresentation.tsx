@@ -35,8 +35,11 @@ import {
   type PullRequestGlyphIcon,
 } from "./pullRequestIcons";
 
-/** Mix host label colors toward foreground for 4.5:1 contrast on their wash
- * (30% label on light, 45% on dark); fixed height keeps row geometry stable. */
+/**
+ * The mix leans to the foreground because hosts hand out any color at all: at 30% of
+ * the label on light and 45% on dark, white, black and GitHub's pale yellows all clear
+ * 4.5:1 on their wash, selected row included, and saturated colors sit well above.
+ */
 export function PullRequestLabelChip({
   label,
   size = "sm",
@@ -62,7 +65,10 @@ export function PullRequestLabelChip({
   );
 }
 
-/** Awaiting review appears only when reported by the host, such as a required GitHub review. */
+/**
+ * "Awaiting review" is only drawn when the host reports it, which on GitHub means the branch
+ * rules require a review nobody has given.
+ */
 function reviewDecisionPresentation(decision: PullRequestReviewDecision) {
   switch (decision) {
     case "approved":
@@ -103,7 +109,6 @@ export function PullRequestReviewDecisionGlyph({
   );
 }
 
-/** Closed and merged states take precedence over stale draft flags across surfaces. */
 export function resolvePullRequestState(input: {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
@@ -146,7 +151,8 @@ export function PullRequestStateGlyph({
   const presentation = resolvePullRequestState({ state, isDraft });
   return (
     <Tooltip>
-      {/* Listing rows are buttons; a span trigger avoids nested interactive controls. */}
+      {/* The list row is itself a button, so the trigger stays a span: an interactive one would
+          nest a control inside that button and steal the row's click target. */}
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"
@@ -265,7 +271,6 @@ export function pullRequestChecksStatePresentation(state: PullRequestChecksState
   return CHECKS_STATE_PRESENTATION[state];
 }
 
-/** Null for no checks so an unearned passing glyph cannot appear. */
 export function pullRequestChecksState(
   checks: ReadonlyArray<PullRequestCheck>,
 ): PullRequestChecksState | null {
@@ -276,7 +281,10 @@ export function pullRequestChecksState(
   return statuses.has("success") ? "passing" : null;
 }
 
-/** Avatar rings need stronger tones than verdict text because a 16px thin arc has less area. */
+/**
+ * The ring runs a shade stronger than the text tones. At 16px across it is a thin arc, and the
+ * muted pairing that reads well as a word was barely there as an outline.
+ */
 const REVIEW_OUTCOME_PRESENTATION = {
   approved: {
     label: "Approved",
@@ -320,8 +328,12 @@ export function pullRequestReviewOutcomeToneClassName(outcome: PullRequestReview
   return REVIEW_OUTCOME_PRESENTATION[outcome].toneClassName;
 }
 
-/** Mix stale rings into background rather than using alpha: overlapping
- * avatars would otherwise show through their only separator. */
+/**
+ * A faded verdict is mixed into the background rather than made translucent. The ring is the only
+ * separator an avatar carrying one has — the summary drops the opaque `ring-background` where a
+ * verdict is drawn — and the stack overlaps by 4px, so an alpha ring would let the neighbour show
+ * straight through it and the two faces would merge.
+ */
 export function pullRequestReviewOutcomeRingClassName(
   outcome: PullRequestReviewOutcome,
   stale = false,
@@ -382,7 +394,6 @@ export function PullRequestActorAvatar({
   const avatarUrl = actor?.avatarUrl ?? null;
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
   return avatarUrl === null || failedAvatarUrl === avatarUrl ? (
-    // Not every host reports an avatar, and a private host may refuse the browser's request.
     <span
       aria-hidden
       className={cn(
@@ -404,7 +415,9 @@ export function PullRequestActorAvatar({
   );
 }
 
-/** Deleted GitHub accounts use ghost; profile URLs turn actors into links. */
+/**
+ * GitHub attributes work from a deleted account to "ghost"; say the same word everywhere.
+ */
 export function PullRequestActorLabel({
   actor,
   className,
@@ -469,7 +482,6 @@ export function PullRequestDiffStat({
   deletions: number;
   className?: string;
 }) {
-  // Unreported counts must not imply an empty change with +0 -0.
   if (additions === 0 && deletions === 0) {
     return null;
   }
@@ -481,8 +493,6 @@ export function PullRequestDiffStat({
   );
 }
 
-/** Children.toArray removes null segments and preserves keys; separator
- * keys borrow the following segment's key instead of its shifting position. */
 function separatorKey(segment: ReactNode): string {
   return `separator:${isValidElement(segment) ? String(segment.key) : String(segment)}`;
 }

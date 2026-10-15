@@ -27,7 +27,6 @@ function resolveActiveThemeColors(
     : (getThemeColorsForMode(definition, appearance) ?? definition.colors);
 }
 
-/** The app's active theme and fonts, as handed to agent HTML renders. Stable until one changes. */
 export function useHtmlRenderTheme() {
   const { theme, resolvedTheme, themeHalves } = useTheme();
   // Custom and published palettes can be edited in place, under an unchanged preference.

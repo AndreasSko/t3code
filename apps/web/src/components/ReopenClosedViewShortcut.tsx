@@ -193,7 +193,9 @@ export function ReopenClosedViewShortcut() {
         isWeb: false,
       },
     };
-    // Browser guests run separately; the desktop forwards chords their keydown listeners cannot send to the app.
+    // A focused browser page is a separate process, so these chords never reach
+    // the app's keydown listeners. The desktop claims them in the guest and
+    // sends each command back as a menu action.
     const commands = [
       ...(hasHistory ? (["view.reopenClosed"] as const) : []),
       ...PREVIEW_FORWARDED_LAYOUT_COMMANDS,

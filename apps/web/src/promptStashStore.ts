@@ -9,18 +9,27 @@ import {
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
 
 export const PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v2";
-/** Delete the obsolete stash payload so it cannot retain megabytes of the shared localStorage quota. */
+/**
+ * v1 bucketed entries into per-provider-instance queues and stored a model
+ * selection with each prompt. The stash is provider-agnostic now, so the old
+ * payload is deleted at startup rather than migrated — left behind it would
+ * silently hold megabytes of the origin's ~5MB localStorage quota forever.
+ */
 const LEGACY_PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v1";
 const PROMPT_STASH_STORAGE_VERSION = 2;
 
 export const MAX_STASH_ENTRIES = 20;
 /**
- * Reserve enough of the shared ~5MB localStorage quota for two compressed images; record oversized images
- * as dropped.
+ * Budget for an entry's serialized attachment payload. localStorage is a
+ * ~5MB origin-wide quota shared with the composer draft store, so oversized
+ * images are dropped (tracked in `droppedImageNames`) rather than persisted.
+ *
+ * Sized to hold two images at the per-image compression budget
+ * (`MAX_STASH_IMAGE_DATA_URL_CHARS`) so a typical before/after screenshot
+ * pair survives intact.
  */
 export const MAX_STASH_ENTRY_ATTACHMENT_CHARS = 2_700_000;
 
-/** Persist file upload references, not bytes; images remain subject to the localStorage budget. */
 const StashEntrySchema = Schema.Struct({
   id: Schema.String,
   createdAt: Schema.String,
@@ -30,11 +39,12 @@ const StashEntrySchema = Schema.Struct({
   droppedImageNames: Schema.Array(Schema.String),
   unreadableImageNames: Schema.optionalKey(Schema.Array(Schema.String)),
   /**
-   * Persist the prompt before image encoding so crashes cannot lose it; pending counts identify interrupted
-   * saves.
+   * Images still being encoded when the entry was written. The entry is
+   * persisted before its images so a crash mid-encode cannot lose the prompt;
+   * this field lets the UI show "N images still saving" until
+   * `finalizeEntryImages` lands, and flags entries orphaned by a reload.
    */
   pendingImageCount: Schema.optionalKey(Schema.Number),
-  /** Context-link payloads live here; images and files use their own fields. */
   records: Schema.optionalKey(ForwardCompatibleArray(ComposerContextRecord)),
 });
 export type PromptStashEntry = typeof StashEntrySchema.Type;
@@ -47,8 +57,14 @@ type PersistedPromptStashState = typeof PersistedPromptStashState.Type;
 const decodePersistedPromptStashState = Schema.decodeUnknownSync(PersistedPromptStashState);
 
 /**
- * Encoding cannot resume after reload; clear orphaned pending counts and mark lost images unreadable so the
- * prompt remains restorable instead of stuck saving.
+ * `pendingImageCount` only has meaning within the session that wrote it: the
+ * encode loop that would clear it does not survive a reload. Any entry that
+ * comes back from storage still pending was orphaned by a closed tab or a
+ * crash mid-encode, so the count is settled here — otherwise the entry would
+ * be stuck showing "saving…" and refuse to restore forever.
+ *
+ * The images are genuinely gone (they were never written), so they are
+ * recorded as unreadable to keep the prompt itself restorable.
  */
 function clearOrphanedPendingImages(
   entries: ReadonlyArray<PromptStashEntry>,
@@ -70,7 +86,6 @@ function clearOrphanedPendingImages(
   });
 }
 
-/** Admit images in order so earliest attachments win the per-entry budget. */
 export function partitionStashAttachments(
   attachments: ReadonlyArray<PersistedComposerImageAttachment>,
 ): {
@@ -92,8 +107,10 @@ export function partitionStashAttachments(
 }
 
 /**
- * Even reading window.localStorage can throw SecurityError; guard the property access as well as get/set.
- * Memory-only writes are not durable, which callers must know before clearing the composer.
+ * Reading the `localStorage` property itself can throw `SecurityError` when
+ * storage is blocked by policy or the page is a sandboxed iframe — so the
+ * access has to be guarded, not just the get/set calls on it. Otherwise
+ * importing this module would crash the app at load.
  */
 function resolveBaseStorage(): { storage: StateStorage; durable: boolean } {
   try {
@@ -107,13 +124,14 @@ function resolveBaseStorage(): { storage: StateStorage; durable: boolean } {
 const { storage: baseStashStorage, durable: storageIsDurable } = resolveBaseStorage();
 
 /**
- * Persist immediately because callers clear the composer only after confirmed durable writes; a debounce
- * cannot honestly report that outcome.
+ * Persists the queue, immediately rather than debounced. Stashing is a
+ * deliberate, infrequent keystroke — not a per-character autosave — so there
+ * is nothing to coalesce, and the caller clears the composer on the strength
+ * of this write landing, which a debounce timer cannot honestly report.
  */
 function persistEntries(entries: ReadonlyArray<PromptStashEntry>): {
   /** The write succeeded (possibly only into the in-memory fallback). */
   written: boolean;
-  /** The write will survive a reload. */
   durable: boolean;
 } {
   try {
@@ -146,19 +164,28 @@ function readPersistedEntries(): ReadonlyArray<PromptStashEntry> | null {
 
 interface PromptStashStoreState {
   entries: ReadonlyArray<PromptStashEntry>;
-  /** Returns the evicted entry, if any, for user-facing messaging. */
+  /**
+   * Prepends an entry to the queue, evicting the oldest entry past the cap.
+   */
   stashEntry: (entry: PromptStashEntry) => {
     evicted: PromptStashEntry | null;
     /** False when the write failed outright (e.g. quota); nothing was kept. */
     written: boolean;
-    /** False includes memory-only success; callers must not treat it as surviving reload. */
+    /**
+     * False when the write will not survive a reload: either it failed, or it
+     * landed only in the in-memory fallback because localStorage is blocked.
+     */
     durable: boolean;
   };
-  /** durable=false means a reload may resurrect the removed entry. */
+  /**
+   * `durable` is false when the removal could not be persisted, meaning a
+   * reload would resurrect the entry.
+   */
   takeEntry: (entryId: string) => { entry: PromptStashEntry | null; durable: boolean };
   /**
-   * Returns attached=false if the entry was restored/deleted during encoding so callers report missing
-   * images.
+   * Returns attached=false when the entry is gone (restored or deleted while
+   * encoding was still running) so the caller can tell the user their images
+   * did not make it.
    */
   finalizeEntryImages: (
     entryId: string,
@@ -213,22 +240,18 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
   },
 }));
 
-// Hydrate once at startup. Like the app's other persisted stores, tabs are
-// last-write-wins: no cross-tab merging or storage-event syncing.
+// Like the app's other persisted stores, tabs are last-write-wins: no cross-tab
+// merging or storage-event syncing.
 {
   try {
     baseStashStorage.removeItem(LEGACY_PROMPT_STASH_STORAGE_KEY);
-  } catch {
-    // Purging the v1 payload is best-effort; a storage policy that rejects
-    // the delete must not take down module init.
-  }
+  } catch {}
   const persisted = readPersistedEntries();
   if (persisted) {
     usePromptStashStore.setState({ entries: persisted });
   }
 }
 
-/** Write and rehydrate through the store's storage; an empty string clears the payload. */
 export function writePromptStashStorageForTest(raw: string): void {
   baseStashStorage.setItem(PROMPT_STASH_STORAGE_KEY, raw);
   usePromptStashStore.setState({ entries: readPersistedEntries() ?? [] });

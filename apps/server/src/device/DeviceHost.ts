@@ -1,5 +1,3 @@
-// Ready hosts expose forwarded loopback hub origins; agent endpoints appear
-// only after agent access is granted. The service uses host-independent transport.
 import type {
   DeviceHostId,
   DeviceHostSummary,
@@ -83,7 +81,6 @@ export interface DeviceHostReady {
     args: ReadonlyArray<string>,
     options?: { readonly timeoutMs?: number; readonly stdin?: string },
   ) => Effect.Effect<{ readonly stdout: string; readonly stderr: string; readonly code: number }>;
-  /** Absolute paths of helper binaries vendored with the hub, when present. */
   readonly helpers: {
     readonly serveSimAxSettings: string | null;
     readonly serveSimCli: string | null;
@@ -103,7 +100,10 @@ export class DeviceHost extends Context.Service<
     readonly platformAvailability: (
       platform: DevicePlatform,
     ) => Effect.Effect<DevicePlatformAvailability>;
-    /** Concurrent callers share one lazy install/start; ready hosts return immediately. */
+    /**
+     * Idempotent: concurrent callers share one start, and a ready host returns
+     * immediately.
+     */
     readonly ensureReady: (
       onPhase: (phase: "installing" | "starting", detail?: string) => Effect.Effect<void>,
     ) => Effect.Effect<DeviceHostReady, DeviceHostError | NodeRuntimeUnavailableError>;

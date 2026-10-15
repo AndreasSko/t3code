@@ -16,14 +16,15 @@ export interface DelayedStatus<A> {
   readonly dispose: () => void;
 }
 
-/** Delays brief statuses and holds shown ones for a minimum duration; values must have stable identity. */
+/**
+ * Values compare by identity, so use strings or other stable values.
+ */
 export function createDelayedStatus<A>(
   onChange: (shown: ShownStatus<A> | null) => void,
 ): DelayedStatus<A> {
   let key = "";
   let latest: A | null = null;
   let shown: A | null = null;
-  // While hidden, this is the show delay. While shown, the minimum visible time.
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const clearTimer = () => {

@@ -12,7 +12,10 @@ import { useResizeDrag } from "./useResizeDrag";
 
 const WidthSchema = Schema.Finite;
 
-/** The host must size from this property; a direct-child drag handle writes it each frame. */
+/**
+ * Custom property the host element must size itself from. The drag handle sits
+ * directly inside the host, and a drag writes this property on it each frame.
+ */
 export const RESIZABLE_WIDTH_PROPERTY = "--resizable-width";
 
 export interface UseResizableWidthOptions {
@@ -20,7 +23,6 @@ export interface UseResizableWidthOptions {
   readonly defaultWidth: number;
   readonly minWidth: number;
   readonly maxWidth: number;
-  /** Left-edge handles grow right-anchored panels leftward; right-edge handles do the reverse. */
   readonly edge: "left" | "right";
 }
 
@@ -33,8 +35,8 @@ export interface ResizableWidthHandlers {
 }
 
 /**
- * Drag frames write the host CSS property without rerendering; width state and localStorage commit only at
- * drag-end or interruption to avoid per-frame persistence.
+ * Width is read on mount or storage-key changes and persisted on drag-end (not on every rAF tick
+ * — would otherwise be ~60 writes/sec).
  */
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;

@@ -12,8 +12,10 @@ import {
   withOrchestrationProtocolHeader,
 } from "./environmentHttpAuth.ts";
 
-// Short timeouts discard slow snapshot work; HTTP-path failures use socket fallback,
-// while older history pages have no fallback and wait for this deadline.
+// Long enough for a slow but alive server to finish. On a cold open a timeout makes the socket
+// ask the same server for the same snapshot again, and older turn pages have no fallback, so a
+// short deadline only drops work. The socket fallback is for setups where /api fails but /ws
+// works, such as a proxy that blocks /api.
 const DEFAULT_THREAD_SNAPSHOT_TIMEOUT_MS = 20_000;
 
 export type ThreadSnapshotHistoryMeta = {
@@ -23,7 +25,11 @@ export type ThreadSnapshotHistoryMeta = {
   readonly latestLocalTurnOrdinal?: number | null;
 };
 
-/** present seeds socket resume, missing is definitive 404, unavailable uses socket fallback. */
+/**
+ * - `present`: snapshot body is available (seed projection, resume via socket). - `missing`:
+ * server definitively reported the thread does not exist (404). - `unavailable`:
+ * transport/timeout/5xx/etc.; fall back to the socket path.
+ */
 export type ThreadSnapshotLoadResult =
   | {
       readonly _tag: "present";
@@ -33,7 +39,6 @@ export type ThreadSnapshotLoadResult =
   | { readonly _tag: "missing" }
   | { readonly _tag: "unavailable" };
 
-/** Loads compressible thread snapshots over HTTP to keep large first frames off the socket. */
 export const fetchEnvironmentThreadSnapshot = Effect.fn(
   "clientRuntime.state.fetchEnvironmentThreadSnapshot",
 )(function* (input: {
@@ -61,7 +66,6 @@ export const fetchEnvironmentThreadSnapshot = Effect.fn(
 
 export type FetchEnvironmentThreadSnapshotError = RemoteEnvironmentRequestError;
 
-/** Distinguishes definitive missing threads from transient HTTP failures needing socket fallback. */
 export class ThreadSnapshotLoader extends Context.Service<
   ThreadSnapshotLoader,
   {

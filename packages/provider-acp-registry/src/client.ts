@@ -7,7 +7,6 @@ export const acpRegistryClient = defineProviderClient({
   driverKind: ProviderDriverKind.make("acpRegistry"),
   label: "ACP Registry",
   settingsSchema: AcpRegistrySettings,
-  // Registry instances are explicitly added per agent, so there is no default.
   hasDefaultInstance: false,
   icon: {
     viewBox: "0 0 576 220",

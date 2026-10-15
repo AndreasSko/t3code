@@ -33,8 +33,6 @@ import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
-/** Actions are project-scoped; action ids share environment-wide shortcuts,
- * while defaultProjectScripts supplies inherited lists. */
 export function ProjectActionsSettings() {
   const { scope, targets, target } = useSettingsScope();
   const { environments } = useEnvironments();
@@ -61,7 +59,9 @@ export function ProjectActionsSettings() {
       );
       if (!environment?.serverConfig) return [];
       const member = candidate.projectId ? memberById.get(candidate.projectId) : undefined;
-      // Older servers discard overrides; omit them from edits rather than report a write that vanishes.
+      // An older server ignores the override record, so a project edit there
+      // would report success and vanish; such environments are left out and
+      // the legacy per-project map keeps serving them.
       if (
         member &&
         environment.serverConfig.environment?.capabilities.projectSettingsOverrides !== true
@@ -71,7 +71,8 @@ export function ProjectActionsSettings() {
       return [
         {
           environmentId: candidate.environmentId,
-          // Extend raw overrides rather than persisting already-resolved inherited values.
+          // Writes read the raw environment settings so an override entry is
+          // extended, not derived from already-resolved values.
           settings: environment.serverConfig.settings,
           keybindings: environment.serverConfig.keybindings,
           ...(member ? { project: member } : {}),
@@ -80,7 +81,6 @@ export function ProjectActionsSettings() {
     }),
   );
 
-  // Read importable actions from the representative checkout, then fan imported writes out.
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
   const t3File = useT3ProjectFileState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),

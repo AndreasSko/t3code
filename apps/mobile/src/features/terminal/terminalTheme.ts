@@ -14,7 +14,6 @@ export interface TerminalTheme {
   readonly border: string;
   readonly cursorForeground: string;
   readonly cursorBackground: string;
-  /** The 16 ANSI colors in protocol order. */
   readonly palette: TerminalPalette;
 }
 

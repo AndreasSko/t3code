@@ -21,9 +21,9 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 
-// Subscribe on every environment because the primary can change without reconnecting;
-// subscription options are fixed when the connection is established.
-// Published themes are capped server-side and excluded from caches.
+// Only the primary environment's themes are rendered, but which environment is primary changes
+// at runtime and the subscription payload is fixed when it is established -- gating on "primary
+// right now" would leave a newly promoted environment with no themes until it reconnected.
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
   environmentThemes: true,
@@ -113,7 +113,6 @@ export const primaryServerAvailableEditorsAtom = Atom.make(
 
 const EMPTY_ENVIRONMENT_THEMES: ReadonlyArray<EnvironmentTheme> = [];
 
-/** Theme consumers follow the primary machine, even when others are connected. */
 export const primaryServerEnvironmentThemesAtom = Atom.make(
   (get): ReadonlyArray<EnvironmentTheme> =>
     get(primaryServerConfigAtom)?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES,

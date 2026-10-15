@@ -188,7 +188,6 @@ export function NewTaskDraftScreen(props: {
     readonly projectId?: string;
     readonly branch?: string | null;
     readonly worktreePath?: string | null;
-    /** The project was just added by a clone that is still running. */
     readonly cloning?: boolean;
   };
   readonly pendingTaskId?: string;
@@ -210,7 +209,6 @@ export function NewTaskDraftScreen(props: {
   const controlsBottomPadding = Math.max(insets.bottom, 10);
   const keyboardOpenedOffset = Math.max(0, controlsBottomPadding - 8);
   const { projectScopes, selectedProject, selectedProjectKey, setProject } = flow;
-  // Workspace folder names can be ambiguous; show the repository scope.
   const selectedProjectLabel = useMemo(() => {
     if (!selectedProject) return null;
     const scope = projectScopes.find((candidate) =>
@@ -238,14 +236,17 @@ export function NewTaskDraftScreen(props: {
   const taskPermissionReason =
     environmentConnected && !canOperate ? "This connection cannot start tasks." : null;
   const modelUnavailable = environmentConnected && flow.selectedModelOption?.isUnavailable === true;
-  // Cloning creates the project before its files; defer Start until the clone completes.
+  // A project added by cloning exists before its files do: the prompt can be
+  // written meanwhile, but Start waits for the clone.
   const projectCloneState = useProjectClone(
     selectedProject
       ? { environmentId: selectedProject.environmentId, projectId: selectedProject.id }
       : null,
   );
   const projectClone = projectCloneState === "pending" ? null : projectCloneState;
-  // Before clone events arrive, gate only the project Add Project marked as cloning.
+  // Before the clone stream delivers, only the project this draft was opened
+  // for by Add Project is known to be cloning; any other project (offline
+  // included) must still be able to queue a task.
   const awaitingKnownClone =
     projectCloneState === "pending" &&
     props.initialProjectRef?.cloning === true &&
@@ -260,7 +261,6 @@ export function NewTaskDraftScreen(props: {
   const retryProjectClone = useAtomCommand(sourceControlEnvironment.retryProjectClone, {
     reportFailure: false,
   });
-  // Server-state banners cannot report a request that never reached the server.
   const runCloneAction = async (
     title: string,
     action: () => Promise<AsyncResult.AsyncResult<unknown, unknown>>,
@@ -272,7 +272,8 @@ export function NewTaskDraftScreen(props: {
     }
   };
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
-  // Deletion may finish after a picker change; close only the removed project's draft.
+  // The delete is awaited; by then the picker may point somewhere else, and
+  // only the removed project's draft should leave the screen.
   const selectedProjectRef = useRef(selectedProject);
   useEffect(() => {
     selectedProjectRef.current = selectedProject;
@@ -307,7 +308,6 @@ export function NewTaskDraftScreen(props: {
         states: uploadStates,
       })
     : null;
-  // The outbox finishes in-flight uploads before sending queued tasks.
   const attachmentsUploading =
     environmentConnected &&
     selectedProject !== null &&
@@ -388,7 +388,8 @@ export function NewTaskDraftScreen(props: {
   );
   useEffect(
     () =>
-      // The native-stack patch reports UIKit dismissal completion so keyboard restoration can wait.
+      // UIKit's completion callback for the sheet dismissal, surfaced by the
+      // native-stack patch. This is when the queued keyboard restore runs.
       (navigation as unknown as NavigationWithFinishTransitioning).addListener(
         "finishTransitioning",
         settingsSheetPresentation.onStackTransitionsFinished,
@@ -420,7 +421,10 @@ export function NewTaskDraftScreen(props: {
   latestIncomingShareIdRef.current = props.incomingShareId;
   const isImportingShare = importingShareKey !== null;
   const alertedUnavailableIncomingShareIdRef = useRef<string | null>(null);
-  // Sending clears the imported-share receipt before navigation; retain consumption to avoid vanished-share alerts.
+  // The share this screen already moved into its draft. Sending clears the
+  // draft (and its importedShareIds receipt) a frame before the screen leaves,
+  // and the inbox entry is long gone by then; without this the re-render in
+  // between reads as "shared content vanished" and alerts on every send.
   const consumedIncomingShareIdRef = useRef<string | null>(null);
   const incomingShare = props.incomingShareId ? getShare(props.incomingShareId) : null;
   const requestedInitialProjectAvailable = Boolean(
@@ -447,7 +451,6 @@ export function NewTaskDraftScreen(props: {
   const isImportingContext = flow.draftKey ? contextImports[flow.draftKey] === true : false;
   const isComposerInteractionLocked =
     isIncomingShareTransferPending || flow.submitting || isImportingContext;
-  // Repeated keyboard cycles advance from the in-flight environment switch target.
   const { environments, selectedEnvironmentId, switchEnvironment, switchingToEnvironmentId } = flow;
   const cycleEnvironment = useCallback(() => {
     if (isComposerInteractionLocked) return true;
@@ -466,7 +469,8 @@ export function NewTaskDraftScreen(props: {
     [environments.length],
   );
   useHardwareKeyboardCommand(cycleEnvironmentCommands, cycleEnvironment);
-  // T3 owns /usage-limits only where Limits has data for the selected provider.
+  // Also guard while a submit is in flight: an Android back press or iOS
+  // Cancel would otherwise abandon the screen while the task still starts.
   const offersUsageLimits =
     flow.selectedProviderStatus !== null &&
     hasProviderUsageLimits(
@@ -524,7 +528,8 @@ export function NewTaskDraftScreen(props: {
     if (preventRemove || submitNavigationAction === null) {
       return;
     }
-    // Let the remove guard update reach the parent sheet before navigating.
+    // Give the guard update a frame to reach the parent sheet before navigating,
+    // just like the project-picker fallback below.
     const frame = requestAnimationFrame(() => {
       setSubmitNavigationAction(null);
       (navigation.getParent() ?? navigation).dispatch(submitNavigationAction);
@@ -589,7 +594,11 @@ export function NewTaskDraftScreen(props: {
   }, []);
 
   const { beginEditingPendingTask, cancelEditingPendingTask, editingPendingTask, openDraft } = flow;
-  // Drafts and project shells hydrate separately; retry until both arrive, then attempt each id once.
+  // Drafts hydrate from disk and projects arrive with the shell snapshot, so
+  // on a cold launch the draft or its project can be missing for a moment;
+  // wait for hydration and retry while projects load. Attempt each id once
+  // after that so a draft discarded mid-session does not keep bouncing to
+  // the picker.
   const attemptedDraftIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!props.draftId || props.pendingTaskId) {
@@ -648,11 +657,12 @@ export function NewTaskDraftScreen(props: {
   const regularFontFamily = useFontFamily("regular");
   const bodyText = useScaledTextRole("body");
 
-  // A fresh initialProjectRef is a new navigation request even if this screen stayed mounted.
   const lastInitialProjectRefRef = useRef(props.initialProjectRef);
 
   useEffect(() => {
-    // Editing and resumption own project selection while hydration is in flight.
+    // Pending-task editing and draft resumption own project selection (and
+    // must not fall through to the replace("NewTask") fallback while their
+    // hydration is in flight).
     if (props.pendingTaskId || props.draftId) {
       return;
     }
@@ -670,7 +680,8 @@ export function NewTaskDraftScreen(props: {
         ) ?? null;
 
       if (directProject) {
-        // Reapplying route selection would undo user switches in the picker.
+        // Apply the route's project once. Re-applying on every change would
+        // instantly revert environment/project switches made in the picker.
         const directProjectKey = `${directProject.environmentId}:${directProject.id}`;
         if (appliedInitialProjectKeyRef.current === directProjectKey) {
           return;
@@ -707,7 +718,9 @@ export function NewTaskDraftScreen(props: {
       }
 
       if (projects.length > 0) {
-        // Keep the share id when returning to the picker; never import into a fallback project.
+        // Never fall through to the flow provider's temporary first-project
+        // default. Return to the picker with the share id intact so the user
+        // can choose an available destination.
         setIsReturningToProjectPicker(true);
       }
       return;
@@ -851,7 +864,11 @@ export function NewTaskDraftScreen(props: {
       await consumeShare(shareId);
       didConsumeShare = true;
       consumedIncomingShareIdRef.current = shareId;
-      // Release unretained files before early returns; ownership checks protect files claimed by other drafts.
+      // The consumed inbox draft was the last owner of files that never made
+      // it into the composer draft (unsupported server, oversize, limit
+      // skips). Release them before any early return: an unmount or a
+      // superseding import must not leak them, and the sweep re-checks
+      // ownership so it cannot delete a file another draft picked up.
       const retainedAttachmentIds = new Set(
         getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id),
       );
@@ -888,12 +905,17 @@ export function NewTaskDraftScreen(props: {
                   if (!shareImportMountedRef.current) {
                     return;
                   }
-                  // Restoring publishes atom state before React commits cancellation, so latch synchronously.
+                  // Latch synchronously before restoring the draft. The
+                  // restore publishes atom state and can re-run the import
+                  // effect before React commits the cancelling state update.
                   cancellingShareImportKeyRef.current = importKey;
                   setIsCancellingShareImport(true);
                   try {
                     if (needsDraftRestore) {
-                      // Sweep merged files only after inbox consumption; otherwise the inbox still needs them for retry.
+                      // The restore drops the share's merged-in attachments
+                      // from the draft. Sweep them only when the inbox entry
+                      // was consumed: before that, the inbox still references
+                      // these files and must keep them for a later import.
                       const mergedAttachments = getComposerDraftSnapshot(draftKey).attachments;
                       await restoreComposerDraftSnapshot(draftKey, draftBackup);
                       needsDraftRestore = false;
@@ -952,7 +974,8 @@ export function NewTaskDraftScreen(props: {
       })
       .finally(() => {
         if (startedShareImportKeyRef.current === importKey) {
-          // Every terminal path must release the synchronous transfer latch so retry remains possible.
+          // Every terminal path, including an invalidated operation, must
+          // release the synchronous start latch so this transfer can retry.
           startedShareImportKeyRef.current = null;
         }
         if (shareImportMountedRef.current && activeShareImportTokenRef.current === importToken) {
@@ -1054,7 +1077,6 @@ export function NewTaskDraftScreen(props: {
     });
     const rejectedCount =
       result.files.length > 0 ? flow.appendAttachments(result.files, insertion) : 0;
-    // Picker and live-cap errors can coincide; report both in one alert.
     const problems = [
       ...(result.error ? [result.error] : []),
       ...(rejectedCount > 0
@@ -1200,7 +1222,6 @@ export function NewTaskDraftScreen(props: {
     }
     const draft = getComposerDraftSnapshot(draftKey);
     if (appAtomRegistry.get(composerContextImportsAtom)[draftKey]) return;
-    // Setup or catalog changes must preserve explicit Antigravity picks, including unavailable ones.
     const modelSelection =
       resolveSelectableModelSelection(
         selectedEnvironmentServerConfig,
@@ -1236,7 +1257,9 @@ export function NewTaskDraftScreen(props: {
       Alert.alert(title, detail);
       return;
     }
-    // New tasks have no local limits response; allow provider commands and prompts with attachments through.
+    // T3's own limits command is answered by the thread composer; a new task would
+    // send it to the agent. A provider's same-named command, or a prompt carrying
+    // attachments, goes through as usual.
     if (
       offersUsageLimits &&
       isUsageLimitsCommand(initialMessageText) &&
@@ -1248,7 +1271,9 @@ export function NewTaskDraftScreen(props: {
       );
       return;
     }
-    // Failed-send recovery preserves over-cap files; reject before uploading a turn the server would refuse.
+    // A failed-send restore can leave the draft over the cap on purpose (it
+    // never drops the user's files); starting anyway would upload everything
+    // and have the server reject the turn.
     if (draft.attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       Alert.alert(
         "Too many attachments",
@@ -1265,8 +1290,6 @@ export function NewTaskDraftScreen(props: {
 
     const editingPendingTask = flow.editingPendingTask;
 
-    // Persist through the outbox before navigation; uploads and reconnect retries drain there.
-    // Immediately sendable tasks open the thread, while deferred tasks remain pending.
     const metadata = editingPendingTask
       ? {
           threadId: editingPendingTask.threadId,
@@ -1276,14 +1299,18 @@ export function NewTaskDraftScreen(props: {
         }
       : makeTurnCommandMetadata();
     const message = flow.buildPendingTaskMessage(metadata, {
-      // Deferred tasks cannot predict the checkout they will drain against.
+      // A task that waits in the outbox cannot know the checkout it will
+      // drain against; one that sends now runs against the live one.
       currentCheckoutBranch: queuesInsteadOfStarting ? null : flow.currentCheckoutBranchName,
     });
     if (!message) {
       return;
     }
     if (!queuesInsteadOfStarting) {
-      // ActivityKit must start in the foreground before async creation; failed creations end on token replay.
+      // Arm the lock-screen card before the async thread creation: backgrounding
+      // the app right after tapping submit would otherwise reject the foreground
+      // -only Activity start. If creation fails, the token registration's replay
+      // finds no work and ends the card within seconds.
       armAgentAwarenessLiveActivityForLocalWork({
         environmentId: selectedProject.environmentId,
         threadTitle: deriveThreadTitleSeed({
@@ -1293,7 +1320,8 @@ export function NewTaskDraftScreen(props: {
         projectTitle: selectedProject.title,
       });
     }
-    // Persist the local outbox write before clearing the draft or leaving; server setup follows asynchronously.
+    // Persist before clearing the draft or leaving its editor. This only waits
+    // for the local outbox write; server and worktree setup run on the thread.
     flow.setSubmitting(true);
     try {
       await enqueueThreadOutboxMessage(message);
@@ -1310,7 +1338,8 @@ export function NewTaskDraftScreen(props: {
     if (editingPendingTask) {
       flow.finishEditingPendingTask();
     } else {
-      // New tasks re-resolve defaults; defer attachment cleanup until the outbox owns the files durably.
+      // The queued message owns the attachments now, so the sweep is deferred
+      // until the write confirms it.
       clearComposerDraftContent(draftKey, {
         clearModelSelection: true,
         clearWorkspaceSelection: true,
@@ -1364,7 +1393,8 @@ export function NewTaskDraftScreen(props: {
     !voiceInput.blocksSubmission &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
-    // Draft files have no remote bytes yet, so opening them requires the draft key.
+    // A draft attachment lives only in the draft. Without its key the screen would fall through
+    // to a remote lookup for bytes the server has never seen.
     const draftKey = flow.draftKey;
     if (!draftKey) return;
     promptInputRef.current?.blur();
@@ -1400,7 +1430,6 @@ export function NewTaskDraftScreen(props: {
           );
         }}
         ref={promptInputRef}
-        // Leave focus to the user so sheet presentation has only one motion.
         autoFocus={false}
         // Clipboard imports use the editor's read-only mode to retain keyboard focus.
         editable={!isIncomingShareTransferPending && !flow.submitting}
@@ -1484,7 +1513,6 @@ export function NewTaskDraftScreen(props: {
       <Text className="text-center text-2xl font-t3-medium tracking-tight text-foreground">
         What should we work on?
       </Text>
-      {/* Wraps onto two lines only when a long machine name leaves no room. */}
       <View className="flex-row flex-wrap items-center justify-center gap-x-1">
         <ComposerInlineControl
           accessibilityHint="Opens the project picker"
@@ -1597,7 +1625,6 @@ export function NewTaskDraftScreen(props: {
           />
         </View>
       ) : null}
-      {/* Keep workspace controls anchored when the clone banner disappears. */}
       {projectClone && projectClone.phase !== "done" && selectedProject ? (
         <View className="px-1 pb-2">
           <ProjectCloneBanner

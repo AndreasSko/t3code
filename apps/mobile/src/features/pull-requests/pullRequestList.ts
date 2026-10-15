@@ -15,7 +15,6 @@ export const DEFAULT_PR_LIST_CONTROLS: PullRequestListControls = {
   sort: "updated",
 };
 
-/** Treat a saved Scratch folder scope as "All projects". */
 export function withoutScratchProjectScope(
   controls: PullRequestListControls,
   projects: readonly { id: string; environmentId: string; isScratch?: true }[],
@@ -43,7 +42,6 @@ export type EnvironmentPullRequestListEntry = PullRequestListEntry & {
 export const scopedPullRequestListKey = (entry: EnvironmentPullRequestListEntry) =>
   `${entry.environmentId}:${pullRequestListKey(entry)}`;
 
-/** Provider refreshes and diff-count batches recreate entries; unchanged rows can stay mounted. */
 export function pullRequestListRowsAreEqual(
   previous: EnvironmentPullRequestListEntry,
   next: EnvironmentPullRequestListEntry,
@@ -226,7 +224,8 @@ export function filterPullRequestList<
     }
     return true;
   });
-  // Prefer a reachable copy; an unreachable machine may only have cached rows.
+  // The same repository can be available on multiple machines. Pick its first matching source,
+  // unless that machine is unreachable and another one can answer: its rows may only be cached.
   const reachable = (entry: Entry) =>
     !connectedEnvironmentIds ||
     (entry.environmentId !== undefined && connectedEnvironmentIds.has(entry.environmentId));

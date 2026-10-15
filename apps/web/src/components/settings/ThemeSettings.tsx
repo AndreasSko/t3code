@@ -129,8 +129,6 @@ function ThemeLibraryCard({
     onSelectAndUse: (themeIndex: number, mode: ThemeAppearance) => void;
   };
 }) {
-  // A one-appearance theme can only take its own side of the mix, so the card
-  // tooltip promises exactly what clicking it does.
   const cardModes = theme.previews.map((preview) => preview.mode);
   const [radialModeOpen, setRadialModeOpen] = useState<ThemeAppearance | null>(null);
   const radialModeGroups = (["light", "dark"] as const).map((mode) => {
@@ -146,7 +144,9 @@ function ThemeLibraryCard({
     };
   });
   return (
-    // Keep the card a div because its title button and mode circles cannot nest inside another button.
+    // The card surface stays a plain div (buttons cannot nest inside a button
+    // role); the title button and mode circles carry the accessible actions,
+    // while the card click is a pointer-only convenience.
     <Tooltip>
       <TooltipTrigger
         render={
@@ -585,7 +585,9 @@ export function ThemeLibrary({
     const removedIds = new Set(themeIdsToRemove);
     if (removedIds.size === 0) return;
     const removesBase = removedIds.has(getThemeDefinition(theme)?.id ?? "");
-    // Read raw before persistTheme clears the mix; unresolved published halves would otherwise be lost.
+    // Captured raw before persistTheme clears the mix: a half naming a
+    // published theme whose set has not streamed in yet is pruned from the
+    // `themeHalves` prop, and rebuilding from that would drop it.
     const storedHalves = readThemeHalvesRaw();
     // Keep the themes installed if we cannot move the selection off one of
     // them; the dialog stays open so the user can retry or cancel.
@@ -627,9 +629,13 @@ export function ThemeLibrary({
   const assignHalf = useCallback(
     (appearance: ThemeAppearance, cardId: string | null) => {
       const otherAppearance = appearance === "light" ? "dark" : "light";
-      // A default half cannot override a themed base; move the base to the other explicit half first.
+      // Picking the default over a themed base cannot be stored as a half:
+      // the base would still own that appearance. Convert the base into an
+      // explicit half on the other side so this side falls back to default.
       if (cardId === null && baseCardId !== null) {
-        // Read raw before clearing the mix so a published half that has not streamed in is preserved.
+        // Read raw, before persistTheme clears the mix: the other half may
+        // name a published theme that has not streamed in yet, and falling
+        // back to the base would silently rewrite it.
         const otherOwner = readThemeHalvesRaw()[otherAppearance] ?? baseCardId;
         if (!persistTheme(appearanceMode === "system" ? "system" : appearanceMode)) return;
         if (!setThemeHalf(otherAppearance, otherOwner)) {
@@ -678,7 +684,6 @@ export function ThemeLibrary({
     assignHalf(mode, cardId);
   };
 
-  // A null owner means the default card, which must show as selected on a fresh install.
   const pickedModesFor = (cardId: string | null): ThemeMode[] => {
     const rings: ThemeMode[] = [];
     if (lightOwner === cardId) rings.push("light");
@@ -752,7 +757,8 @@ export function ThemeLibrary({
   ];
 
   const renderPairGrid = () => (
-    // Share one provider so hover handoffs are instant; tighter grouping makes them sluggish.
+    // One shared provider so every tooltip in the grid hands off instantly to
+    // the next hovered trigger instead of stacking on top of it.
     <TooltipProvider>
       <div
         className="grid w-full gap-2"
@@ -804,7 +810,9 @@ export function ThemeLibrary({
             (environmentTheme) => !customThemes.some((theme) => theme.id === environmentTheme.id),
           )
           .map((environmentTheme) => (
-            // The environment republishes these palettes, so edits would be overwritten; duplicate to keep a copy.
+            // No edit or remove: the environment republishes these palettes on
+            // every change, so anything saved here would be overwritten.
+            // Duplicating is the way to keep a copy.
             <ThemeLibraryCard
               activeModes={pickedModesFor(environmentTheme.id)}
               isActive={false}
@@ -914,8 +922,6 @@ export function ThemeLibrary({
           );
         }}
         onImported={(importedTheme) => {
-          // Same rule as clicking the card: a one-appearance theme takes its
-          // side of the mix instead of becoming the base for both.
           const modes = getThemeModes(importedTheme);
           if (modes.length === 1) {
             assignHalf(modes[0]!, importedTheme.id);

@@ -1,5 +1,3 @@
-// Resolve the active VCS driver per operation; checkpoints are hidden refs,
-// independent of user-facing metadata and provider conversation rollback.
 import { VcsUnsupportedOperationError, type CheckpointRef } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -47,7 +45,9 @@ export class CheckpointStore extends Context.Service<
   {
     readonly isGitRepository: (cwd: string) => Effect.Effect<boolean, CheckpointStoreError>;
 
-    /** Capture with an isolated temporary Git index and a hidden ref. */
+    /**
+     * Uses an isolated temporary Git index and writes a hidden ref.
+     */
     readonly captureCheckpoint: (
       input: CaptureCheckpointInput,
     ) => Effect.Effect<void, CheckpointStoreError>;
@@ -56,24 +56,39 @@ export class CheckpointStore extends Context.Service<
       input: Omit<RestoreCheckpointInput, "fallbackToHead">,
     ) => Effect.Effect<boolean, CheckpointStoreError>;
 
-    /** Restores staging too; may fall back to HEAD when the checkpoint ref is missing. */
+    /**
+     * Restore workspace and staging state to a checkpoint.
+     *
+     * Optionally falls back to current `HEAD` when the checkpoint ref is missing.
+     */
     readonly restoreCheckpoint: (
       input: RestoreCheckpointInput,
     ) => Effect.Effect<boolean, CheckpointStoreError>;
 
-    /** Defaults to patch; numstat uses NUL-delimited paths.
-     * May treat a missing from-ref as HEAD. */
+    /**
+     * Numstat output has NUL-delimited paths for file summaries.
+     * Can optionally treat a missing "from" ref as `HEAD`.
+     */
     readonly diffCheckpoints: (
       input: DiffCheckpointsInput,
     ) => Effect.Effect<string, CheckpointStoreError>;
 
-    /** Exclude paths imported by Git unless work in the range touched them.
-     * Null means HEAD did not move or was not recorded; treat all paths as authored. */
+    /**
+     * List paths changed by work done after the "from" checkpoint: uncommitted
+     * edits at either checkpoint, commits made after "from", and commits that
+     * left HEAD. Commits a pull, merge, or rebase brought in are older than
+     * "from", so their paths are not listed.
+     *
+     * Returns null when HEAD did not move or a checkpoint does not record HEAD.
+     * Then every changed path belongs to the turn.
+     */
     readonly listAuthoredPaths: (
       input: ListAuthoredPathsInput,
     ) => Effect.Effect<ReadonlySet<string> | null, CheckpointStoreError>;
 
-    /** Missing refs are tolerated. */
+    /**
+     * Best-effort delete: missing refs are tolerated.
+     */
     readonly deleteCheckpointRefs: (
       input: DeleteCheckpointRefsInput,
     ) => Effect.Effect<void, CheckpointStoreError>;

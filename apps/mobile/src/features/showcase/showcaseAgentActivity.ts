@@ -9,7 +9,12 @@ import type {
   AgentActivityRowProps,
 } from "../../widgets/AgentActivity";
 
-/** Stages seeded threads because the capture runner does not include the activity relay. */
+/**
+ * The rows point at seeded showcase threads so the copy matches the thread
+ * list, but the phases are staged: the relay that normally derives them is not
+ * part of the capture. Rows follow the relay's order: attention first, then
+ * running, then finished.
+ */
 export const SHOWCASE_AGENT_ACTIVITY_ROWS = [
   { threadId: "pocket-command-center", phase: "waiting_for_approval", minutesAgo: 1 },
   { threadId: "beautiful-boot", phase: "waiting_for_input", minutesAgo: 4 },
@@ -21,7 +26,7 @@ export const SHOWCASE_AGENT_ACTIVITY_ROWS = [
   readonly minutesAgo: number;
 }>;
 
-// Keep the relay's status wording.
+// Matches the relay's row wording (AgentActivityPublisher.statusForPhase).
 const STATUS_BY_PHASE: Record<AgentActivityPhase, string> = {
   starting: "Connecting",
   running: "Working",
@@ -39,6 +44,7 @@ const ACTIVE_PHASES: ReadonlySet<AgentActivityPhase> = new Set([
   "waiting_for_input",
 ]);
 
+/** Returns null until every staged thread and its project have loaded. */
 export function buildShowcaseAgentActivity(
   threads: ReadonlyArray<EnvironmentThreadShell>,
   projects: ReadonlyArray<EnvironmentProject>,
@@ -88,7 +94,10 @@ export function showcaseAgentAlert(activity: AgentActivityProps) {
   };
 }
 
-/** FCM data for the Android showcase, using the relay activity payload shape. */
+/**
+ * The FCM data map Android's native receiver renders, mirroring the relay's
+ * androidActivityData so the shade shows exactly what a real push produces.
+ */
 export function showcaseAndroidActivityData(
   activity: AgentActivityProps,
   now: number,

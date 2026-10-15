@@ -97,7 +97,6 @@ interface ThreadNavigationSidebarProps {
   readonly searchQuery: string;
 }
 
-/** iOS uses SidebarNavigationShell for a real UINavigationBar and UISearchController; other platforms use custom chrome. */
 export function ThreadNavigationSidebar(props: ThreadNavigationSidebarProps) {
   if (Platform.OS !== "ios") {
     return <ThreadNavigationSidebarPane {...props} nativeChrome={false} />;
@@ -243,7 +242,6 @@ function ThreadNavigationSidebarPane(
     () => projectScopes.find((scope) => scope.key === resolvedProjectKey) ?? null,
     [projectScopes, resolvedProjectKey],
   );
-  // A saved project stays selected while its environment is offline or filtered out.
   const selectedProjectKey = selectedProjectScope?.key ?? null;
   const selectedProjectRefs = useMemo(
     () =>
@@ -264,7 +262,6 @@ function ThreadNavigationSidebarPane(
     return map;
   }, [projects]);
 
-  // Reset settled paging with filters so a new scope does not inherit a deep page.
   const [settledVisibleCount, setSettledVisibleCount] = useState(
     THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   );
@@ -288,14 +285,13 @@ function ThreadNavigationSidebarPane(
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
-  // The queued-start and snooze helpers need a clock while the pane stays open.
   const [nowMinute, setNowMinute] = useState(() => new Date().toISOString().slice(0, 16));
   // Snooze wake times are second-precise; a counter bumped exactly at the
   // next wake boundary re-runs the partition with a fresh clock so a woken
   // thread reappears immediately instead of on the next minute tick.
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
   useEffect(() => {
-    // Refresh immediately; the mount-time clock can be hours old.
+    // Refresh immediately because the mount-time value can be hours old.
     setNowMinute(new Date().toISOString().slice(0, 16));
     const id = setInterval(() => setNowMinute(new Date().toISOString().slice(0, 16)), 60_000);
     return () => clearInterval(id);
@@ -316,7 +312,9 @@ function ThreadNavigationSidebarPane(
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
-  // Compute move availability once per section; per-row planning made minute-tick rebuilds quadratic.
+  // Up/down menu availability for every card, computed once per section per
+  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
+  // list construction quadratic, and this list rebuilds on every minute tick.
   const threadMoveAvailability = useMemo(() => {
     const sectionAvailability = (section: "pinned" | "active") =>
       computeThreadMoveAvailability({
@@ -335,6 +333,7 @@ function ThreadNavigationSidebarPane(
           queuedThreadKeys,
         }),
       });
+    // The Working beta orders the inbox by time, so only pins can move.
     return new Map([
       ...sectionAvailability("pinned"),
       ...(workingShelfEnabled ? [] : sectionAvailability("active")),
@@ -391,7 +390,6 @@ function ThreadNavigationSidebarPane(
     threads,
     selectedProjectScope,
   ]);
-  // Wake at snooze expiry; re-arm far-future dates at the signed-32-bit setTimeout limit.
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
   useEffect(() => {
     if (nextSnoozeWakeAt === null) return;
@@ -400,10 +398,14 @@ function ThreadNavigationSidebarPane(
     const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
     const id = setTimeout(() => bumpSnoozeWakeTick((tick) => tick + 1), delayMs);
     return () => clearTimeout(id);
-    // A clamped timer must re-arm even when the far-future boundary string is unchanged.
+    // snoozeWakeTick must re-arm the timer even when nextSnoozeWakeAt is
+    // unchanged: after a clamped fire (wake beyond the 32-bit setTimeout
+    // range) the boundary string is identical and the chain would die.
   }, [nextSnoozeWakeAt, snoozeWakeTick]);
   const listItems = useMemo<readonly SidebarListItem[]>(() => {
-    // Offline pending tasks have no thread shells; splice them after active rows using the same scope/search filters.
+    // Queued offline tasks are not thread shells, so the v2 item builder never sees them; the
+    // shared splice puts them below the active block (mirrors the compact Home v2 list) where
+    // they stay visible and deletable while their environment is offline.
     const v2SearchQuery = props.searchQuery.trim().toLocaleLowerCase();
     const v2PendingTasks = pendingTasks.filter(
       (pendingTask) =>
@@ -570,8 +572,11 @@ function ThreadNavigationSidebarPane(
     onScroll: onMaterialFabScroll,
     onScrollBeginDrag: handleScrollBeginDrag,
   });
-  // Project/search updates must invalidate recycled row props or retain stale titles and favicons.
-  // Keep the minute clock on per-row items so only changed text invalidates a row.
+  // The sticky header's project shells and search maps feed row props, so
+  // they have to bust the recycler's memoization — otherwise a row keeps the
+  // blank favicon and fallback title it was first rendered with. The minute
+  // clock deliberately stays out: its per-row text lives on the items, so a
+  // tick only re-renders rows whose displayed text actually moved.
   const listExtraData = useMemo(
     () => ({
       selectedThreadKey: props.selectedThreadKey ?? "",
@@ -652,7 +657,6 @@ function ThreadNavigationSidebarPane(
         case "v2-thread": {
           const thread = item.item.thread;
           const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
-          // Sidebar rows omit hairlines; the shared divider stamp serves Home's boundary suppression.
           return (
             <ThreadListV2Row
               onNewThreadOnBranch={props.onNewThreadOnBranch}
@@ -802,7 +806,6 @@ function ThreadNavigationSidebarPane(
       workingShelfEnabled,
     ],
   );
-  // Sort/group options do not affect this list; only scope filters mark it customized.
   const filterCustomized = options.selectedEnvironmentId !== null || selectedProjectKey !== null;
   const filterIcon = filterCustomized
     ? "line.3.horizontal.decrease.circle.fill"
@@ -863,7 +866,6 @@ function ThreadNavigationSidebarPane(
         <NativeStackScreenOptions
           optionsVersion={[nativeHeaderItems, props.width]}
           options={{
-            // Swap status in the static header brand slot so reconnects do not shift the list.
             ...getConnectionAwareBrandHeaderOptions({
               headerWidth: props.width,
               trailingItemCount: nativeHeaderItems.length,
@@ -874,7 +876,6 @@ function ThreadNavigationSidebarPane(
               ref: searchBarRef,
               autoCapitalize: "none",
               hideNavigationBar: false,
-              // UIKit collapses search by default; keep it pinned under the title.
               hideWhenScrolling: false,
               obscureBackground: false,
               placeholder: "Search",
@@ -1014,7 +1015,6 @@ function ThreadNavigationSidebarPane(
           style={{ paddingTop: insets.top }}
         >
           <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
-            {/* Swap connection status in the title slot to avoid shifting the list. */}
             <WorkspaceConnectionTitle
               grow
               onPress={props.onOpenEnvironmentSettings}

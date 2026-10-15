@@ -1,4 +1,8 @@
-/** Android marks OS handoffs as backgrounded; defer background-triggered restarts until the handoff ends. */
+/**
+ * Android reports the app as backgrounded while one of these covers the activity, so
+ * background-triggered work — like a deferred app update restart — has to wait them out instead
+ * of tearing down the mid-flow runtime.
+ */
 let activeHandoffs = 0;
 
 /** Returns an idempotent end function; call it when the handoff resolves. */

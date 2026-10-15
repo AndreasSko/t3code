@@ -26,11 +26,14 @@ const CUSTOM_MODEL_PLACEHOLDER_BY_KIND: Partial<Record<ProviderDriverKind, strin
   [ProviderDriverKind.make("pi")]: "anthropic/claude-sonnet-5",
 };
 
-/** Above this many models the list gets a filter input. */
 const FILTER_THRESHOLD = 8;
 
-/** Claude/Cursor use fastMode booleans; Codex Fast uses serviceTier with
- * priority catalog ids or fast fallback ids, matching the composer. */
+/**
+ * Claude and Cursor report fast mode as a boolean `fastMode` option; Codex
+ * reports it as a `serviceTier` select whose fast tier is labelled "Fast"
+ * (catalog id `priority`, or `fast` from the speed-tier fallback), matching the
+ * composer.
+ */
 function describeModelCapabilities(model: ServerProviderModel): string[] {
   const descriptors = model.capabilities?.optionDescriptors ?? [];
   const labels: string[] = [];
@@ -58,8 +61,11 @@ function describeModelCapabilities(model: ServerProviderModel): string[] {
   return labels;
 }
 
-/** Favorites, visible, then hidden; move only within groups and persist
- * that resulting display order as modelOrder. */
+/**
+ * Hidden models sink so the list reads top-down as "what the picker shows";
+ * moves only swap rows within the same group, and the resulting display order
+ * is what gets persisted as `modelOrder`.
+ */
 export function groupModelsForDisplay<
   T extends { readonly slug: string; readonly isCustom: boolean },
 >(
@@ -100,7 +106,6 @@ export function nextHiddenModelsForBulkToggle(
 
 interface ProviderModelsSectionProps {
   readonly instanceId: ProviderInstanceId;
-  /** Null when provider metadata needed for slug normalization is unavailable. */
   readonly driverKind: ProviderDriverKind | null;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
@@ -109,7 +114,10 @@ interface ProviderModelsSectionProps {
   readonly hiddenModels: ReadonlyArray<string>;
   readonly favoriteModels: ReadonlyArray<string>;
   readonly modelOrder: ReadonlyArray<string>;
-  /** Caller routes the custom-model write to its owning provider storage. */
+  /**
+   * Caller is responsible for routing the write to the correct storage (legacy
+   * `settings.providers[kind]` vs. `providerInstances[id].config`).
+   */
   readonly onChange: (next: ReadonlyArray<CustomModelDefinition>) => void;
   readonly onHiddenModelsChange: (
     next: ReadonlyArray<string>,
@@ -172,7 +180,8 @@ export function ProviderModelsSection({
       )
     : displayModels;
 
-  // Scroll only after the parent commits the custom model and renders its new row.
+  // The parent commits the new custom model and hands back an updated
+  // `models` list, so the row can only be scrolled to after that render.
   useEffect(() => {
     const slug = scrollToSlugRef.current;
     if (slug === null) return;
@@ -204,7 +213,8 @@ export function ProviderModelsSection({
       return;
     }
 
-    // Clear filtering so the new row mounts and its pending scroll target can resolve.
+    // Clear the filter so the new row renders even when it does not match,
+    // which is also what lets the pending scroll target resolve and clear.
     scrollToSlugRef.current = normalized;
     setFilter("");
     onChange([...customModels, { slug: normalized, name: normalized, capabilities: null }]);
@@ -289,7 +299,6 @@ export function ProviderModelsSection({
     </Tooltip>
   );
 
-  // Keep ordering discoverable without hover.
   const rowActions = (
     model: DisplayModel,
     options: {
@@ -384,7 +393,8 @@ export function ProviderModelsSection({
         ? "Hidden from picker"
         : "Shown in picker";
 
-  // Disabled switches receive no pointer events; their wrapper must trigger the tooltip.
+  // The trigger is a wrapper span: a disabled switch gets no pointer events,
+  // so it could not open the tooltip itself.
   const pickerSwitch = (model: DisplayModel, isHidden: boolean) => (
     <Tooltip>
       <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
@@ -403,13 +413,15 @@ export function ProviderModelsSection({
   const renderRow = (model: DisplayModel) => {
     const capLabels = describeModelCapabilities(model);
     const group = groupOf(model);
-    // Favorites can still be hidden; read that switch from the preference rather than the group.
+    // Hidden is read from the preference itself: a favorited model can still be
+    // hidden, and its switch must say so even though it sits in the favorites group.
     const isHidden = !model.isCustom && hiddenModelSet.has(model.slug);
     const isFavorite = group === "favorite";
     const index = displayModels.indexOf(model);
     const previousModel = displayModels[index - 1];
     const nextModel = displayModels[index + 1];
-    // Reordering filtered views is ambiguous; permit moves only on the full list.
+    // Reordering a filtered view would be ambiguous, so arrows only show on
+    // the full list.
     const canMoveUp =
       !isFiltering && previousModel !== undefined && groupOf(previousModel) === group;
     const canMoveDown = !isFiltering && nextModel !== undefined && groupOf(nextModel) === group;
@@ -420,7 +432,6 @@ export function ProviderModelsSection({
         key={`${instanceId}:${model.slug}`}
         data-model-slug={model.slug}
         className={cn(
-          // Reserve four custom-row action slots to align capability labels with built-in rows.
           "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30",
           isHidden && "opacity-50",
         )}
@@ -437,7 +448,6 @@ export function ProviderModelsSection({
             <span className="text-2xs text-muted-foreground/70">custom</span>
           ) : null}
         </span>
-        {/* Keep the grid cell when narrow layouts hide text so other columns stay aligned. */}
         <span className="text-2xs text-muted-foreground/70">
           {capLabels.length > 0 ? (
             <span className="hidden sm:inline">{capLabels.join(" · ")}</span>

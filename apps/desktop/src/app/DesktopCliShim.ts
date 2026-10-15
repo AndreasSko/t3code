@@ -6,8 +6,8 @@ import * as Option from "effect/Option";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
-// The server uses this off-PATH launcher through T3CODE_CLI_PATH, including under sudo.
-// AppImage mount paths change each run, so its launcher mounts the image itself.
+// An AppImage mounts somewhere new each run, so its launcher mounts the
+// AppImage itself instead of pointing into it.
 const { logInfo, logWarning } = makeComponentLogger("desktop-cli-shim");
 
 export const MARKER = "Written by T3 Code: runs the desktop app's bundled t3 CLI.";
@@ -28,8 +28,10 @@ export type CliShimTarget =
   | { readonly kind: "windows"; readonly executable: string; readonly entry: string };
 
 /**
- * Run the bundled entry with ELECTRON_RUN_AS_NODE, including inside ASAR.
- * Embed absolute paths and T3 home so sudo still targets this install after clearing the environment.
+ * Electron runs the server as plain Node with `ELECTRON_RUN_AS_NODE`, which
+ * reads the entry from inside the asar archive. The launcher's own path and the
+ * app's T3 home are written in, so the command the server shows is absolute and
+ * `sudo`, which clears the environment, still runs against this install's home.
  */
 export const renderCliShim = (input: {
   readonly target: CliShimTarget;
@@ -125,7 +127,6 @@ export const launcherPath = (environment: DesktopEnvironment.DesktopEnvironment[
     environment.platform === "win32" ? "t3.cmd" : "t3",
   );
 
-/** Returns the packaged CLI launcher path, or None for development builds. */
 export const install = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   if (!environment.isPackaged) return Option.none<string>();
@@ -150,7 +151,6 @@ export const install = Effect.gen(function* () {
   return yield* Effect.gen(function* () {
     const existing = yield* fs.readFileString(shimPath).pipe(Effect.option);
     if (Option.isSome(existing) && !existing.value.includes(MARKER)) {
-      // Someone else's file; leave it, and let commands fall back to plain `t3`.
       yield* logWarning("leaving a t3 launcher the app did not write", { shimPath });
       return Option.none<string>();
     }

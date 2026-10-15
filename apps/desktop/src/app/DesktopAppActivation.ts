@@ -47,7 +47,6 @@ export class DesktopAppActivationStartError extends Schema.TaggedError<DesktopAp
 }
 
 interface RunningControlServer {
-  /** Binds the address again if its socket file is gone. Directory changes run this too. */
   readonly reclaim: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
@@ -75,7 +74,6 @@ function requestIdFromUnknown(value: unknown): string {
   return "invalid-request";
 }
 
-/** Makes sure the socket directory is safe to use. Returns true when it had to create it. */
 async function prepareUnixDirectory(input: {
   readonly directory: string;
   readonly userId: number | undefined;
@@ -107,8 +105,14 @@ function closeServer(server: NodeNet.Server): Promise<void> {
 }
 
 /**
- * Serves local `t3 app` requests until close(); on Unix the newest app owns the shared socket.
- * Closing removes only its own socket, and a running app reclaims the address when it is free.
+ * Serves `t3 app` requests on the local control address until `close`.
+ *
+ * Two desktop apps can share one state dir, for example nightly and a preview
+ * build. They share one socket path, so on Unix:
+ * - The newest app takes the path over.
+ * - `close` removes the socket file only while it is still this app's socket.
+ * - An app binds the path again when it is gone, for example after the app that
+ *   took it over quits.
  */
 export async function startDesktopAppControlServer(input: {
   readonly address: string;
@@ -236,7 +240,6 @@ export async function startDesktopAppControlServer(input: {
     }
     const next = await bindUnix(input.directory, "claim-free").catch(
       (error: NodeJS.ErrnoException) => {
-        // Another app bound the address first.
         if (error.code === "EEXIST") return null;
         throw error;
       },

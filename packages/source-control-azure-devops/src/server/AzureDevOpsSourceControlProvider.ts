@@ -45,7 +45,9 @@ export const discovery = {
   executable: "az",
   versionArgs: ["--version"],
   authArgs: ["account", "show", "--query", "user.name", "-o", "tsv"],
-  // az starts Python even for --version and takes ~6s on Windows, exceeding the default budget.
+  // `az` boots a fresh Python interpreter on every invocation, so even `az --version` takes ~6s
+  // on Windows and overruns the default budget, leaving the provider reported as missing on
+  // machines where it is installed.
   probeTimeoutMs: 20_000,
   parseAuth: parseAzureAuth,
   installHint:

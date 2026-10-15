@@ -9,7 +9,8 @@ interface ThreadActivityFileContext {
 }
 
 export function buildThreadActivityFileParams(input: ThreadActivityFileContext) {
-  // File routes use the selected workspace thread even when activity originated in a parent.
+  // Activity provenance may come from a parent thread, but file routes stay scoped
+  // to the thread whose workspace is currently selected.
   return {
     environmentId: String(input.environmentId),
     threadId: String(input.currentThreadId),

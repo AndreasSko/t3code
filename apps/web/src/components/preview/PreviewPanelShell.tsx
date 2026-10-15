@@ -22,15 +22,17 @@ import { RightPanelResizeHandle } from "./RightPanelResizeHandle";
 
 export type PreviewPanelMode = "inline" | "sheet" | "sidebar" | "embedded";
 
-/** Inline width persists per browser; sheet/sidebar sizing belongs to the parent. */
 interface PreviewPanelShellProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
   inlineSize?: PreviewPanelInlineSize;
   open?: boolean;
-  /** Pass a surface-specific storage key so resizing cannot overwrite another panel width. */
+  /**
+   * Callers embedding this shell for a different surface (e.g. the pull
+   * requests page) should pass their own key so resizing one panel doesn't
+   * clobber the other's remembered width.
+   */
   widthStorageKey?: string;
-  /** Initial width in pixels. */
   defaultWidth?: number;
   children: ReactNode;
 }

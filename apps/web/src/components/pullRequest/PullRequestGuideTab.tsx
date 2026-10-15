@@ -19,7 +19,6 @@ import {
   usePullRequestReviewStore,
 } from "./pullRequestReviewStore";
 
-/** Guides are generated on request and stored, so opening the tab triggers no generation. */
 export function PullRequestGuideTab({
   environmentId,
   reference,
@@ -97,7 +96,6 @@ export function PullRequestGuideTab({
   const runState = data?.run ?? null;
   const currentHeadSha = data?.currentHeadSha ?? null;
   const stale = guide !== null && currentHeadSha !== null && currentHeadSha !== guide.headSha;
-  // A failure is shown only while it is about the head the reader is looking at.
   const failure =
     runState?._tag === "Failed" && runState.headSha === currentHeadSha ? runState.detail : null;
   const writeButton = (label: string, size: "sm" | "xs") =>

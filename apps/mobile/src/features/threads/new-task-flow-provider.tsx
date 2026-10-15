@@ -130,7 +130,10 @@ function pendingTaskDraftKey(messageId: string): string {
   return `pending-task:${messageId}`;
 }
 
-// Dismissed editor saves must not clear a draft or drain lock owned by a newer session for the same task.
+// The message id owned by the currently active editing session, tracked
+// across provider instances. An in-flight flush from a dismissed session
+// consults it so it never drops the draft or releases the drain lock out from
+// under a newer session editing the same task.
 let activeEditingMessageId: string | null = null;
 
 function findQueuedPendingTask(messageId: string): QueuedThreadMessage | null {
@@ -165,7 +168,6 @@ type NewTaskFlowContextValue = {
   readonly selectedProjectKey: string | null;
   readonly selectedModelKey: string | null;
   readonly workspaceMode: WorkspaceMode;
-  /** False for threads without a project: their folder has no branch or worktree. */
   readonly canChooseWorkspace: boolean;
   readonly selectedBranchName: string | null;
   readonly selectedWorktreePath: string | null;
@@ -201,10 +203,17 @@ type NewTaskFlowContextValue = {
   readonly filteredBranches: ReadonlyArray<VcsRef>;
   readonly reset: () => void;
   readonly setProject: (project: EnvironmentProject) => void;
-  /** Opens an existing list draft; false means it disappeared and the caller should choose a fresh draft. */
+  /**
+   * Binds the composer to an existing new-task draft (a row in the thread
+   * list). Returns false when the draft is gone, so the caller can fall back
+   * to a fresh one.
+   */
   readonly openDraft: (draftKey: string) => boolean;
   readonly selectEnvironment: (environmentId: EnvironmentId) => void;
-  /** Moves drafts across machines; no-project drafts first resolve or create the target Scratch folder. */
+  /**
+   * Moves the draft to another machine. A draft without a project resolves to
+   * that machine's "No project" folder first, creating it when needed.
+   */
   readonly switchEnvironment: (environmentId: EnvironmentId) => Promise<boolean>;
   readonly switchingToEnvironmentId: EnvironmentId | null;
   readonly setSelectedModelKey: (
@@ -279,14 +288,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       ? selectedEnvironmentIdOverride
       : (projects[0]?.environmentId ?? null);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
-  // Each New Task entry owns a draft so one project can hold several.
   const [activeDraftKey, setActiveDraftKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [branchQuery, setBranchQuery] = useState("");
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
   const [editingPendingTask, setEditingPendingTask] = useState<QueuedThreadMessage | null>(null);
   const pendingLocalBranchSyncDraftKeysRef = useRef(new Set<string>());
-  // Unmount flushes must synchronously observe editing sessions ended by this render.
+  // Mirrors `editingPendingTask` synchronously so the unmount flush cannot act
+  // on a task whose editing session already ended this render.
   const editingPendingTaskRef = useRef<QueuedThreadMessage | null>(null);
   // Outbox revision this editor session may write after its predecessor save.
   // Unrelated accepted writes still beat the dismissed session's CAS.
@@ -320,7 +329,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [projects, selectedEnvironmentId],
   );
 
-  // Offline edits use project metadata captured when queued until the real shell loads.
   const editingPendingProject = useMemo<EnvironmentProject | null>(() => {
     const creation = editingPendingTask?.creation;
     if (!editingPendingTask || !creation) {
@@ -330,7 +338,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       environmentId: editingPendingTask.environmentId,
       id: creation.projectId,
       title: creation.projectTitle ?? "Unknown project",
-      // Missing snapshot cwd must stay empty so branch queries and worktree setup skip it.
+      // Deliberately empty when the snapshot has no cwd — downstream consumers
+      // (branch queries, worktree bootstrap) must skip it, not receive a
+      // fabricated path.
       workspaceRoot: creation.projectCwd ?? "",
       repositoryIdentity: null,
       defaultModelSelection: editingPendingTask.modelSelection ?? null,
@@ -344,7 +354,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     projectsForEnvironment.find(
       (project) => scopedProjectKey(project.environmentId, project.id) === selectedProjectKey,
     ) ??
-    // Missing project shells must not retarget queued edits or their reused turn ids to a fallback project.
+    // While editing a queued task whose project shell is absent, keep the task
+    // pinned to its own project — falling through to an arbitrary first
+    // project would silently retarget it (and its reused turn identifiers).
     (editingPendingProject !== null &&
     selectedProjectKey ===
       scopedProjectKey(editingPendingProject.environmentId, editingPendingProject.id)
@@ -371,11 +383,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [connectedEnvironments, serverConfigs],
   );
 
-  // Machine switches must follow the repository; unindexed identities use basename/title as weaker signals.
   const selectedRepositoryKey = selectedProject?.repositoryIdentity
     ? repositoryGroupingKeyOf(selectedProject.repositoryIdentity)
     : null;
-  // Placeholder projects can have empty workspaceRoot; || excludes that meaningless basename.
+  // `|| null` (not `??`): a pending-task placeholder project can have an empty
+  // workspaceRoot, and an "" basename would reject every real host below.
   const selectedWorkspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
   const selectedProjectTitle = selectedProject?.title ?? null;
   const environments = useMemo(() => {
@@ -433,13 +445,16 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     selectedProjectTitle,
   ]);
 
-  // Pending-task edits have separate keys so regular new-task drafts stay intact.
   const selectedProjectDraftKey = editingPendingTask
     ? pendingTaskDraftKey(editingPendingTask.messageId)
     : selectedProject
       ? activeDraftKey
       : null;
-  // selectedProject can resolve via fallback without setProject; bind a draft whenever no other session owns it.
+  // selectedProject can resolve without setProject ever running (the
+  // environment's first project is the fallback, and the draft screen skips
+  // setProject when the route's project already matches it). The composer
+  // still needs a draft to write into, so bind one the moment a project is
+  // in view and nothing else owns the key.
   useEffect(() => {
     if (activeDraftKey !== null || editingPendingTask !== null || selectedProject === null) {
       return;
@@ -485,7 +500,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         : parseT3ProjectFile(t3ProjectFileData.contents),
     [t3ProjectFileData],
   );
-  // Include aggregate legacy overrides until the server folds them into resolved project settings.
   const projectSettings = useMemo(
     () =>
       resolveProjectSettings(
@@ -496,7 +510,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       ),
     [selectedEnvironmentServerConfig?.settings, selectedProject, t3ProjectFile],
   );
-  // Scratch folders cannot create worktrees; force local mode so tasks remain sendable.
+  // A thread without a project runs in a plain folder, so worktree mode
+  // would leave it unsendable: it is always local and offers no choice.
   const canChooseWorkspace = !isScratchDraft;
   const selectedProjectHasThreads =
     selectedProject !== null &&
@@ -513,7 +528,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         projectHasThreads: selectedProjectHasThreads,
       })
     : "local";
-  // Do not persist provisional workspace defaults while config loads; they would override the later t3.json value.
+  // While the file read is pending and nothing above it decided, the
+  // resolved default is provisional. Nothing may write it into the draft
+  // during that window (the auto-branch effect does), or the frozen interim
+  // value beats the t3.json default once it loads.
   const defaultWorkspaceModeSettled =
     selectedProjectDraft.workspaceSelection?.mode !== undefined ||
     projectSettings.sources.defaultThreadEnvMode !== "environment" ||
@@ -523,7 +541,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     : "local";
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
-  // Persist only explicit origin choices so late server config can update the displayed default.
+  // Keep the user's explicit choice separate from the resolved display value:
+  // only the explicit flag is ever written back to the draft, so the resolved
+  // value keeps tracking the server setting when the config loads late.
   const draftStartFromOrigin = selectedProjectDraft.workspaceSelection?.startFromOrigin;
   const startFromOrigin =
     draftStartFromOrigin ?? projectSettings.settings.newWorktreesStartFromOrigin;
@@ -532,8 +552,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     : projectSettings.settings.defaultRuntimeMode;
   const runtimeMode = selectedProjectDraft.runtimeMode ?? defaultRuntimeMode;
 
-  // Preserve unavailable Antigravity picks through sign-out/catalog changes.
-  // Other providers' implicit defaults exclude legacy models.
+  // Antigravity keeps unavailable selections so sign-out or a catalog change
+  // cannot switch the user's model. Other providers retain their fallback
+  // rules. Implicit defaults also exclude legacy models for those providers.
   const draftModelSelection = resolveSelectableModelSelection(
     selectedEnvironmentServerConfig,
     selectedProjectDraft.modelSelection ?? null,
@@ -567,6 +588,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     ],
   );
 
+  // An unsent draft keeps its explicit pick. Fresh drafts resolve the project
+  // default before the last manual app-wide selection and provider default.
   const selectedModel = resolveNewTaskModelSelection({
     draftSelection: draftModelSelection,
     projectDefaultSelection: projectDefaultModelSelection,
@@ -597,7 +620,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     ? (selectedProjectDraft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE)
     : DEFAULT_PROVIDER_INTERACTION_MODE;
   const setSelectedModelKey = useCallback(
-    // Write options with the model so a second callback cannot rebuild from a stale pre-switch selection.
+    // Options ride along in the same write: a follow-up setSelectedModelOptions
+    // call would rebuild the selection from the stale pre-switch model.
     (key: string | null, options?: ReadonlyArray<ProviderOptionSelection>) => {
       if (!key || !selectedProjectDraftKey) {
         return;
@@ -661,7 +685,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     },
     [selectedProjectDraftKey],
   );
-  // Report live-cap rejections because concurrent attachment picks can fill the draft.
   const appendAttachments = useCallback(
     (
       nextAttachments: ReadonlyArray<DraftComposerAttachment>,
@@ -719,8 +742,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       ),
     [allBranchRefs],
   );
-  // Cached listRefs current flags can lag external git switch operations; read the live status stream.
-  // Detached HEAD and non-repositories stay null, and the status query is shared per environment/cwd.
+  // The ref actually checked out in the project root, serialized onto new
+  // local threads. It comes from the live status stream rather than listRefs'
+  // `current` flag, which is served from a cache that can lag an out-of-band
+  // `git switch` by minutes — and from the same value the PR badge compares
+  // against. Detached HEAD and non-repository projects report no ref, so this
+  // stays null instead of fabricating a branch. The status family is
+  // deduplicated per (environmentId, cwd) with the thread rows.
   const projectGitStatus = useEnvironmentQuery(
     branchTarget.environmentId !== null && branchTarget.cwd !== null
       ? vcsEnvironment.status({
@@ -736,7 +764,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [allBranchRefs, branchQuery],
   );
 
-  // Move the same draft with project switches so text follows the user; pending-task edits keep their own key.
   const carryDraftContentTo = useCallback(
     (project: EnvironmentProject) => {
       const target = { environmentId: project.environmentId, projectId: project.id };
@@ -765,7 +792,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (!isNewTaskDraftKey(draftKey) || !stamp) {
         return false;
       }
-      // Wait for the stamped project to load; fallback selection could send the draft to an unchosen project.
+      // The stamped project must be loaded: selectedProject falls back to
+      // the environment's first project otherwise, and the draft would be
+      // sent somewhere the user never chose.
       const projectLoaded = projects.some(
         (project) =>
           project.environmentId === stamp.environmentId && project.id === stamp.projectId,
@@ -971,12 +1000,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     ) {
       return;
     }
-    // Route and provider effects can commit together; re-read workspace selection before replacing stale render data.
+    // The draft screen writes a thread's branch and worktree into the draft in
+    // the same commit this effect runs, so the rendered selection above can be
+    // stale. Re-read the draft before replacing it.
     const live = getComposerDraftSnapshot(selectedProjectDraftKey).workspaceSelection;
     if (live && (live.mode !== "worktree" || live.branch !== null)) {
       return;
     }
-    // Defaults may exist only as remote refs excluded from availableBranches; inspect unfiltered refs.
+    // The default may only exist as origin/<default> (isRemote), which
+    // availableBranches filters out — search the unfiltered refs for it.
     const preferredBranch =
       allBranchRefs.find((branch) => branch.isDefault) ??
       availableBranches.find((branch) => branch.current) ??
@@ -1019,7 +1051,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       return false;
     }
     const draftKey = pendingTaskDraftKey(message.messageId);
-    // Only hydrate a fresh editing draft; reopening mid-edit keeps newer edits.
     if (isComposerDraftEmpty(getComposerDraftSnapshot(draftKey))) {
       setComposerDraftText(draftKey, message.text);
       setComposerDraftContext(draftKey, message.context);
@@ -1057,22 +1088,25 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       const draft = getComposerDraftSnapshot(selectedProjectDraftKey);
       const text = draft.text.trim();
-      // Queued task edits must preserve unavailable Antigravity selections.
       const draftModelSelection =
         resolveSelectableModelSelection(
           selectedEnvironmentServerConfig,
           draft.modelSelection ?? null,
           selectedProject.id,
         ) ?? selectedModel;
-      // A shared image or file is a task on its own; text is optional.
       if ((text.length === 0 && draft.attachments.length === 0) || !draftModelSelection) {
         return null;
       }
-      // Scratch projects always run locally; discard workspace choices saved before the project changed.
+      // A saved choice from before the project went no-project must not
+      // survive: those threads always run locally in their own folder.
       const workspaceSelection = canChooseWorkspace ? draft.workspaceSelection : undefined;
-      // Queued tasks must keep the workspace mode the composer displayed.
+      // Fall back to the resolved mode (server default) so queued tasks drain
+      // with the same mode the composer displayed.
       const mode = workspaceSelection?.mode ?? workspaceMode;
-      // Never persist placeholder project metadata; preserve the original queued snapshot, including missing values.
+      // When the selection is the stand-in built from the queued snapshot,
+      // persist the original (possibly absent) snapshot values — the
+      // stand-in's placeholder title/workspaceRoot must never be written back
+      // as if they were real project metadata.
       const usingPendingSnapshot = selectedProject === editingPendingProject;
       const projectTitle = usingPendingSnapshot
         ? editingPendingTask?.creation?.projectTitle
@@ -1107,14 +1141,16 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           ...(mode === "worktree" && workspaceSelection?.pullRequestReference
             ? { pullRequestReference: workspaceSelection.pullRequestReference }
             : {}),
-          // Only immediately sent local tasks can record the live checkout; a queued task may drain after it changes.
+          // An explicit picker choice wins. Otherwise only a task sending now
+          // records the current checkout: a queued local task drains days
+          // later against whatever is checked out then, so a queue-time
+          // guess would pin a stale label to a thread that ran somewhere else.
           branch: resolveProjectThreadCreationBranch({
             workspaceMode: mode,
             selectedBranch: workspaceSelection?.branch ?? null,
             currentCheckoutBranch: options?.currentCheckoutBranch ?? null,
           }),
           worktreePath: mode === "worktree" ? null : (workspaceSelection?.worktreePath ?? null),
-          // Resolve untouched origin mode from server defaults so queued tasks match the composer display.
           ...((workspaceSelection?.startFromOrigin ?? startFromOrigin)
             ? { startFromOrigin: true }
             : {}),
@@ -1152,7 +1188,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     setEditingPendingTask(null);
   }, []);
 
-  // End edits when the task is deleted or delivered; a late flush must not resurrect it.
+  // If the queued task disappears mid-edit (deleted from the list, or
+  // delivered), end the editing session immediately without saving — a later
+  // flush must not resurrect it, and the composer should fall back to the
+  // regular per-project draft.
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   useEffect(() => {
     const editing = editingPendingTaskRef.current;
@@ -1167,7 +1206,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
   }, [finishEditingPendingTask, queuedMessagesByThreadKey]);
 
-  // Dismissing the flow saves current edits into the queued task.
   const editingFlushRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     editingFlushRef.current = () => {
@@ -1189,23 +1227,30 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       });
 
       if (!message) {
-        // Keep unsendable edits and the drain lock so stale queued content cannot send after the user removes it.
+        // The edits are currently unsendable (e.g. the prompt was cleared).
+        // Keep both the draft and the drain lock: the stale queued payload
+        // must not auto-send content the user just removed, and reopening the
+        // task resumes from the saved draft.
         return;
       }
 
-      // Reopened editors follow pending saves; CAS rejects unrelated queue writes, deletes, and deliveries.
+      // The write handoff lets a reopened editor follow this editor's pending
+      // save. Its CAS still rejects unrelated queue edits, deletes, and
+      // deliveries, so the flush cannot resurrect or overwrite them.
       void flushPendingTaskEditorWrite({
         message,
         baseline: editingRevisionRef.current,
         draftKey: pendingTaskDraftKey(editing.messageId),
       })
         .then((savedDraftStillCurrent) => {
-          // A reopened editor owns the draft and drain lock while an earlier save is in flight.
+          // If this task was reopened (possibly in a fresh provider) while
+          // the save was in flight, that session owns the draft and the lock.
           if (activeEditingMessageId === editing.messageId) {
             return;
           }
           if (!savedDraftStillCurrent) {
-            // A newer queue write or draft edit won; keep the draft and lock so reopening can retry.
+            // A newer queue write won the CAS, or a newer editor changed this
+            // draft. Keep the draft and drain lock so reopening can retry it.
             return;
           }
           clearComposerDraft(pendingTaskDraftKey(editing.messageId));
@@ -1213,7 +1258,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           scheduleUnusedComposerAttachmentCleanup(editing.attachments);
         })
         .catch((error) => {
-          // Keep the draft and lock after save failure so stale delivery cannot drop edits.
+          // Keep the drain lock and the draft: delivering the stale payload
+          // would silently drop the newer edits. Reopening the task retries.
           console.warn("[new-task] failed to save edited pending task", error);
         });
     };

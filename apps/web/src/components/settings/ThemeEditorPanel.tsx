@@ -293,13 +293,11 @@ export function ThemeEditorPanel({
     theme: ThemeDefinition,
     context: {
       created: boolean;
-      /** Set when a create merged its palette into an existing theme. */
       mergedAppearance?: ThemeAppearance;
     },
   ) => boolean;
   editingTheme: ThemeDefinition | null;
   initialAppearance: ThemeAppearance;
-  /** Null seeds the standard palette; otherwise begin from this theme. */
   seedTheme?: ThemeDefinition | null;
   seedName?: string | undefined;
   restoreTheme: () => void;
@@ -321,7 +319,6 @@ export function ThemeEditorPanel({
   const [isInspecting, setIsInspecting] = useState(false);
   const [selectedRole, setSelectedRole] = useState<ThemeColorRole | null>(null);
   const [usageCount, setUsageCount] = useState<number | null>(null);
-  // Clamp dragged positions so the header remains reachable.
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -336,7 +333,10 @@ export function ThemeEditorPanel({
   } | null>(null);
   useEffect(() => {
     if (!open) return;
-    // Shrink oversized panels before clamping position or their controls cannot fit on screen.
+    // A panel sized wider than the window can no longer be clamped back into
+    // view by position alone -- its right edge (close, minimize, the grip)
+    // stays off screen. So the size shrinks to fit first, then the position
+    // is re-clamped against the new size.
     const clamp = () => {
       const margin = 8;
       let clampedWidth: number | undefined;
@@ -350,8 +350,11 @@ export function ThemeEditorPanel({
       setPosition((current) => {
         if (!current) return current;
         const clamped = clampPosition(current.x, current.y, clampedWidth);
-        // Window resizes must pull the whole panel into view; minimized panels use
-        // rendered header height instead of their unapplied stored height.
+        // Dragging may park the panel with only its header showing, but a
+        // window resize should pull the whole thing back into view when it
+        // fits -- otherwise the grip ends up below the fold. Minimized, the
+        // stored height is not applied (the panel hugs its header), so the
+        // rendered height is what has to fit.
         const height = isMinimized
           ? (panelRef.current?.offsetHeight ?? 0)
           : (clampedHeight ?? panelRef.current?.offsetHeight ?? 0);
@@ -363,7 +366,9 @@ export function ThemeEditorPanel({
     return () => window.removeEventListener("resize", clamp);
   }, [isMinimized, open]);
 
-  // Seed before previewing so the previous session's colors cannot flash for a frame.
+  // The draft only reaches the live app once this open has been seeded;
+  // previewing in the seeding commit would paint the previous session's
+  // colors for a frame.
   const [isDraftSeeded, setIsDraftSeeded] = useState(false);
   const previousOpenRef = useRef(false);
 
@@ -386,11 +391,16 @@ export function ThemeEditorPanel({
 
       setName(editingTheme?.label ?? seedName ?? "");
       setActiveAppearance(nextAppearance);
-      // Guided regeneration could discard hand-tuned palettes; open unmanaged
-      // themes and seeded copies in Advanced instead.
+      // Themes saved by the guided editor carry the managed flag; anything
+      // else (imports, hand-edited files, older saves) opens in advanced mode
+      // so guided regeneration cannot silently discard hand-tuned colors. A
+      // seeded new theme follows the same rule: its palette is only safe to
+      // regenerate when the guided editor produced it.
       setIsAdvanced(sourceTheme !== null && sourceTheme.managed !== true);
       setSimpleColorsDirtyByAppearance({ light: false, dark: false });
-      // Convert unmanaged palettes on guided opt-in; revealing Advanced must not regenerate untouched colors.
+      // An unmanaged palette needs conversion when the user opts into the
+      // guided editor. Merely revealing Advanced for a managed/default draft
+      // must stay read-only until a color changes.
       setShouldRegenerateGuidedColors(sourceTheme !== null && sourceTheme.managed !== true);
       setColorsByAppearance(nextColors);
       setSelectedRole(null);
@@ -403,8 +413,8 @@ export function ThemeEditorPanel({
     previousOpenRef.current = open;
   }, [editingTheme, initialAppearance, isDraftSeeded, open, seedName, seedTheme]);
 
-  // Merge complementary palettes under one name; also match labels because
-  // renames retain ids that differ from the user-visible name.
+  // Labels are matched as well as derived ids: a rename keeps a theme's original id, so its label
+  // is the only name a user can see and retype.
   const nameTargetId = themeIdFromName(name);
   const normalizedName = name.trim().toLowerCase();
   const mergeTarget =
@@ -428,8 +438,6 @@ export function ThemeEditorPanel({
     return null;
   };
 
-  // Choose the free appearance for same-name merges; if both are taken,
-  // preserve selection and block saving with a reason.
   const mergeTargetId = mergeTarget?.id ?? null;
   const takenAppearancesKey = takenAppearances.join(",");
   useEffect(() => {
@@ -533,8 +541,10 @@ export function ThemeEditorPanel({
     const highlightedRoles = selectedHighlightRolesKey.split(",") as Array<ThemeColorRole>;
     const refreshHighlights = () => setUsageCount(highlightThemeRoleUsage(highlightedRoles));
     refreshHighlights();
-    // Computed-style snapshots walk the whole tree twice; throttle to 500 ms
-    // during streaming/list mutations so inspection cannot stall the main thread.
+    // A refresh snapshots computed styles for the whole tree twice, so it is
+    // throttled rather than run per frame: a streaming reply or a virtualized
+    // list mutates the DOM continuously and would otherwise stall the main
+    // thread for as long as the inspector is open.
     const MIN_REFRESH_INTERVAL_MS = 500;
     let refreshFrame: number | null = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -715,7 +725,8 @@ export function ThemeEditorPanel({
       }
       if (!shouldRegenerateGuidedColors) return;
 
-      // Regenerate all saved appearances so switching modes matches persisted palettes.
+      // Regenerate every appearance the theme will save, not just the visible
+      // one, so the palettes shown after toggling match what gets saved.
       const managedAppearances: ReadonlyArray<ThemeAppearance> =
         editingTheme && getThemeModes(editingTheme).length > 1
           ? ["light", "dark"]
@@ -744,7 +755,8 @@ export function ThemeEditorPanel({
     }
 
     try {
-      // Preserve untouched palettes exactly as shown; regenerate only edited guided appearances.
+      // Only regenerate palettes the user actually touched in guided mode, so
+      // untouched appearances save exactly what the editor displayed.
       const colorsForSave = !isAdvanced
         ? {
             light: simpleColorsDirtyByAppearance.light
@@ -760,7 +772,6 @@ export function ThemeEditorPanel({
       let mergedAppearance: ThemeAppearance | null = null;
       let retiredTheme: ThemeDefinition | null = null;
       if (editingTheme && mergeTarget) {
-        // Complementary palettes may merge on rename; never overwrite a colliding palette.
         const editedModes = getThemeModes(editingTheme);
         const collision = editedModes.find((mode) => takenAppearances.includes(mode));
         if (collision) {
@@ -787,12 +798,12 @@ export function ThemeEditorPanel({
         try {
           removeCustomTheme(editingTheme.id);
         } catch (cause) {
-          // Roll back the persisted merge if retirement fails or every retry would collide again.
+          // The merge already persisted. Leaving it while the edited theme
+          // survives would collide on every retry, so the target goes back to
+          // its pre-merge palettes before the failure surfaces.
           try {
             updateCustomTheme(mergeTarget);
-          } catch {
-            // Storage is failing wholesale; the rethrow below reports it.
-          }
+          } catch {}
           throw cause;
         }
       } else if (editingTheme) {
@@ -819,7 +830,8 @@ export function ThemeEditorPanel({
           );
           return;
         }
-        // Preserve managed only when every palette came from the guided editor.
+        // The guided (managed) flag only survives when every palette in the theme came from the
+        // guided editor.
         mergedAppearance = activeAppearance;
         savedTheme = updateCustomTheme({
           ...parseThemeFile({
@@ -898,7 +910,8 @@ export function ThemeEditorPanel({
 
   const renderAppearanceButton = (appearance: ThemeAppearance) => {
     const lockReason = appearanceLockReason(appearance);
-    // aria-disabled keeps tooltip pointer events that a real disabled attribute would swallow.
+    // A locked mode stays hoverable so the tooltip can say why it is off;
+    // a real disabled attribute would swallow the pointer events.
     const button = (
       <Toggle aria-disabled={lockReason !== null} value={appearance}>
         {appearance === "light" ? "Light" : "Dark"}
@@ -1031,11 +1044,11 @@ export function ThemeEditorPanel({
   const clampPosition = (x: number, y: number, widthOverride?: number) => {
     const panel = panelRef.current;
     const margin = 8;
-    // A just-shrunk panel's DOM width stays stale until React commits; accept the caller's width.
+    // The caller passes a width when it has just shrunk the panel: the DOM
+    // still reports the old one until React commits.
     const width = widthOverride ?? panel?.offsetWidth ?? 0;
     return {
       x: Math.min(Math.max(x, margin), Math.max(margin, window.innerWidth - width - margin)),
-      // Keep at least the header on screen even when dragged far down.
       y: Math.min(Math.max(y, margin), Math.max(margin, window.innerHeight - 48)),
     };
   };
@@ -1062,7 +1075,9 @@ export function ThemeEditorPanel({
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
     event.preventDefault();
-    // Bottom-right anchored parking would slide on resize; pin top-left before moving the opposite grip.
+    // The grip drags the bottom-right corner, so the top-left must hold
+    // still; the default parking spot is anchored bottom-right and would
+    // slide, so it converts to an explicit position first.
     if (position === null) setPosition(clampPosition(rect.x, rect.y));
     resizeStartRef.current = {
       pointerX: event.clientX,
@@ -1081,7 +1096,9 @@ export function ThemeEditorPanel({
     const margin = 8;
     const MIN_WIDTH = 280;
     const MIN_HEIGHT = 220;
-    // Bound growth from the panel's own corner so controls cannot expand off screen.
+    // Grow only into the space right of and below the panel's own corner,
+    // otherwise a panel parked away from the top-left pushes its far edges
+    // (and this grip) off screen.
     const maxWidth = Math.max(MIN_WIDTH, window.innerWidth - margin - start.left);
     const maxHeight = Math.max(MIN_HEIGHT, window.innerHeight - margin - start.top);
     setSize({
@@ -1182,7 +1199,6 @@ export function ThemeEditorPanel({
         <>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-3 pl-3 pr-1.5">
             {renderNameField()}
-            {/* Place errors above the scrolling color list so they cannot go unseen below it. */}
             {error ? (
               <p aria-live="polite" className="text-sm text-destructive">
                 {error}

@@ -21,7 +21,6 @@ export function resolveProviderOptionDescriptors(input: {
   });
 }
 
-/** Returns the full option selection to store, or null for an unadvertised descriptor or choice. */
 export function applyProviderOptionSelection(
   descriptors: ReadonlyArray<ProviderOptionDescriptor>,
   change: ProviderOptionSelection,

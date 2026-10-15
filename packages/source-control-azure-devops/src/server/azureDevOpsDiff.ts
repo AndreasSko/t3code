@@ -3,7 +3,10 @@ import { structuredPatch } from "diff";
 
 import type { AzureDevOpsChangeEntry } from "./azureDevOpsPullRequestJson.ts";
 
-/** Pin the iteration as well as the offset so a mid-read push cannot renumber files under the cursor. */
+/**
+ * Azure hangs a pull request's changed files off an iteration, so a push landing mid-read would
+ * renumber the list under a cursor that did not also pin the iteration.
+ */
 export interface AzureDevOpsDiffCursor {
   readonly iterationId: number;
   readonly fileIndex: number;
@@ -21,7 +24,6 @@ export function formatAzureDevOpsDiffCursor(cursor: AzureDevOpsDiffCursor): stri
   return `${cursor.iterationId}${CURSOR_SEPARATOR}${cursor.fileIndex}`;
 }
 
-/** Null for anything this did not write, which starts the read from the top rather than failing. */
 export function parseAzureDevOpsDiffCursor(
   raw: string | null | undefined,
 ): AzureDevOpsDiffCursor | null {
@@ -40,35 +42,55 @@ export function parseAzureDevOpsDiffCursor(
 export interface AzureDevOpsFileTexts {
   readonly oldContents: string;
   readonly newContents: string;
+  /** Azure's own flag for a file it hands back base64-encoded instead of as text. */
   readonly binary: boolean;
 }
 
 export interface AzureDevOpsFilePatch {
   readonly section: string;
+  /** The file changed but its hunks are not in the section, so the patch has a hole in it. */
   readonly truncated: boolean;
-  /** Stops the slice after exhausting one file's edit budget rather than paying it repeatedly. */
+  /**
+   * The diff was given up on partway, having spent the whole edit budget, so a caller reading a
+   * run of files stops here rather than paying that again for each one behind it.
+   */
   readonly abandoned: boolean;
-  /** Edit distance, used to bound expensive diffs even when the wire payload is small. */
+  /**
+   * Lines added or removed, which is the edit distance the diff had to search out, and what a
+   * slice's budget is spent in: a file of short lines is cheap on the wire and dear to diff.
+   */
   readonly edits: number;
 }
 
-/** Azure reads both whole files before diffing; oversize files are listed without hunks. */
+/**
+ * Azure hands back whole files rather than a patch, so an oversize file is paid for twice
+ * over before anything can be diffed.
+ */
 const MAX_FILE_BYTES = 512 * 1024;
 
-/** Git's own default, and what the hunks from this repo's other hosts are already cut to. */
 const PATCH_CONTEXT_LINES = 3;
 
-/** Diff work grows roughly quadratically with edit distance; an edit bound is deterministic across machines. */
+/**
+ * The line diff costs about the square of the edit distance, so an unbounded pair sharing almost
+ * nothing could hold the whole server. Bounded in edits rather than milliseconds so a change
+ * slices the same way on every machine.
+ */
 export const MAX_FILE_DIFF_EDITS = 2_000;
 
-/** Backstop for slower hosts; the edit ceiling normally decides the patch shape. */
+/**
+ * The ceiling rather than this is what decides a patch's shape: a timeout that fires would slice
+ * the same change one way here and another on a busier host.
+ */
 const MAX_FILE_DIFF_MILLIS = 2_000;
 
 export const MAX_DIFF_SLICE_EDITS = 6_000;
 
 export const MAX_DIFF_SLICE_BYTES = 256 * 1024;
 
-/** Header-only files spend almost no byte/edit budget, so file count also bounds the slice. */
+/**
+ * A binary, oversize, or unreadable entry is just a header, so neither budget above stops a
+ * run of thousands of them.
+ */
 export const MAX_DIFF_SLICE_FILES = 300;
 
 const NO_NEWLINE_MARKER = "\\ No newline at end of file";
@@ -85,7 +107,6 @@ function isBinary(contents: string): boolean {
   return contents.includes("\u0000");
 }
 
-/** Count UTF-8 bytes, not code units, to enforce payload ceilings for multibyte text. */
 export const byteLength = (contents: string) => Buffer.byteLength(contents, "utf8");
 
 /**
@@ -97,8 +118,11 @@ function hunkRange(start: number, lines: number): string {
   return lines === 1 ? String(start) : `${start},${lines}`;
 }
 
-/** Quote git paths with prefixes inside the quotes so tabs/newlines cannot truncate file identity.
- * Azure omits file modes, so use the ordinary file mode. */
+/**
+ * Azure reports no file mode, so the ordinary one stands in. Names are quoted the way git quotes
+ * them, prefix inside the quoting: a header reader stops a bare name at its first tab or newline,
+ * so a path holding either would be truncated and its viewed mark would land on the wrong file.
+ */
 function patchHeader(change: AzureDevOpsChangeEntry): string {
   const oldSide = quoteGitPatchPath(`a/${change.oldPath}`);
   const newSide = quoteGitPatchPath(`b/${change.path}`);
@@ -134,7 +158,10 @@ function replacementSection(header: string, texts: AzureDevOpsFileTexts): string
   ].join("\n");
 }
 
-/** Azure reports changed paths and separate file contents; build one unified patch section here. */
+/**
+ * One file's section of a unified patch, built here because Azure has no route that returns one:
+ * its diff routes name the files that changed, and the contents are a separate read per side.
+ */
 export function azureDevOpsFilePatch(input: {
   readonly change: AzureDevOpsChangeEntry;
   readonly texts: AzureDevOpsFileTexts;
@@ -159,7 +186,9 @@ export function azureDevOpsFilePatch(input: {
   if (created || deleted) {
     const contents = created ? newContents : oldContents;
     const lines = contentLines(contents);
-    // Include +/- markers in the size estimate without materializing the most expensive replacement.
+    // A `+`/`-` marker on every line can put a side that just fits the size ceiling over it.
+    // Checked against bytes-plus-marker-count rather than building the section, since that upper
+    // bound is cheaper and this is exactly the file shape that would cost the most to build.
     if (byteLength(contents) + lines.length > MAX_FILE_BYTES) {
       return { section: `${header}\n`, truncated: true, abandoned: false, edits: lines.length };
     }
@@ -183,7 +212,9 @@ export function azureDevOpsFilePatch(input: {
       timeout: MAX_FILE_DIFF_MILLIS,
     },
   );
-  // An edit ceiling can hit one corner of a long file; replacing both sides would bury the actual change.
+  // Hitting the edit ceiling lists the file without hunks rather than falling back to a full
+  // replacement: the ceiling is a distance, not a proportion, so a long file can reach it having
+  // changed in one small corner, and both sides in full would bury that corner in a wall of text.
   if (patch === undefined) {
     return {
       section: `${header}\n`,
@@ -203,7 +234,6 @@ export function azureDevOpsFilePatch(input: {
       ...hunk.lines,
     ].join("\n");
   });
-  // Keep pure renames listed even without hunks.
   const section = hunks.length === 0 ? `${header}\n` : `${header}\n${hunks.join("\n")}\n`;
   // The edit ceiling bounds edit distance, not the hunks' size: a handful of very long lines plus
   // context can still exceed the size ceiling even well inside the edit ceiling.

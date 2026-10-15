@@ -2,8 +2,11 @@ import { useAtomMount } from "@effect/atom-react";
 
 import { runningThreadKeepAliveAtom } from "../../state/threads";
 
-/** Mount running-thread subscriptions without reading updates to avoid rerenders
- * and replay or sync flashes when opening a thread. */
+/**
+ * Keeps each running thread subscribed in every enabled environment, so opening
+ * one shows live state without a replay or a sync status flash. It mounts the
+ * atom without reading it, so thread updates never re-render.
+ */
 export function RunningThreadKeepAlive() {
   useAtomMount(runningThreadKeepAliveAtom);
   return null;

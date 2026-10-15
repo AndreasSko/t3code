@@ -8,7 +8,10 @@ export type AssetUrlState =
   | { readonly _tag: "Failure"; readonly reason: AssetUrlFailureReason }
   | Extract<SharedAssetUrlState, { readonly _tag: "Success" }>;
 
-/** Disconnected environments make even resolved URLs unreachable; query failures then describe the outage. */
+/**
+ * A dead environment wins over everything else: even a resolved URL is
+ * unreachable there, and a failed query is caused by the outage, not the file.
+ */
 export function deriveAssetUrlState(input: {
   readonly connectionPhase: EnvironmentConnectionPhase;
   readonly shared: SharedAssetUrlState;
@@ -25,7 +28,10 @@ export function deriveAssetUrlState(input: {
     return input.shared;
   }
   switch (input.connectionPhase) {
-    // Idle queries fail immediately, so failures in "available" mean disconnected, not missing files.
+    // "available" is the idle, not yet dialled state. A pending query there is
+    // still on its way, but the query atom fails at once while idle, so a
+    // failure means the environment is not connected rather than the file is
+    // missing.
     case "available":
       return input.shared._tag === "Failure"
         ? { _tag: "Failure", reason: "disconnected" }

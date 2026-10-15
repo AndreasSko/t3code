@@ -1,6 +1,8 @@
 /**
- * Linked worktrees use a private .t3 so development cannot share the installed app's database.
- * An ambient T3CODE_HOME would otherwise select <base>/userdata, the live production state.
+ * A linked git worktree gets its own (gitignored) `.t3`: feature work in a
+ * throwaway branch must not share a database with the real app, and an ambient
+ * `T3CODE_HOME` counts as an explicit base dir — flipping the state directory
+ * from `<base>/dev` to `<base>/userdata`, the live production database.
  */
 
 import * as Effect from "effect/Effect";
@@ -9,8 +11,14 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 /**
- * Both submodules and linked worktrees have .git files. Only worktree pointers end in
- * <common-dir>/worktrees/<name>; the common directory need not itself be named .git.
+ * A linked worktree's lives at `<common-dir>/worktrees/<name>`; a submodule's
+ * at `<super-git-dir>/modules/<name>`. Both are files, so the pointer — not the
+ * file-vs-directory distinction alone — is what identifies a worktree.
+ *
+ * The common dir is not necessarily named `.git`: a worktree of a bare repo
+ * points at `<repo>.git/worktrees/<name>`, and `$GIT_COMMON_DIR` can be
+ * anything. So match on the `worktrees/<name>` tail, which git always uses,
+ * rather than on the name of the directory containing it.
  */
 const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boolean => {
   const gitdir = gitFileContents
@@ -23,7 +31,7 @@ const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boole
     return false;
   }
   // Compare as path segments so a directory merely named `…worktrees…` cannot
-  // match as a substring. Trailing separators normalize away first.
+  // match as a substring.
   const segments = path
     .normalize(gitdir.replaceAll("\\", "/"))
     .split(/[/\\]/)
@@ -31,10 +39,6 @@ const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boole
   return segments.length >= 3 && segments.at(-2) === "worktrees";
 };
 
-/**
- * Resolve the enclosing linked worktree, including when cwd is a subdirectory;
- * return undefined outside one.
- */
 export const resolveGitWorktreePath = (
   cwd: string,
 ): Effect.Effect<string | undefined, never, FileSystem.FileSystem | Path.Path> =>
@@ -66,9 +70,8 @@ export const resolveGitWorktreePath = (
   });
 
 /**
- * The worktree-local data directory for `cwd`, or undefined outside a linked
- * worktree. Deliberately does not require the directory to exist yet: falling
- * back because it is missing would send callers at the shared home.
+ * Deliberately does not require the directory to exist yet: falling back
+ * because it is missing would send callers at the shared home.
  */
 export const resolveWorktreeT3Home = (
   cwd: string,

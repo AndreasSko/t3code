@@ -135,7 +135,6 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
-  // codex (and unknown drivers)
   return (
     <Svg width={size} height={size} viewBox="100 100 411 411" fill="none">
       <Path

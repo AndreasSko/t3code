@@ -37,7 +37,8 @@ export function projectThreadContentPresentation(input: {
     input.connectionState === "connecting" ||
     input.connectionState === "reconnecting"
   ) {
-    // Connection status belongs to the composer; keep message content loading until reconnection completes.
+    // Messages will arrive once the (re)connection completes — present as
+    // loading; the composer's connection pill reports the connection phase.
     return { kind: "loading" };
   }
   return {

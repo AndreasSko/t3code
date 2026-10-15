@@ -224,7 +224,8 @@ function itemSummary({
       );
     }
 
-    // API integrations have no CLI login; unverified saved credentials need verification errors.
+    // API integrations have no CLI to sign in with; an unverified saved credential falls
+    // through to the "could not verify" detail instead of repeating the setup hint.
     if (!item.executable && auth.status === "unauthenticated") {
       return <span>Available. {item.installHint}</span>;
     }
@@ -501,7 +502,9 @@ function EmptySourceControlDiscovery({
 
 export function SourceControlSettingsPanel() {
   const { scope, environment, connectedEnvironments } = useSettingsScope();
-  // Discovery reads one representative machine; scoped settings writes still fan out.
+  // Discovery scans one machine's tools, so it shows the representative
+  // environment (named in the section title when several are selected);
+  // the settings rows above it fan out like everywhere else.
   const environmentId =
     environment?.connection.phase === "connected" ? environment.environmentId : null;
   const aggregate = scope.environmentIds.length !== 1 && connectedEnvironments.length > 1;

@@ -1,19 +1,16 @@
-/**
- * Refresh on return and while actively viewed; throttle all triggers together and skip the first arrival
- * because the view already has its initial read in flight.
- */
 import { useEffect, useId, useRef } from "react";
 
 /** Long enough that alt-tabbing through windows does not become a request per tab stop. */
 export const LIVE_REFRESH_MIN_INTERVAL_MS = 10_000;
 
-/** Slow enough to preserve host quota while still updating a view left open. */
 export const LIVE_REFRESH_INTERVAL_MS = 5 * 60_000;
 
-/** Stop after six idle minutes, allowing the five-minute refresh first; interaction resumes reads. */
+/**
+ * This leaves one minute after the five-minute interval for the first timer
+ * tick to run.
+ */
 export const LIVE_REFRESH_IDLE_AFTER_MS = 6 * 60_000;
 
-/** Refresh only while visible and after the minimum interval; missed ticks collapse into one read. */
 export function shouldLiveRefresh(input: {
   readonly visible: boolean;
   readonly now: number;
@@ -22,7 +19,10 @@ export function shouldLiveRefresh(input: {
   return input.visible && input.now - input.lastRefreshedAt >= LIVE_REFRESH_MIN_INTERVAL_MS;
 }
 
-/** Skip the first arrival because mount already reads; another read would cancel it and spend quota twice. */
+/**
+ * A view nobody has read this session is left alone: mounting it starts its own read, and
+ * refreshing on top of that cancels the request in flight and pays for the same answer twice.
+ */
 export function shouldRefreshOnArrival(input: {
   readonly visible: boolean;
   readonly now: number;
@@ -45,10 +45,13 @@ export function shouldRefreshOnInterval(input: {
   );
 }
 
-/** Keep per-view timestamps outside React so remounting cannot bypass the refresh interval. */
+/**
+ * When each view last read, kept outside React because a mount is exactly what it has to outlive:
+ * a reader who navigates away and straight back mounts a fresh hook, and a timestamp that started
+ * at zero would call that first read due.
+ */
 const lastRefreshedAtByView = new Map<string, number>();
 
-/** Track activity per window, only while a live view is mounted. */
 let lastInteractedAt = 0;
 const interactionWatchers = new Set<() => void>();
 const INTERACTION_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel"] as const;
@@ -89,8 +92,6 @@ export function useLiveRefresh(
   // listeners, which would otherwise refresh on every render that changed anything at all.
   const latest = useRef(refresh);
   latest.current = refresh;
-  // A keyed view tracks the thing being shown, not the panel slot; otherwise tree position identifies the
-  // view.
   const fallbackViewId = useId();
   const viewId = key ?? fallbackViewId;
 
@@ -121,7 +122,6 @@ export function useLiveRefresh(
     };
 
     let timer: ReturnType<typeof setInterval> | undefined;
-    // Run the timer only while visible; return from hidden state needs one read, not every missed tick.
     const syncTimer = () => {
       clearInterval(timer);
       timer = visible() ? setInterval(onInterval, intervalMs) : undefined;

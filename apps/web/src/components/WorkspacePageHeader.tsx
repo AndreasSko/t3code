@@ -3,7 +3,10 @@ import type { ComponentPropsWithoutRef } from "react";
 import { cn } from "../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 
-/** Important height preserves alignment with the sidebar header when callers try to grow the bar. */
+/**
+ * The height is `!important` so callers cannot grow the bar and pull its
+ * content off the sidebar header's center line.
+ */
 export function WorkspacePageHeader({
   electron = false,
   reserveNativeControls = electron,

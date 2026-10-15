@@ -12,12 +12,14 @@ export type StackedThreadToastOptions = {
   timeout?: number;
   priority?: "low" | "high";
   actionProps?: ComponentPropsWithoutRef<"button">;
-  /** Merged into `data`; `actionLayout` is always forced to `"stacked-end"` by the helper. */
   actionVariant?: ThreadToastData["actionVariant"];
   data?: Omit<ThreadToastData, "actionLayout">;
 };
 
-/** Use to clear a previous CTA; undefined actionProps is ignored by Base UI updates. */
+/**
+ * Defined `actionProps` that hide a previous toast CTA on `toastManager.update`.
+ * Passing `actionProps: undefined` is a no-op because updates omit undefined keys.
+ */
 export const hiddenToastActionProps = {
   children: null,
 } as const satisfies Pick<ComponentPropsWithoutRef<"button">, "children">;

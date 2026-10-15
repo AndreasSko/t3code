@@ -34,7 +34,6 @@ export interface FileContextMenuTarget {
   readonly repositoryRoot?: string | undefined;
 }
 
-/** Resolve diff-style workspace paths to host-absolute paths; null means callers must omit file actions. */
 export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget): string | null {
   const workspaceFilePath = resolveDiffPathForWorkspace({
     filePath: target.filePath,

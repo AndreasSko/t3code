@@ -6,7 +6,6 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-/** Hidden when the desktop build has no bundled CLI launcher to install. */
 export function CliCommandSettingsRow() {
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge?.cliCommand;
   const [state, setState] = useState<DesktopCliCommandState | null>(null);

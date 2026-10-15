@@ -1,7 +1,3 @@
-/**
- * Share the cache across drivers and maintenance so an update invalidates
- * the entry the next snapshot reads.
- */
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -21,7 +17,6 @@ interface Entry {
 export class ProviderLatestVersions extends Context.Service<
   ProviderLatestVersions,
   {
-    /** fresh bypasses cache; null means no version was found. */
     readonly cached: <E, R>(
       key: string,
       lookup: Effect.Effect<string | null, E, R>,

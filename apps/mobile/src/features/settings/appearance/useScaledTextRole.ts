@@ -10,8 +10,8 @@ export interface ScaledTextRole {
 }
 
 /**
- * Supplies scaled typography to style-prop consumers without CSS subscriptions,
- * so palette-only changes stay native.
+ * This deliberately does not subscribe to CSS variables, so palette-only
+ * setTheme calls remain native-only.
  */
 export function useScaledTextRole(role: keyof typeof MOBILE_TYPOGRAPHY): ScaledTextRole {
   const { appearance } = useAppearancePreferences();

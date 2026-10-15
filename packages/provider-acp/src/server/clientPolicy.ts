@@ -5,8 +5,9 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 /**
- * Devin client terminals run with server privileges; share acpOperationDisposition
- * with execute permission requests so terminals cannot exceed that policy.
+ * The one client-mediated path left is Devin's `terminal/*`, which runs with the T3 server's
+ * own privileges; it resolves through {@link acpOperationDisposition} so a client terminal can
+ * never do more than an execute permission request.
  */
 
 export interface AcpRuntimePolicy {
@@ -43,12 +44,15 @@ function acpPathIsWithinRoot(path: string, root: string): boolean {
 }
 
 /**
- * For new files, realpath the deepest existing ancestor and append missing suffixes.
- * Follow symlinks and fail closed if an existing entry cannot be canonicalized.
+ * `realpath` cannot resolve a file that has not been created yet, so walk up to the deepest
+ * existing ancestor and append the missing suffix to that ancestor's canonical path. If an
+ * existing entry cannot be canonicalized (for example, a broken symlink), fail closed.
  */
 function acpCanonicalPathForContainment(path: string): string | undefined {
-  // Do not normalize before realpath: link/../file resolves the symlink first,
-  // and lexical resolution can disguise an outside target as inside the workspace.
+  // Do not lexically normalize before realpath. For a path such as
+  // `workspace/link/../file`, the kernel resolves `link` before `..`; an
+  // eager NodePath.resolve would erase that symlink traversal and could turn
+  // an outside target into an apparently in-workspace path.
   let candidate = path;
   const missingSuffix: Array<string> = [];
 
@@ -95,8 +99,8 @@ function isAcpReadKind(toolKind: string): boolean {
 }
 
 /**
- * Reads follow sandbox policy without asking. Known sandboxes allow them;
- * unknown sandbox types fail closed.
+ * Reads follow the sandbox alone and never ask. That includes no explicit sandbox, since the
+ * strictest runtime mode (approval-required) implies a read-only one.
  */
 function acpReadDisposition(runtimePolicy: AcpRuntimePolicy): "allow" | "deny" {
   switch (unknownRecord(runtimePolicy.sandboxPolicy)?.type) {
@@ -155,8 +159,7 @@ function acpWorkspaceWriteAllowsMutation(
 }
 
 /**
- * Disposition of one native operation under the active runtime policy. Shared
- * by provider permission requests and the client fs/terminal handlers.
+ * Shared by provider permission requests and the client fs/terminal handlers.
  */
 function acpOperationDisposition(
   runtimePolicy: AcpRuntimePolicy,
@@ -219,7 +222,6 @@ export function acpPermissionDisposition(
   });
 }
 
-/** Resolve explicitly tagged MCP approvals through the thread's normal policy. */
 export function acpMcpToolApprovalElicitationDisposition(
   runtimePolicy: AcpRuntimePolicy,
   request: EffectAcpSchema.CreateElicitationRequest,
@@ -232,8 +234,9 @@ export function acpMcpToolApprovalElicitationDisposition(
   ) {
     return undefined;
   }
-  // This is T3's authenticated, scoped MCP endpoint; ask in explicit approval mode
-  // and otherwise let the endpoint enforce its policy.
+  // This request comes from T3's authenticated, scope-checked MCP endpoint,
+  // not an arbitrary provider command. Let explicit approval mode surface it
+  // to the user and otherwise allow the endpoint to enforce its own policy.
   return acpPolicyRequiresApproval(runtimePolicy) ? "ask" : "allow";
 }
 
@@ -256,8 +259,9 @@ export interface AcpClientPolicyGrants {
 }
 
 /**
- * ACP cannot link approvals to later terminals; grant execute for the approving
- * turn, or session for accept-for-session, so ask mode honors prior consent.
+ * ACP does not link an approved tool call to the terminals the agent then creates, so an
+ * approved command authorizes client terminals for the approving turn, or for the session on
+ * accept-for-session.
  */
 export function makeAcpClientPolicyGrants(): AcpClientPolicyGrants {
   let sessionExecute = false;

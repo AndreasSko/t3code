@@ -31,7 +31,9 @@ function loadMermaid(): Promise<Mermaid> {
 const REMOTE_CSS_URL = /url\(\s*(?!['"]?#)[^)]*\)/gi;
 let purifier: ReturnType<typeof DOMPurify> | null = null;
 
-// Untrusted diagrams need strict SVG/CSS sanitization against navigation, scripts and remote fetches; retain local url(#id).
+// Diagrams can come from untrusted PR descriptions, so strip anything that can
+// navigate, run script, or fetch remote content on top of Mermaid's own strict
+// sanitization. CSS keeps only local url(#id) references; label text is untouched.
 function sanitizeMermaidSvg(svg: string): string {
   if (!purifier) {
     purifier = DOMPurify(window);
@@ -134,7 +136,11 @@ function mermaidRenderPromise(source: string, theme: "light" | "dark") {
 
 let expandedImageUrl: string | null = null;
 
-/** Blob URLs satisfy desktop connect-src for media actions; release the previous URL because only one diagram expands at a time. */
+/**
+ * A blob URL, unlike a data URL, passes the desktop connect-src policy that media
+ * save and copy actions fetch through. Only one diagram is expanded at a time, so
+ * the previous URL is released.
+ */
 function mermaidImageUrl(svg: string): string {
   const svgDocument = new DOMParser().parseFromString(svg, "image/svg+xml");
   const element = svgDocument.documentElement;
@@ -153,7 +159,6 @@ function mermaidImageUrl(svg: string): string {
   return expandedImageUrl;
 }
 
-/** Suspends until the diagram renders; failures show the parser message above the source. */
 export function MermaidDiagram({
   source,
   theme,

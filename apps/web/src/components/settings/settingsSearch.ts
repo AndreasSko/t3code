@@ -28,7 +28,11 @@ export type SettingsPath =
   | "/settings/connections"
   | "/settings/archived";
 
-/** Device-local rows render at every selection; project-defaults rows also accept project overrides. */
+/**
+ * Where a setting can be edited. Device-local rows have no scope: they render
+ * at every selection. `project-defaults` rows accept project overrides, so
+ * they are reachable from any server-backed selection.
+ */
 export type SettingsSearchScope =
   | "environment"
   | "environment-defaults"
@@ -58,7 +62,10 @@ export interface SettingsSearchItem {
   readonly localEnvironmentOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly managedTunnelOnly?: boolean;
-  /** Rank mirrored keybinding commands last so "model" leads with Default model rather than Model Picker. */
+  /**
+   * Sorts after every other match. Keybinding commands mirror rows on other
+   * surfaces, so "model" must still lead with Default model, not Model Picker.
+   */
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
 }
@@ -95,7 +102,11 @@ export function keybindingSearchAnchorId<Command extends KeybindingCommand>(comm
   return `keybinding-${command}` as const;
 }
 
-/** Commands without default bindings may have no row, so link them to the section instead. */
+/**
+ * The anchor is the command's first row; default keys are searchable so "mod+b"
+ * lands on Sidebar: Toggle. A command with no default binding may have no row,
+ * so it points at the section instead.
+ */
 const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right) =>
   commandLabel(left).localeCompare(commandLabel(right)),
 ).map((command) => {
@@ -133,7 +144,6 @@ const SOURCE_CONTROL_HOST_SEARCH_ITEMS = sourceControlClients.definitions.flatMa
     : [],
 );
 
-/** Use row anchors when mounted and stable section anchors otherwise. */
 export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "storage-worktree-keep-when",
@@ -1092,7 +1102,11 @@ export function isSettingsOverviewVisible(search: SettingsScopeSearch): boolean 
   return kind === "project" || kind === "checkout";
 }
 
-/** Share anchor ids and titles with rendered settings so search destinations cannot drift. */
+/**
+ * `id` and `title` props for the element a search item anchors to. Panels
+ * spread (or pick from) this instead of restating the strings, so the catalog
+ * and the rendered settings cannot drift apart.
+ */
 export function searchableSetting(id: SettingsSearchItemId): {
   readonly id: string;
   readonly title: string;

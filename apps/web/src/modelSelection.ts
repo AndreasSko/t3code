@@ -37,8 +37,9 @@ export const MAX_CUSTOM_MODEL_LENGTH = 256;
 const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
 
 /**
- * Prefer instance custom models; only default instances may fall back to persisted per-driver lists so
- * custom accounts cannot leak models into each other.
+ * Custom instances intentionally do not read the legacy per-driver bucket;
+ * otherwise one custom model added to `claude_openrouter` can appear on the
+ * stock `claudeAgent` instance.
  */
 function readInstanceCustomModels(
   settings: UnifiedSettings,
@@ -200,8 +201,8 @@ function getAppModelOptions(
 }
 
 /**
- * Use each instance's own built-in catalog and custom settings; ignore streamed custom rows so Settings
- * removals take effect without waiting for a probe.
+ * Custom rows reported by the server are ignored so a slug removed in Settings
+ * disappears without waiting for the next provider probe.
  */
 export function getAppModelOptionsForInstance(
   settings: UnifiedSettings,
@@ -290,7 +291,6 @@ export function resolveAppModelSelectionForInstance(
   return options.find((option) => option.isDefault)?.slug ?? options[0]?.slug ?? null;
 }
 
-/** Keep one options list per instance so built-in and custom accounts remain separate in the picker. */
 export function getCustomModelOptionsByInstance(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
@@ -312,8 +312,10 @@ export function getCustomModelOptionsByInstance(
 }
 
 /**
- * Keep a plan-agent value chosen on another device visible; legacy-mode filtering applies only to local
- * picks.
+ * Whether stored model options pick the opencode "plan" agent. Shared settings
+ * pickers keep and show such a value even while this device's legacy plan
+ * mode is off: another device may have chosen it, and this device's filter
+ * only applies to picks made here.
  */
 export function selectsPlanAgent(options: ModelSelection["options"]): boolean {
   return options?.some((option) => option.id === "agent" && option.value === "plan") ?? false;

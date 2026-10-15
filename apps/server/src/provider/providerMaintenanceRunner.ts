@@ -96,7 +96,9 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
   }) {
     const collectCommandResult = Effect.fn("ProviderMaintenanceRunner.collectCommandResult")(
       function* () {
-        // Windows update tools are .cmd shims that require shell routing to avoid spawn ENOENT.
+        // On Windows the update tools are batch shims (e.g. `npm` -> `npm.cmd`), which a bare
+        // ChildProcess.spawn cannot launch (spawn npm ENOENT); resolveSpawnCommand finds the
+        // real `.cmd` and routes it through the shell.
         const resolved = yield* resolveSpawnCommand(input.command, input.args);
         const child = yield* input.spawner
           .spawn(
@@ -200,7 +202,6 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
   },
 );
 
-/** Treat bare \r as a line ending so redrawn progress bars report their latest frame. */
 export function splitOutputLines(
   partialLine: string,
   text: string,
@@ -275,7 +276,7 @@ function makeUpdateState(input: {
   };
 }
 
-/** @public */
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const manifestService = yield* ModelManifest.ModelManifest;
@@ -429,7 +430,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               ).pipe(Effect.asVoid);
             yield* setRunningMessage("Checking for the latest version");
 
-            // Re-check ownership after acquiring the cached lock in case the installation changed.
+            // The cached capabilities chose the lock; re-derive ownership
+            // now so the command that runs matches the executable as it is
+            // at click time, not as it was at the last health refresh.
             const fresh = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
               instanceId,
               provider,
@@ -513,7 +516,8 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               verified,
               instanceId,
             );
-            // Exit 0 cannot prove the binary remains installed; Cursor's version probe may fail transiently.
+            // A missing version alone is not held against it, since Cursor's `about` probe can
+            // fail transiently on a healthy binary.
             const couldNotVerify =
               verifiedProviders.length === 0 ||
               verifiedProviders.some(

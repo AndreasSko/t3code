@@ -97,7 +97,6 @@ export function ElectronBrowserHost() {
     });
   }, []);
 
-  // Open target="_blank" links in the same thread while preserving the source page.
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
   const sessionByRuntimeTabId = useRef(new Map<string, (typeof sessions)[number]>());
   useEffect(() => {
@@ -163,7 +162,10 @@ function AuthorizedBrowserWebview(props: ComponentProps<typeof HostedBrowserWebv
   return canOperatePreview ? <HostedBrowserWebview {...props} profileId={profileId} /> : null;
 }
 
-/** Latch the default after settings load: Electron fixes the guest partition when the tab attaches. */
+/**
+ * It is latched once settings load: Electron fixes the partition when the guest attaches, so a
+ * later settings change must not move a live tab.
+ */
 function useTabProfileId(profileId: string | undefined): string | undefined {
   const hydrated = useClientSettingsHydrated();
   const defaultProfileId = useBrowserDefaults().profileId;

@@ -103,7 +103,6 @@ export class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
 export const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
 const isEnvironmentAuthorizationError = Schema.is(EnvironmentAuthorizationError);
 
-/** Ceiling for the doubling delay between same-session expected-failure retries. */
 const MAX_EXPECTED_FAILURE_RETRY_DELAY_MS = 30_000;
 
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
@@ -242,8 +241,11 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
   readonly onExpectedFailure?: (
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
-  /** Expected failures double from this delay to 30s until a healthy value;
-   * authorization failures wait for a new session or resubscribe signal instead. */
+  /**
+   * Each consecutive failure doubles it up to 30 seconds, and the first value
+   * from a healthy stream resets it. Authorization failures are not retried;
+   * they wait for the next session or `resubscribe` signal.
+   */
   readonly retryExpectedFailureAfter?: Duration.Input;
   readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
@@ -290,8 +292,6 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                 EnvironmentRpcStreamValue<TTag>,
                 EnvironmentRpcStreamFailure<TTag>
               >;
-              // Consecutive expected-failure retries on this session. Reset by
-              // the first value a resubscribed stream delivers.
               let expectedFailureRetries = 0;
               const subscribeToSession = (): Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>> =>
                 Stream.suspend(() =>

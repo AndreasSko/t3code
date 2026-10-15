@@ -23,7 +23,11 @@ import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ThemeSearchSection } from "./ThemeSearchSection";
 
-/** Theme exports are only a few KB; check size before reading so oversized files cannot freeze the UI. */
+/**
+ * The guard runs on the size before the bytes are ever read: a large file
+ * would otherwise be pulled into memory, highlighted, and rendered, which
+ * locks the UI for as long as that takes.
+ */
 export const MAX_THEME_FILE_BYTES = 256 * 1024;
 
 /** Highlighting rebuilds the whole markup on every keystroke, so oversized
@@ -171,7 +175,6 @@ export function ThemeImportDialog({
   }, [open]);
 
   const readThemeFile = useCallback(async (file: ImportableThemeFile) => {
-    // Check size before reading to avoid pulling oversized files into memory.
     const oversized = describeOversizedThemeFile(file.size);
     if (oversized) {
       setError(oversized);
@@ -194,7 +197,6 @@ export function ThemeImportDialog({
     }
   }, []);
 
-  // VS Code theme families pair light and dark variants, so batches install without activating.
   const readThemeBatch = useCallback(
     async (files: ReadonlyArray<ImportableThemeFile>) => {
       const requestId = ++importRequestRef.current;
@@ -260,7 +262,6 @@ export function ThemeImportDialog({
     [readThemeBatch, readThemeFile],
   );
 
-  // The desktop picker starts in ~/.vscode/extensions when it exists; the browser input is the fallback.
   const openFilePicker = useCallback(() => {
     const bridge = window.desktopBridge;
     if (bridge?.pickThemeFiles) {
@@ -385,9 +386,7 @@ export function ThemeImportDialog({
         // failing on the already-taken theme id.
         try {
           removeCustomTheme(installedTheme.id);
-        } catch {
-          // Storage is failing wholesale; the error below covers it.
-        }
+        } catch {}
         setError("Theme added, but it could not be selected. Try again.");
         return;
       }
@@ -513,7 +512,6 @@ export function ThemeImportDialog({
                   {fileInput}
                 </div>
                 {editorSection()}
-                {/* Keep Add theme with the file section because it does not apply to search or conflicts. */}
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button variant="ghost" onClick={() => onOpenChange(false)}>
                     Cancel

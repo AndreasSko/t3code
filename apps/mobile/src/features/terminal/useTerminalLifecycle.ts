@@ -1,7 +1,6 @@
 import type { TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
 import { useEffect, useEffectEvent, useRef } from "react";
 
-/** Observed history stays passive; explicit visits may reopen ended terminals. */
 export function useTerminalLifecycle({
   terminalKey,
   canOperate,

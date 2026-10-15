@@ -1,5 +1,3 @@
-/** Prepend custom families to the default stacks to preserve glyph coverage. */
-
 import {
   DEFAULT_CODE_FONT_SIZE,
   DEFAULT_INTERFACE_FONT_SIZE,
@@ -22,8 +20,10 @@ export const DEFAULT_CODE_FONT_STACK =
 
 export const TYPOGRAPHY_ADVANCED_STORAGE_KEY = "t3code:typography-advanced";
 
-/** Simple mode follows the code font; an empty Advanced terminal preference keeps
- * the terminal default so later code-font changes do not affect it. */
+/**
+ * In Advanced mode an empty terminal preference means the terminal default,
+ * keeping later code-font changes isolated to code surfaces.
+ */
 export function resolveTerminalFontPreference(input: {
   readonly advanced: boolean;
   readonly code: string;
@@ -45,16 +45,11 @@ export function resolveTerminalFontSizePreference(input: {
 function quoteFontFamilyName(name: string): string {
   const bare = name.trim();
   if (bare.length === 0) return "";
-  // Already quoted, or a single ident that needs no quoting.
   if (/^(['"]).*\1$/.test(bare)) return bare;
   if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(bare)) return bare;
   return `"${bare.replaceAll('"', "")}"`;
 }
 
-/**
- * Normalize a user-entered family (single name or comma-separated list) into a
- * safe CSS font-family list, or null when the input is effectively empty.
- */
 export function cssFontFamilies(input: string): string | null {
   const families = input
     .split(",")
@@ -63,7 +58,6 @@ export function cssFontFamilies(input: string): string | null {
   return families.length > 0 ? families.join(", ") : null;
 }
 
-/** The full stack a preference resolves to: custom families before the default. */
 export function appearanceFontStack(custom: string, defaultStack: string): string {
   const families = cssFontFamilies(custom);
   return families === null ? defaultStack : `${families}, ${defaultStack}`;
@@ -76,12 +70,14 @@ export interface AppearanceFontPreferences {
   readonly sizeInterface: number;
   readonly sizePrompt: number;
   readonly sizeCode: number;
-  /** Grayscale `antialiased` rendering; false keeps the heavier platform default. */
   readonly smoothing: boolean;
 }
 
-/** Remove unset overrides so stylesheet defaults apply. Interface size scales rem;
- * prompt and code sizes use absolute pixels to avoid scaling twice. */
+/**
+ * Sizes are always written: the interface size drives the root font size (and
+ * with it every rem-based dimension), while the prompt and code sizes stay in
+ * absolute pixels so they do not scale twice.
+ */
 export function applyAppearanceFontVariables(
   root: HTMLElement,
   preferences: AppearanceFontPreferences,
@@ -104,11 +100,10 @@ export function applyAppearanceFontVariables(
   root.style.setProperty("--font-size-prompt", `${clampPromptFontSize(preferences.sizePrompt)}px`);
   const code = clampCodeFontSize(preferences.sizeCode);
   root.style.setProperty("--font-size-code", `${code}px`);
-  // The @pierre/diffs surfaces read their own hook for code text.
   root.style.setProperty("--diffs-font-size", `${code}px`);
 
-  // Only macOS engines honor this inherited property; no platform gate is needed.
-  // Grayscale antialiasing produces thinner strokes than the platform default.
+  // Inherited from the root; only macOS engines honor the property, so no
+  // platform gate is needed here.
   if (preferences.smoothing) {
     root.style.setProperty("-webkit-font-smoothing", "antialiased");
   } else {
@@ -150,8 +145,11 @@ function probeWidth(fontList: string): number | null {
   return fontProbeContext.measureText(FONT_PROBE_TEXT).width;
 }
 
-/** document.fonts.check() returns true for absent families; compare canvas advances
- * against generic fallbacks to detect installed faces. */
+/**
+ * Canvas metric probing instead of document.fonts.check(): check() reports true
+ * for families that are not installed at all (nothing needs loading), so it
+ * cannot filter the dropdown.
+ */
 export function isFontFamilyAvailable(family: string): boolean {
   const families = cssFontFamilies(family);
   if (families === null) return false;
@@ -185,8 +183,10 @@ export function areFontAdvancesMonospace(advances: readonly number[]): boolean {
   return advances.every((advance) => Math.abs(advance - reference) < MONOSPACE_ADVANCE_TOLERANCE);
 }
 
-/** Terminal cell grids require equal advances to keep text aligned with cursor and selection.
- * Unmeasurable environments answer true so a missing canvas never blocks a font. */
+/**
+ * Unmeasurable environments answer true, so a missing canvas never blocks a
+ * legitimate font.
+ */
 export function isMonospaceFamily(family: string): boolean {
   const families = cssFontFamilies(family);
   if (families === null) return true;
@@ -209,7 +209,6 @@ export function isMonospaceFamily(family: string): boolean {
   }
 }
 
-// Apple's UI faces cannot be named in CSS; unmatched generics identify San Francisco only on Apple platforms.
 const SANS_GENERIC_CANDIDATES = [
   "Segoe UI",
   "Roboto",
@@ -236,7 +235,11 @@ const MONO_GENERIC_CANDIDATES = [
 
 const GENERIC_PROBE_TEXT = "RagIl10O@ fjord quiz";
 
-/** Measure in the DOM: canvas can draw ui-monospace as a proportional UI face while CSS renders it correctly. */
+/**
+ * Advance width of the probe text laid out by the DOM - not canvas, whose
+ * generic-family mapping diverges from real rendering (this engine draws
+ * `ui-monospace` as the proportional UI font on canvas but not in CSS).
+ */
 function measureDomProbeWidth(fontFamily: string): number | null {
   try {
     const body = document.body;
@@ -259,7 +262,6 @@ function widthsMatch(left: number, right: number): boolean {
   return Math.abs(left - right) < 0.01;
 }
 
-/** Resolve a generic family to a concrete name; null when no face can be identified. */
 function resolveGenericFamilyLabel(generic: string): string | null {
   const lower = generic.toLowerCase();
   if (lower === "serif") return null;
@@ -284,7 +286,6 @@ function resolveGenericFamilyLabel(generic: string): string | null {
   return null;
 }
 
-/** Name the first available family in a stack, resolving generic keywords where identifiable. */
 export function resolveDefaultFamilyLabel(stack: string): string | null {
   for (const raw of stack.split(",")) {
     const family = raw.trim().replace(/^(['"])(.*)\1$/, "$2");
@@ -305,14 +306,16 @@ export function resolveDefaultFamilyLabel(stack: string): string | null {
 
 export interface InstalledFontFamiliesResult {
   readonly families: readonly string[];
-  /** Safari and Firefox lack Local Font Access; unsupported engines and denied permission use the curated catalog. */
   readonly status: "granted" | "denied" | "unsupported";
 }
 
 let installedFamiliesCache: InstalledFontFamiliesResult | null = null;
 
-/** Call from a user gesture for the local-fonts permission prompt. Denials are not cached,
- * so reopening the picker can retry after the user changes the site setting. */
+/**
+ * Call from a user gesture: the first call raises the browser's local-fonts
+ * permission prompt. A denial is not cached, so reopening the picker can ask
+ * again after the user changes the site setting.
+ */
 export async function queryInstalledFontFamilies(): Promise<InstalledFontFamiliesResult> {
   if (installedFamiliesCache !== null) return installedFamiliesCache;
   const query = (

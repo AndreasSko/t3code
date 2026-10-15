@@ -24,7 +24,6 @@ export class GitHubStackRebaseConflictError extends Schema.TaggedError<GitHubSta
   }
 }
 
-/** Git failed for a reason other than a conflict: the fetch, or a push GitHub refused. */
 export class GitHubStackRebaseGitError extends Schema.TaggedError<GitHubStackRebaseGitError>()(
   "GitHubStackRebaseGitError",
   { step: Schema.String, number: Schema.Int, completed: Schema.Int, cause: Schema.Defect() },
@@ -38,8 +37,9 @@ function remoteUrl(host: string, repository: string): string {
   return `https://${host.trim().toLowerCase()}/${repository}.git`;
 }
 
-/** Rebase each layer's own commits onto its new parent in a scratch clone; per-PR updates replay ancestors.
- * The stacks API has no rebase endpoint; lease pushes on the reviewed head to preserve concurrent pushes. */
+/**
+ * The stacks API has no rebase endpoint to call instead.
+ */
 export const cascadeRebaseStack = Effect.fn("cascadeRebaseStack")(function* (input: {
   readonly host: string;
   readonly repository: string;

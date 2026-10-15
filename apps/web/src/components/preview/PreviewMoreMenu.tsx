@@ -29,8 +29,6 @@ const COLOR_SCHEME_OPTIONS: ReadonlyArray<{
   { value: "dark", label: "Dark" },
 ];
 
-/** Desktop tabs use the desktop bridge; server tabs use the environment
- * server even when rendered natively by the desktop app. */
 export interface PreviewMoreMenuActions {
   readonly hardReload: () => void;
   readonly setColorScheme: (colorScheme: DesktopPreviewColorScheme) => void;
@@ -46,15 +44,12 @@ export interface PreviewMoreMenuActions {
 interface Props {
   enabled: boolean;
   actions: PreviewMoreMenuActions;
-  /** Current zoom factor as a number (1.0 = 100%). */
   zoomFactor: number;
   colorScheme: DesktopPreviewColorScheme;
   deviceToolbarVisible: boolean;
   onToggleDeviceToolbar: () => void;
-  /** Whether the separate native always-on-top preview window is open. */
   nativePictureInPicture: boolean;
   profileName: string | undefined;
-  /** Reopens the tab in the other browser it can run in. */
   move?: { readonly label: string; readonly onMove: () => void };
 }
 
@@ -125,7 +120,6 @@ export function PreviewMoreMenu({
           </MenuSubPopup>
         </MenuSub>
         <MenuSeparator />
-        {/* closeOnClick=false keeps zoom controls open for repeated clicks. */}
         <MenuItem
           closeOnClick={false}
           onClick={(event: React.MouseEvent) => event.preventDefault()}
@@ -170,7 +164,10 @@ export function PreviewMoreMenu({
           </span>
         </MenuItem>
         <MenuSeparator />
-        {/* MenuGroupLabel requires a MenuGroup ancestor or it throws. */}
+        {/*
+         * Grouped so the heading has a `MenuGroup` ancestor — `MenuGroupLabel`
+          reads its context and throws without one.
+         */}
         <MenuGroup>
           {profileName ? (
             // Truncation needs a block box: `text-overflow` on an inline child

@@ -19,7 +19,10 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-/** HTML files must open in threads on this machine because its environment serves them. */
+/**
+ * HTML files are served by this machine's environment, so only its threads can
+ * take them.
+ */
 function threadShowingBrowser(
   routeParams: Record<string, string | undefined>,
   fileEnvironmentId: EnvironmentId | null,
@@ -41,8 +44,6 @@ function threadShowingBrowser(
   return surface?.kind === "preview" ? threadRef : null;
 }
 
-/** OS web links open a tab in the visible browser panel, or start a scratch
- * thread with a maximized browser; prompt and thread links open in the app. */
 export function DesktopWebLinkCoordinator() {
   const router = useRouter();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -73,7 +74,6 @@ export function DesktopWebLinkCoordinator() {
       reportFailure(url);
       return null;
     }
-    // Reports its own failure.
     const project = await openScratchProject(environmentId, "Could not open the link");
     if (!project) return null;
     const opened = await openThread(scopeProjectRef(project.environmentId, project.id));

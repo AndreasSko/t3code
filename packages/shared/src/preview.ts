@@ -48,7 +48,6 @@ function previewUrlProtocol(rawUrl: string): string | undefined {
 }
 
 const SEARCH_URL = "https://duckduckgo.com/?q=";
-/** A bare host that is always an address: localhost, an IPv4 literal, or a bracketed IPv6 one. */
 const ADDRESS_HOST_PATTERN = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|\[[\da-f:.]+\])$/i;
 const BARE_HOST_PORT_PATTERN = /^[^/?#:@]+:\d+(?:[/?#]|$)/;
 /**
@@ -72,7 +71,13 @@ const KNOWN_NON_WEB_SCHEMES: ReadonlySet<string> = new Set([
   "wss:",
 ]);
 
-/** Resolves an address or web search; rejects empty input and explicit unsupported schemes. */
+/**
+ * Turns what a user typed in an address bar into the URL to open: an address
+ * as `normalizePreviewUrl` reads it, or else a web search for the text. Text
+ * is an address when it has a scheme, or no spaces and a host that has a dot,
+ * a port, or is localhost or an IP. Throws only for empty input or an
+ * explicit unsupported scheme (`ftp://`, `mailto:`, `data:`).
+ */
 export function resolveAddressBarInput(rawInput: string): string {
   const trimmed = rawInput.trim();
   if (/^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) || trimmed.length === 0)
@@ -101,15 +106,17 @@ export function resolveAddressBarInput(rawInput: string): string {
     if (hasPort || ADDRESS_HOST_PATTERN.test(host) || /^[^.]+(?:\.[^.]+)+\.?$/.test(host)) {
       try {
         return normalizePreviewUrl(trimmed);
-      } catch {
-        // Not a usable address after all; search for it.
-      }
+      } catch {}
     }
   }
   return `${SEARCH_URL}${encodeURIComponent(trimmed)}`;
 }
 
-/** Adds HTTP for bare loopback hosts and HTTPS for public hosts; rejects invalid or unsupported URLs. */
+/**
+ * - Bare loopback hosts (`localhost`, `localhost:5173`) become `http://...`.
+ * - Bare public hosts (`example.com`) become `https://...`.
+ * - Already-qualified URLs are validated and returned as `URL.href`.
+ */
 export function normalizePreviewUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
   if (trimmed.length === 0) {

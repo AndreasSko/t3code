@@ -158,7 +158,8 @@ export function ThreadSubagentGroup(props: {
                 }
                 disabled={threadId === null}
                 onPress={() => {
-                  // navigate reuses the current Thread route and loses parent Back navigation; push a new route.
+                  // Push, not navigate: navigate reuses this Thread route, so back
+                  // would skip the parent thread.
                   if (threadId !== null)
                     navigation.dispatch(
                       StackActions.push("Thread", {

@@ -62,7 +62,6 @@ function tryResolveClaudeModelCatalog(
 const BUNDLED_CLAUDE_PROVIDER_CATALOG =
   resolveProviderCatalog(BUNDLED_MODEL_MANIFEST, CLAUDE) ?? undefined;
 
-/** Falls back to the bundled catalog when the current entry is missing or has invalid adapters. */
 export function resolveClaudeModelCatalog(
   catalog: ModelCatalog.ProviderCatalog | undefined,
 ): ClaudeModelCatalog {
@@ -78,8 +77,10 @@ export const BUNDLED_CLAUDE_MODEL_CATALOG = resolveClaudeModelCatalog(
   BUNDLED_CLAUDE_PROVIDER_CATALOG,
 );
 
-/** Custom slugs suppress shadowed aliases while preserving built-ins and explicit capabilities.
- * Custom entries have no runtime profile, so their option values reach Claude verbatim. */
+/**
+ * Custom entries carry no runtime profile, so option values pass through to
+ * Claude Code verbatim.
+ */
 export function scopeClaudeModelCatalog(
   catalog: ClaudeModelCatalog,
   customModels: ReadonlyArray<CustomModelSetting>,
@@ -168,7 +169,6 @@ export function resolveClaudeModelsForVersion(
     .map((entry) => entry.model);
 }
 
-/** Keeps models requiring newer Claude visible so the picker can offer "update to use". */
 export function resolveClaudeUpdateRequiredModels(
   catalog: ClaudeModelCatalog,
   version: string | null | undefined,

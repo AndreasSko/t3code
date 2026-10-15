@@ -43,7 +43,11 @@ import type { ReviewCommentContext } from "~/reviewCommentContext";
 
 const PREVIEW_LABEL_MAX_CHARS = 48;
 
-/** Clamp review text/diff to wire limits and mark truncation so oversized selections still send. */
+/**
+ * A review selection can be arbitrarily large, but the wire schema bounds `text` and `diff`.
+ * Clamp at the same boundary so an oversized selection still sends, marked where it was cut,
+ * rather than failing to encode at send time.
+ */
 const TRUNCATION_MARKER = "\n… truncated …";
 
 function clampContextText(value: string, max: number): string {
@@ -122,7 +126,6 @@ export function reviewCommentContextId(commentId: string): ComposerContextId {
   return toKindScopedComposerContextId("review-comment", commentId);
 }
 
-/** Distinct from the screenshot image, which reuses the annotation id as its attachment id. */
 export function previewAnnotationContextId(annotationId: string): ComposerContextId {
   return toKindScopedComposerContextId("preview-annotation", annotationId);
 }
@@ -147,7 +150,6 @@ export function previewAnnotationContextReference(
   };
 }
 
-/** One record per thread: attaching the same thread twice reuses the chip. */
 function threadContextId(threadId: ThreadId): ComposerContextId {
   return toKindScopedComposerContextId("thread", threadId);
 }
@@ -269,7 +271,6 @@ export function fileContextReference(file: ComposerFileAttachment): ComposerCont
   };
 }
 
-/** Binds a draft attachment to the id the receiving side will know it by. */
 export interface BoundComposerAttachment {
   attachment: ComposerImageAttachment | ComposerFileAttachment;
   attachmentId: string;
@@ -331,7 +332,10 @@ export function buildMessageContext(input: {
   return records.length === 0 ? undefined : { version: 1, records };
 }
 
-/** The unknown member has an open-string kind, so plain kind comparisons cannot discriminate this union. */
+/**
+ * Narrows away the unknown-kind member. Its `kind` is an open string, so a plain
+ * `record.kind === "terminal"` check cannot discriminate the union on its own.
+ */
 export function asKnownContextRecord(
   record: ComposerContextRecord | undefined,
 ): KnownComposerContextRecord | undefined {
@@ -357,7 +361,12 @@ export interface ResolvedUserMessageContext {
   recordsById: ReadonlyMap<string, ComposerContextRecord>;
 }
 
-/** Copy only backing records for chips in the selection; nearby prose must not import unrelated attachments. */
+/**
+ * The clipboard fragment behind a timeline message selection: only records for
+ * chips actually inside the selection travel, so copying prose next to an
+ * image never starts importing that image somewhere else. Returns null when no
+ * selected chip has backing records.
+ */
 export function selectedMessageContextFragment(input: {
   readonly markdown: string;
   readonly records: ReadonlyArray<ComposerContextRecord>;
@@ -381,7 +390,6 @@ export function selectedMessageContextFragment(input: {
   });
 }
 
-/** A message's canonical text plus records; old messages are upgraded in memory on read. */
 export function resolveUserMessageContext(message: {
   text: string;
   context?: OrchestrationMessageContext | undefined;
@@ -475,16 +483,17 @@ export function previewAnnotationFromRecord(
   };
 }
 
-/** Ignore display labels; folded ids can collide, so paste must compare payloads before deduplicating. */
+/**
+ * Whether two records carry the same payload, ignoring the label (display text, never
+ * identity). Context ids are a folded form of producer ids, so a collision alone does not mean
+ * the records are the same excerpt; the paste path compares payloads before de-duplicating.
+ */
 export function isSameComposerContextPayload(
   left: ComposerContextRecord,
   right: ComposerContextRecord,
 ): boolean {
   if (left.kind !== right.kind) return false;
   const stableKey = (record: ComposerContextRecord) => {
-    // Labels are display text and context ids are folded producer ids: neither
-    // distinguishes excerpts, so an imported legacy id must still match the
-    // canonical id reconstructed for the same payload instead of duplicating it.
     const { label: _label, contextId: _contextId, ...rest } = record;
     const sortDeep = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(sortDeep);

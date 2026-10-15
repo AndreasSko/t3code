@@ -74,8 +74,12 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
   return top + Math.max(1, height);
 }
 
-/** Measure the last real row because list content length includes the composer spacer.
- * Unknown geometry counts as fitting. */
+/**
+ * Whether the timeline's real rows extend past the viewport left above the
+ * composer. The list's own content length includes the composer inset
+ * spacer, so this measures from the last row instead. Unknown row geometry
+ * or an unmeasured viewport counts as fitting.
+ */
 export function timelineContentOverflowsViewport(
   state: TimelineListMeasurementState | undefined,
   input: { readonly composerInset: number; readonly anchorOffset: number },
@@ -154,7 +158,6 @@ export interface RememberedTimelinePosition {
   };
 }
 
-// Scoped thread keys keep separate environments independent. Bound the session cache.
 const rememberedTimelinePositions = new Map<string, RememberedTimelinePosition>();
 
 export function readTimelinePosition(threadKey: string) {

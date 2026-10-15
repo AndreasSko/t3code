@@ -1,4 +1,7 @@
-/** One OpenCode 2 server serves every thread and directory of a provider instance. */
+/**
+ * A 2.x server serves every location from one process, so an instance shares
+ * one server across all of its threads and directories.
+ */
 import type { OpenCodeClient } from "@opencode/client/effect";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -88,11 +91,10 @@ const describeInfoFailure = (cause: unknown) => {
 };
 
 /**
- * Confirms a server is an authenticated OpenCode 2 server through `/api/info`
- * and returns its version. `/health` and friends answer 200 with the web UI's
- * HTML on every version, so only this endpoint proves readiness. Details are
- * fixed text because they reach clients and a `serverUrl` can carry
- * credentials; the underlying failure stays in `cause`.
+ * `/health` and friends answer 200 with the web UI's HTML on every version, so
+ * only this endpoint proves readiness. Details are fixed text because they
+ * reach clients and a `serverUrl` can carry credentials; the underlying failure
+ * stays in `cause`.
  */
 export const verifyServer = (client: OpenCodeClient) =>
   client.server.info().pipe(
@@ -129,8 +131,7 @@ export const verifyServer = (client: OpenCodeClient) =>
   );
 
 /**
- * Spawned servers are shared between borrowers and stopped after an idle period.
- * Clients are cached per server; failed verification is retried.
+ * Clients are built once per server; a failed check is not remembered.
  */
 export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   readonly binaryPath: string;
@@ -184,6 +185,5 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   });
 });
 
-/** Built once per provider instance from its settings; closing it stops a spawned server. */
 export const layer = (input: Parameters<typeof make>[0]) =>
   Layer.effect(OpenCode2Server, make(input));

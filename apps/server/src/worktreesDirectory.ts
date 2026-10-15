@@ -2,8 +2,11 @@ import type * as Path from "effect/Path";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
-/** Expands `~` and falls back to `defaultDir`; returns null for paths invalid on this machine.
- * Filesystem roots are rejected because they would make every path on the drive look managed. */
+/**
+ * Null when the setting is not an absolute path on this machine, such as `D:\worktrees`
+ * configured for a Windows server and synced to a Linux one, or when it is a filesystem root,
+ * which would make every path on that drive look managed.
+ */
 export function resolveWorktreesDirectory(
   setting: string,
   defaultDir: string,

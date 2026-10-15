@@ -46,7 +46,6 @@ export class ConnectionTargetStore extends Context.Service<
   ConnectionTargetStore,
   {
     readonly list: Effect.Effect<ReadonlyArray<ConnectionTarget>, ConnectionPersistenceError>;
-    /** Saved environments the user switched off. See `ConnectionRegistrationStore.setEnabled`. */
     readonly listDisabled: Effect.Effect<ReadonlyArray<EnvironmentId>, ConnectionPersistenceError>;
   }
 >()("@t3tools/client-runtime/platform/persistence/ConnectionTargetStore") {}
@@ -54,12 +53,17 @@ export class ConnectionTargetStore extends Context.Service<
 export class ConnectionRegistrationStore extends Context.Service<
   ConnectionRegistrationStore,
   {
-    /** Replaces the full preferred-first route list and removes omitted route records. */
+    /**
+     * Saves one route's records and sets the environment's full route list,
+     * preferred first. Records of routes missing from `routes` are dropped.
+     */
     readonly register: (
       registration: ConnectionRegistration,
       routes: ReadonlyArray<PersistedConnectionTarget>,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
-    /** Reorders or drops routes without adding one. `routes` must not be empty. */
+    /**
+     * `routes` must not be empty.
+     */
     readonly setRoutes: (
       environmentId: EnvironmentId,
       routes: ReadonlyArray<PersistedConnectionTarget>,
@@ -99,7 +103,10 @@ export class EnvironmentCacheStore extends Context.Service<
       environmentId: EnvironmentId,
       threadId: ThreadId,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
-    /** Includes provider metadata so offline task creation can offer the last known models. */
+    /**
+     * This deliberately includes provider metadata so offline task creation can
+     * still offer the models a user last saw.
+     */
     readonly loadServerConfig: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<Option.Option<ServerConfig>, ConnectionPersistenceError>;
@@ -107,7 +114,10 @@ export class EnvironmentCacheStore extends Context.Service<
       environmentId: EnvironmentId,
       config: ServerConfig,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
-    /** Cache only unfiltered branch lists; partial queries are unsafe as full pickers. */
+    /**
+     * Query-specific lists are not cached because they are incomplete and unsafe
+     * to present as a full picker.
+     */
     readonly loadVcsRefs: (
       environmentId: EnvironmentId,
       cwd: string,
@@ -121,7 +131,10 @@ export class EnvironmentCacheStore extends Context.Service<
       environmentId: EnvironmentId,
       cwd: string,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
-    /** Ref mutations span linked worktrees, so invalidate every cached workspace key for the environment. */
+    /**
+     * Git ref mutations are repository-wide, and linked worktrees may have
+     * cached the same refs under different working-directory keys.
+     */
     readonly clearVcsRefs: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<void, ConnectionPersistenceError>;

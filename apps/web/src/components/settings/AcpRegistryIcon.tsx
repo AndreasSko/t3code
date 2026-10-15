@@ -26,7 +26,6 @@ async function checkedIconBlob(response: Response): Promise<Blob> {
   return new Blob([bytes], { type: contentType });
 }
 
-/** Fetches an official icon once, then serves it from persistent browser cache. */
 export function loadCachedAcpRegistryIcon(iconUrl: string): Promise<Blob> {
   if (resolveOfficialAcpRegistryIconUrl(iconUrl) !== iconUrl) {
     return Promise.reject(new Error("ACP registry icon URL was not allowed."));
@@ -47,9 +46,7 @@ export function loadCachedAcpRegistryIcon(iconUrl: string): Promise<Blob> {
       try {
         const cached = await cache.match(iconUrl);
         if (cached) return await checkedIconBlob(cached);
-      } catch {
-        // Ignore unreadable or invalid cache entries and repair from network.
-      }
+      } catch {}
     }
 
     const response = await fetch(iconUrl, {
@@ -87,8 +84,10 @@ export function AcpRegistryAgentIcon({
     readonly status: "loading" | "loaded" | "failed";
   } | null>(null);
   const currentImage = image?.iconUrl === iconUrl ? image : null;
-  // The official CDN lacks CORS headers: validated fetches can fail while
-  // native images work, so wait for the pipeline before using the allowlisted fallback.
+  // Render only after the load pipeline resolves: the validated blob when the
+  // fetch succeeds, or the raw allowlisted CDN URL when it fails (the official
+  // CDN serves no CORS headers, so the validating fetch is often blocked in
+  // cross-origin browser contexts while native <img> loading still works).
   const source = currentImage?.source ?? null;
   const status = currentImage?.status ?? "loading";
 
@@ -122,8 +121,9 @@ export function AcpRegistryAgentIcon({
         className,
       )}
     >
-      {/* SVG alpha filters recolor external monochrome images without currentColor
-   or CSS masks, which CDN CORS can block. */}
+      {/* Registry glyphs are monochrome. Recolor their alpha rather than
+          inverting RGB values; external images cannot inherit currentColor.
+          A local SVG filter also works when CDN CORS prevents CSS masks. */}
       <svg aria-hidden className="pointer-events-none absolute size-0" focusable="false">
         <defs>
           <filter id={colorFilterId} colorInterpolationFilters="sRGB">

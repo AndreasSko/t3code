@@ -83,7 +83,6 @@ export type WorkspacePathsError = typeof WorkspacePathsError.Type;
 export class WorkspacePaths extends Context.Service<
   WorkspacePaths,
   {
-    /** Normalize a user-provided workspace root and verify it exists as a directory. */
     readonly normalizeWorkspaceRoot: (
       workspaceRoot: string,
       options?: { readonly createIfMissing?: boolean },
@@ -94,7 +93,6 @@ export class WorkspacePaths extends Context.Service<
       | WorkspaceRootStatFailedError
       | WorkspaceRootNotDirectoryError
     >;
-    /** Rejects absolute paths and traversal outside the validated workspace root. */
     readonly resolveRelativePathWithinRoot: (input: {
       workspaceRoot: string;
       relativePath: string;

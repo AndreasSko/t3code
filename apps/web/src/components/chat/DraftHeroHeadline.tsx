@@ -106,7 +106,6 @@ export function DraftHeroHeadline({
       threads,
     ],
   );
-  // Environment icons distinguish same-named projects across machines.
   const showProjectEnvironments = useMemo(
     () => projectGroupsSpanEnvironments(projectGroups),
     [projectGroups],
@@ -149,8 +148,6 @@ export function DraftHeroHeadline({
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
-  // The project that hosts threads without a project is not a row: the line
-  // under the headline is the way into it.
   const menuEntries = useMemo(
     () =>
       projectPickerEntries.filter(
@@ -174,7 +171,6 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
 
-  // Add project is an action, so offer it only after the unfiltered project list.
   const pickerItems = useMemo<readonly PickerItem[]>(
     () => [
       ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
@@ -202,7 +198,9 @@ export function DraftHeroHeadline({
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
   }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);
-  // Retarget typed drafts in place; empty drafts open the destination's draft to preserve its invested state and tabs.
+  // An empty draft instead opens the chosen project's own draft, like starting a new thread there:
+  // moving it would replace that draft and strand whatever it holds, such as the browser tabs of
+  // the no-project draft.
   const selectProject = (project: (typeof projects)[number], logicalProjectKey: string) => {
     if (!draftId) {
       return;
@@ -287,7 +285,10 @@ export function DraftHeroHeadline({
       <Tooltip>
         <TooltipTrigger
           render={
-            // An aria-label would replace the project title with an action phrase in the hero sentence.
+            // The trigger's accessible name comes from its visible text (the
+            // project title) so the hero sentence reads naturally: an
+            // aria-label here would replace the title with an action phrase
+            // mid-sentence and baffle screen-reader users.
             <ComboboxTrigger
               render={<InlineButton tone="picker" />}
               data-draft-project-trigger=""
@@ -350,7 +351,10 @@ export function DraftHeroHeadline({
     </button>
   );
 
-  // Explicit sentence labels keep inline picker widget state out of the heading's accessible name.
+  // The composer hero is a sentence, so the heading's accessible name must be
+  // a complete sentence too. The project picker is a control rendered inline
+  // in the h1; without an explicit label its widget state bleeds into the
+  // announced phrase.
   const headingLabel = isScratchDraft
     ? "What should we work on?"
     : hasResolvedProject

@@ -57,7 +57,10 @@ export function setMarkdownTaskChecked(
   return `${markdown.slice(0, markerOffset + 1)}${checked ? "x" : " "}${markdown.slice(markerOffset + 2)}`;
 }
 
-/** Drafts have no server thread yet; resolve their assets from the workspace root instead. */
+/**
+ * A draft has no thread on the server yet, so it names its workspace root instead of a thread to
+ * resolve one from.
+ */
 export function workspaceAssetResource(input: {
   readonly kind: "workspace-file" | "media-file";
   readonly threadRef: ScopedThreadRef;

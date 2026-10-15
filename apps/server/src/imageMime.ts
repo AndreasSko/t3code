@@ -32,21 +32,23 @@ export const SAFE_IMAGE_FILE_EXTENSIONS = new Set([
 
 function isBase64Char(code: number): boolean {
   return (
-    (code >= 0x61 && code <= 0x7a) || // a-z
-    (code >= 0x41 && code <= 0x5a) || // A-Z
-    (code >= 0x30 && code <= 0x39) || // 0-9
-    code === 0x2b || // +
-    code === 0x2f || // /
-    code === 0x3d // =
+    (code >= 0x61 && code <= 0x7a) ||
+    (code >= 0x41 && code <= 0x5a) ||
+    (code >= 0x30 && code <= 0x39) ||
+    code === 0x2b ||
+    code === 0x2f ||
+    code === 0x3d
   );
 }
 
 function isBase64Whitespace(code: number): boolean {
-  return code === 0x0d || code === 0x0a || code === 0x20; // \r \n space
+  return code === 0x0d || code === 0x0a || code === 0x20;
 }
 
-// Avoid payload-wide regexes: V8 borrows the JS call stack and can overflow
-// on multi-megabyte data URLs parsed inside deep Effect fiber stacks.
+// Data URLs carry the full image payload, so this parser must never run a
+// regex across the payload: V8's regex engine borrows the JS call stack, and
+// matching a multi-megabyte string from a deep call stack (e.g. inside fiber
+// execution) throws "Maximum call stack size exceeded".
 export function parseBase64DataUrl(
   dataUrl: string,
 ): { readonly mimeType: string; readonly base64: string } | null {

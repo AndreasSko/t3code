@@ -33,7 +33,10 @@ export function groupGitHubAccounts(
   });
 }
 
-/** Omit hosts following gh defaults so stored settings retain only explicit choices. */
+/**
+ * Hosts left on gh's defaults (enabled, no pinned account) are dropped so
+ * settings only hold real choices.
+ */
 export function nextGitHubHosts(
   current: GitHubSettings["hosts"],
   host: string,

@@ -45,9 +45,7 @@ interface Props {
   pickActive?: boolean | undefined;
   pickDisabled?: boolean | undefined;
   pickDisabledReason?: string | undefined;
-  /** Slot after the URL input. */
   trailingActions?: ReactNode;
-  /** Slot between navigation buttons and the URL input. */
   leadingActions?: ReactNode;
 }
 
@@ -196,7 +194,7 @@ export function PreviewChromeRow({
           </Tooltip>
           {onOpenInBrowser && !inputFocused ? (
             <InputGroupAddon align="inline-end">
-              {/* Revealed on hover so a resting address bar reads as plain text. */}
+              {}
               <span className="pointer-events-none flex opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/address:pointer-events-auto group-hover/address:opacity-100">
                 <Tooltip>
                   <TooltipTrigger

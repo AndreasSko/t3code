@@ -15,8 +15,6 @@ const NEW_TASK_SHORTCUT_HREF = "/new";
 // (androidIcons key in app.config.ts).
 const SHORTCUT_ICON = "shortcut_icon";
 
-// Matches only the thread deep-link shape shortcuts are allowed to carry:
-// exactly two non-empty segments, no nested paths, queries, or fragments.
 const THREAD_SHORTCUT_HREF_PATTERN = /^\/threads\/[^/?#]+\/[^/?#]+$/;
 
 function threadShortcutHref(thread: RecentThreadShortcut): string {
@@ -31,7 +29,11 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
-/** Malformed deep-link or restored ids must not throw during root-stack rendering. */
+/**
+ * Never throws: route params can arrive malformed from external deep links or restored state, the
+ * branded id constructors throw on values failing their schema, and this runs during render of
+ * the root stack layout — an uncaught throw here would take down the whole navigation tree.
+ */
 export function activeThreadRef(state: NavigationState): ScopedThreadRef | null {
   const route = state.routes[state.index];
   if (route?.name !== "Thread") {
@@ -65,7 +67,13 @@ function threadShortcutLabel(thread: RecentThreadShortcut): string {
   return title.length > 0 ? title : "Thread";
 }
 
-/** Launcher shortcuts persist across app updates, so only destinations this app produces are allowed. */
+/**
+ * In-app navigation path carried by a shortcut, or null for anything
+ * malformed — shortcuts persist in the launcher across app updates, so this
+ * allowlists the exact destinations shortcuts can produce rather than
+ * trusting any path-shaped string (`//host`, arbitrary routes, stale
+ * persisted junk all navigate nowhere).
+ */
 export function shortcutHref(action: Action): string | null {
   const href = action.params?.href;
   if (typeof href !== "string") {
@@ -75,7 +83,11 @@ export function shortcutHref(action: Action): string | null {
   return href === NEW_TASK_SHORTCUT_HREF || THREAD_SHORTCUT_HREF_PATTERN.test(href) ? href : null;
 }
 
-/** Preserves array identity to skip redundant writes, and preserves known titles while shells load. */
+/**
+ * Returns the SAME array when nothing changed so effect chains keyed on identity skip redundant
+ * launcher/storage writes. An empty title never clobbers a known one — shells load after
+ * navigation, so the first record of a thread often predates its title.
+ */
 export function withRecentThreadShortcut(
   current: ReadonlyArray<RecentThreadShortcut>,
   opened: RecentThreadShortcut,
@@ -104,7 +116,9 @@ export function buildShortcutActions(recents: ReadonlyArray<RecentThreadShortcut
       params: { href: NEW_TASK_SHORTCUT_HREF },
     },
     ...recents.slice(0, MAX_RECENT_THREAD_SHORTCUTS).map((thread): Action => ({
-      // URI-encoding prevents different environment/thread pairs from sharing a launcher id.
+      // The encoded href doubles as the launcher id: URI-encoding makes the
+      // env/thread join unambiguous (a plain `-` join lets different pairs
+      // collide and overwrite each other's launcher slots).
       id: `thread:${threadShortcutHref(thread)}`,
       title: threadShortcutLabel(thread),
       icon: SHORTCUT_ICON,

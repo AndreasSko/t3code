@@ -107,7 +107,8 @@ function EnvironmentNotifications({
   onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
 }) {
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
-  // Stable shell references avoid rescanning unchanged threads.
+  // The shell reducer keeps the thread list and unchanged thread objects
+  // stable, so this only rescans when a thread actually changed.
   const threads =
     shell.status === "live" && Option.isSome(shell.snapshot) ? shell.snapshot.value.threads : null;
   const mode = useClientSettings((settings) => settings.notificationMode);
@@ -132,7 +133,6 @@ function EnvironmentNotifications({
       if (rawThread.lineage.relationshipToParent === "subagent") continue;
       const prior = previous.current.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
-      // The same object cannot produce a new notification.
       if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {
         next.set(rawThread.id, prior);
         continue;

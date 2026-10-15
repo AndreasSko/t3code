@@ -16,7 +16,11 @@ import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
 import { ProjectScript, StoredProjectIcon } from "./project.ts";
 
-/** Client command origin; absent for provider/server events and clients without origin reporting. */
+/**
+ * Stamped by the orchestration engine on client-dispatched commands; absent on
+ * provider/server-originated events and on commands from clients too old to
+ * report it.
+ */
 export const OrchestrationClientOrigin = Schema.Struct({
   surface: Schema.optional(ClientSurface),
   appVersion: Schema.optional(TrimmedNonEmptyString),

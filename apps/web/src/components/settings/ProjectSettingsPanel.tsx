@@ -84,7 +84,8 @@ export function ProjectSettingsPanel({
     [selected, environmentId, checkoutKey],
   );
 
-  // Remember members so grouping-key changes can follow the same project.
+  // Remember the members of the last rendered group so a grouping-rule change
+  // (which changes the group key) can follow the project to its new group.
   const lastSelectionRef = useRef<{
     key: string;
     environmentId: EnvironmentId | null;
@@ -231,6 +232,8 @@ function ProjectDetail({
     [reportFailure],
   );
 
+  // Group-shared fields live on each physical project record, so a
+  // group-level edit fans out to every member.
   const updateAllMembers = useCallback(
     async (
       input: Partial<{
@@ -265,7 +268,8 @@ function ProjectDetail({
           () => undefined,
         );
         if (result._tag === "Failure") {
-          // Fan-out can partially persist; identify the environment where it stopped.
+          // A partial fan-out is possible: earlier members already took the
+          // write. Name the environment so the user knows where it stopped.
           reportFailure(
             group.memberProjects.length > 1
               ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`

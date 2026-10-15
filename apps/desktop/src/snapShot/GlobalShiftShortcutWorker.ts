@@ -1,5 +1,6 @@
 // @effect-diagnostics globalTimers:off -- A plain Node child; the poll runs outside any Effect fiber.
-// Keep FFI polling in a child so a stuck or crashed native call cannot take down the main process.
+// Runs in a forked Node-mode child so a stuck or crashed FFI call cannot take the main process with
+// it.
 import { SNAP_SHOT_MODIFIERS, type SnapShotModifier } from "@t3tools/contracts";
 
 import { loadWindowsForegroundApi } from "../electron/WindowsForeground.ts";

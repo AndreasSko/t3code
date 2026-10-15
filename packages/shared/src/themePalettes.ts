@@ -2,10 +2,18 @@ export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"]
 
 export const MOBILE_DEFAULT_THEME_ID = "t3-code";
 
-/** Host tooling can validate mobile theme ids without importing React Native. */
+/**
+ * Declared here so host-side tooling (the app-store screenshot harness) can
+ * validate a requested theme without importing React Native application code.
+ */
 export const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
 
-/** Reserved ids would shadow built-ins or capture saved preferences that never selected the theme. */
+/**
+ * Ids a theme may not take: the appearance keywords a stored preference uses,
+ * every built-in, and the legacy aliases older saves still carry. Taking one
+ * would either be shadowed by the built-in or capture clients that never chose
+ * it, so the client library and the publish path both consult this set.
+ */
 export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "system",
   "light",
@@ -18,8 +26,12 @@ export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "t3-iris",
 ]);
 
-/** Saved themes may use the mobile default id, but clients following published themes
- * cannot resolve it, so publishing it would succeed without changing their appearance. */
+/**
+ * Additionally closed to a machine publishing a theme: the mobile default is
+ * not a web or desktop built-in, so a saved theme may legitimately carry that
+ * id, but no client that follows published themes can resolve it -- publishing
+ * it would report success and change nothing.
+ */
 export const UNPUBLISHABLE_THEME_IDS: ReadonlySet<string> = new Set([
   ...RESERVED_THEME_IDS,
   MOBILE_DEFAULT_THEME_ID,
@@ -102,16 +114,15 @@ export type ThemeDefinition = Readonly<{
   appearance: ThemeAppearance;
   colors: ThemeColors;
   variants?: ThemeVariants;
-  /** Groups related imported variants into one library card. */
   collection?: Readonly<{ id: string; label: string }>;
-  /** Allows reviewed built-ins to render product artwork over their sidebar. */
   sidebarArtwork?: boolean;
-  /** Generated from the guided editor's canvas and accent roles. */
   managed?: boolean;
 }>;
 
-/** Flatten stock alpha tokens over their actual backdrops because theme colors are opaque OKLCH.
- * Amber search highlights distinguish matches from accent-tinted inline code. */
+/**
+ * Alpha-bearing tokens are flattened over their real backdrops (canvas, or the
+ * sidebar for its rows) because theme colors are stored as opaque OKLCH tokens.
+ */
 export const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
   searchMatchBackground: "#ffde8b",
   searchMatchForeground: "#21180a",

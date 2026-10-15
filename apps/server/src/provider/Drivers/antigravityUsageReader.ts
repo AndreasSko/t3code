@@ -162,7 +162,6 @@ interface UsageCandidate {
   timestampQuality: number;
 }
 
-/** A conversation database whose usage tables are missing or undecodable. */
 class AntigravityDatabaseDecodeError extends Schema.TaggedError<AntigravityDatabaseDecodeError>()(
   "AntigravityDatabaseDecodeError",
   { path: Schema.String, cause: Schema.optional(Schema.Defect()) },
@@ -173,9 +172,9 @@ class AntigravityDatabaseDecodeError extends Schema.TaggedError<AntigravityDatab
 }
 
 /**
- * Rows per statement. One statement.all() holds the event loop until every row
- * it returns is in memory, and a generation row carries the conversation's
- * whole context so far, often megabytes, so generations are read one at a time.
+ * One statement.all() holds the event loop until every row it returns is in memory, and a
+ * generation row carries the conversation's whole context so far, often megabytes, so generations
+ * are read one at a time.
  */
 const GENERATION_PAGE_ROWS = 1;
 const STEP_PAGE_ROWS = 64;
@@ -201,17 +200,15 @@ const readDatabase = Effect.fn("readDatabase")(function* (
     if (!tables.has("gen_metadata") && !tables.has("steps")) {
       return yield* new AntigravityDatabaseDecodeError({ path });
     }
-    // Runs `query` a page at a time, binding the last rowid read and the page
-    // size. A rowid seek works whatever the table's indexes. Antigravity declares
-    // idx as the INTEGER PRIMARY KEY, so rowid order is idx order; the sort keeps
-    // idx order where rows are stored otherwise.
+    // A rowid seek works whatever the table's indexes. Antigravity declares idx as the INTEGER
+    // PRIMARY KEY, so rowid order is idx order; the sort keeps idx order where rows are stored
+    // otherwise.
     const readMetadata = Effect.fnUntraced(function* (
       query: string,
       pageRows: number,
       step: boolean,
     ) {
       const entries: Array<{ idx: number; entry: Metadata }> = [];
-      // Below every rowid.
       let after = -Infinity;
       while (true) {
         // Untraced: a cold read runs one of these per generation.
@@ -332,11 +329,19 @@ interface CachedDatabase {
   readonly candidates: readonly UsageCandidate[];
 }
 
-/** Fingerprint the database and WAL: rows can land only in the sidecar, and ctime
- * catches content writes even when mtime is restored. */
+/**
+ * Parsed databases keyed by canonical path. An entry is reused only while both
+ * the database and its `-wal` sidecar keep the same size, mtime and ctime: new
+ * rows land in the WAL without touching the main file until a checkpoint, and
+ * ctime moves on any content write even when mtime is restored.
+ */
 export const makeAntigravityUsageCache = () => new Map<string, CachedDatabase>();
 
-/** Merge aliases across configured stores before date filtering; unchanged cached databases skip decoding. */
+/**
+ * Reads and merges aliases across every configured Antigravity store before date
+ * filtering. With a cache, databases unchanged since the previous read are not
+ * decoded again.
+ */
 export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* (
   conversationsDirectories: string | readonly string[],
   sinceMs: number,

@@ -16,7 +16,6 @@ export const environmentProjects = createEnvironmentProjectAtoms({
 export const projectEnvironment = createProjectEnvironmentAtoms(connectionAtomRuntime, {
   projectAtom: environmentProjects.projectAtom,
 });
-/** Content search has no mobile surface, so keep its atom family in web rather than shared client-runtime. */
 export const projectContentSearch = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:projects:search-contents",
   tag: WS_METHODS.projectsSearchContents,

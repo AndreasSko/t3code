@@ -125,8 +125,12 @@ interface NormalizedDesktopUpdateReleaseNotes {
 }
 
 /**
- * fullChangelog includes every semver-greater release, so previews can outrank nightly builds.
- * Filter to the followed channel, matching the updater's offered-version policy.
+ * With `fullChangelog` on (nightly), electron-updater collects every GitHub
+ * release whose version is semver-greater than the running one, whatever
+ * train it belongs to; a maintainers' `-preview.` cut sorts above every
+ * `-nightly.` of the same base version and would lead the list. Only
+ * releases on the channel being followed are kept, the same test the
+ * updater applies to the offered version itself.
  */
 export function normalizeDesktopUpdateReleaseNotes(
   releaseNotes: unknown,

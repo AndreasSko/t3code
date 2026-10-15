@@ -67,7 +67,6 @@ export interface RuntimeSubagent {
   readonly workflowName: string | null;
   readonly phases: ReadonlyArray<SubagentWorkflowPhase>;
   readonly runHandles: SubagentRunHandles | null;
-  /** The thread this agent owns, when it has one. */
   readonly childThreadId: string | null;
   readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;
   /** First retained observation, used as the roster's stable display order. */
@@ -88,7 +87,6 @@ export function isTerminalSubagentStatus(status: RuntimeSubagentStatus): boolean
   return TERMINAL_STATUSES.has(status);
 }
 
-/** Waiting is active because it needs the user; idle is resumable but settled. */
 export function isActiveSubagentStatus(status: RuntimeSubagentStatus): boolean {
   return isOrchestrationV2WorkActive(status);
 }
@@ -107,7 +105,6 @@ export interface SubagentWorkflowGroup {
     readonly state: "pending" | "running" | "done";
     readonly settledCount: number;
   }>;
-  /** Members with no resolvable phase (orphans render under the workflow). */
   readonly unphasedMembers: ReadonlyArray<RuntimeSubagent>;
 }
 
@@ -128,8 +125,12 @@ function isoFromEpochMillis(value: number | undefined): string | null {
   return value === undefined ? null : DateTime.formatIso(DateTime.makeUnsafe(value));
 }
 
-// Coordinator snapshots supply member rows without loading child threads;
-// coordinator id plus spawn ordinal defines their identity.
+/**
+ * Members are synthesized from the coordinator's snapshot rather than read from
+ * their own subagent entities, so a parent thread's Lineage can show them
+ * without loading the coordinator's child thread; their identity is the
+ * coordinator id plus the spawn ordinal.
+ */
 function workflowMembersToRuntime(
   coordinator: RuntimeSubagent,
   workflow: OrchestrationV2SubagentWorkflow,
@@ -159,7 +160,6 @@ function workflowMembersToRuntime(
       title: agent.label,
       model: agent.model ?? null,
       status,
-      // A member the workflow retried counts each attempt as a run.
       activationCount: agent.attempt ?? 1,
       usage: workflowUsage(agent),
       // A member keeps its prompt on `progress` even once settled: that is the
@@ -256,7 +256,9 @@ export function deriveWorkflowGroups(
 
   return workflows.map((workflow) => {
     const workflowMembers = Object.hasOwn(members, workflow.id) ? members[workflow.id]! : [];
-    // Members can precede declared phases; union both and prefer declared titles.
+    // Union, not either/or: the declared plan lags the members, because the
+    // provider only admits a phase once something in it starts. Members seed
+    // the map; the declared titles then overwrite whatever they guessed.
     const phaseTitles = new Map<number, string>();
     for (const member of workflowMembers) {
       if (member.phaseIndex === null) continue;

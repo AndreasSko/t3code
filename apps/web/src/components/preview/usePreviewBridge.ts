@@ -31,7 +31,9 @@ function originOf(url: string): string | null {
   }
 }
 
-/** Mirror desktop state and report navigation; ElectronBrowserHost owns webview lifetime. */
+/**
+ * Webview lifetime is owned by ElectronBrowserHost.
+ */
 export function usePreviewBridge(input: {
   threadRef: ScopedThreadRef;
   tabId: string;
@@ -127,8 +129,10 @@ export function projectDesktopState(state: DesktopPreviewTabState): DesktopPrevi
   };
 }
 
-/** Idle needs no report, repeated kind/URL pairs dedupe, and LoadFailed
- * always reports so the server can emit failure events. */
+/**
+ * - Idle never reports — the tab is post-close or pre-load and the server
+ *   already knows the canonical state from `open` / `closed`.
+ */
 function buildReportInput(args: {
   readonly threadId: ThreadId;
   readonly tabId: string;
@@ -144,7 +148,6 @@ function buildReportInput(args: {
   const status = state.navStatus;
   if (status.kind === "Idle") return null;
 
-  // Surface duplicate failures rather than deduplicating them with loading/success.
   const sameAsLast =
     status.kind !== "LoadFailed" &&
     status.kind === lastReportedKind &&

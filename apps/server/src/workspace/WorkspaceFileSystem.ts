@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/** Reads may address absolute host files; writes must stay within the workspace root. */
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
@@ -107,14 +106,22 @@ export class WorkspaceFileSystem extends Context.Service<
       input: FilesystemGetMetadataInput,
     ) => Effect.Effect<FilesystemGetMetadataResult>;
 
-    /** Accepts workspace-relative paths or absolute host paths. */
+    /**
+     * Read a UTF-8 text file relative to the workspace root, or any host file by
+     * absolute path.
+     */
     readonly readFile: (
       input: ProjectReadFileInput,
     ) => Effect.Effect<
       ProjectReadFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
-    /** Creates parent directories and rejects paths outside the workspace root. */
+    /**
+     * Write a file relative to the workspace root.
+     *
+     * Creates parent directories as needed and rejects paths that escape the
+     * workspace root.
+     */
     readonly writeFile: (
       input: ProjectWriteFileInput,
     ) => Effect.Effect<
@@ -124,7 +131,7 @@ export class WorkspaceFileSystem extends Context.Service<
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
 
-/** @public */
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -139,8 +146,6 @@ export const make = Effect.gen(function* () {
     if (stat.value.type === "Directory") return { kind: "directory" } as const;
     if (stat.value.type !== "File") return { kind: "other" } as const;
     let mimeType: string | undefined;
-    // Named extensions already choose the icon without a content read. For an
-    // extensionless regular file, read at most 512 bytes, never the whole file.
     if (path.extname(expandedPath) === "" && stat.value.size > 0) {
       mimeType = yield* Effect.tryPromise({
         try: async () => {
@@ -176,7 +181,11 @@ export const make = Effect.gen(function* () {
     return { entries: input.paths.map((value) => byPath.get(value) ?? null) };
   });
 
-  /** Relative reads stay within the root, including symlinks; absolute host reads bypass that root check. */
+  /**
+   * Resolves the file a read targets. Workspace-relative paths must stay inside the
+   * root, symlinks included. An absolute path reads a host file in place, such as a
+   * report an agent wrote to a temp directory; it gets no root check.
+   */
   const resolveReadTarget = Effect.fn("WorkspaceFileSystem.resolveReadTarget")(function* (
     input: ProjectReadFileInput,
   ) {

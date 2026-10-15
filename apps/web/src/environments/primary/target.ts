@@ -197,8 +197,10 @@ function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
     return null;
   }
 
-  // URL parsing case-folds schemes; raw checks must do the same or uppercase WSS would downgrade to
-  // plaintext.
+  // Scheme checks run on the raw configured string, while the URL parser
+  // folds schemes to lowercase ("WSS://host" parses fine). Without the
+  // case folding an uppercase scheme would be classified as plaintext and
+  // swapped to http/ws, silently downgrading TLS.
   const resolvedHttpBaseUrl =
     configuredHttpBaseUrl ??
     (configuredWsBaseUrl?.toLowerCase().startsWith("wss:")

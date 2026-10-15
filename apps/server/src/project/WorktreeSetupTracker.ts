@@ -21,11 +21,9 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
-/** Tracks bootstrap progress in memory through completion plus a grace window for late subscribers. */
 export class WorktreeSetupTracker extends Context.Service<
   WorktreeSetupTracker,
   {
-    /** Creates a fresh running snapshot for the thread, replacing any prior one. */
     readonly begin: (input: {
       readonly threadId: ThreadId;
       readonly branch: string | null;
@@ -54,15 +52,21 @@ export class WorktreeSetupTracker extends Context.Service<
       stageId: WorktreeSetupStageId,
       line: string,
     ) => Effect.Effect<void>;
-    /** Returns the settled snapshot, or null when nothing was tracked. */
     readonly finish: (
       threadId: ThreadId,
       phase: "done" | "failed" | "cancelled",
       error?: string | null,
     ) => Effect.Effect<WorktreeSetupSnapshot | null>;
-    /** Call before turn dispatch so late cancellation cannot roll back a thread whose agent has started. */
+    /**
+     * Called right before the turn is dispatched so a late cancel cannot roll
+     * back a thread whose agent has already started.
+     */
     readonly markUncancellable: (threadId: ThreadId) => Effect.Effect<void>;
-    /** Waits for bootstrap rollback; returns false if setup is absent or past cancellation. */
+    /**
+     * Interrupts the running bootstrap and waits for it to unwind, so the
+     * caller's dispatch has already failed and rolled back when this returns.
+     * Returns false when nothing is running or the setup is past cancellation.
+     */
     readonly cancel: (threadId: ThreadId) => Effect.Effect<boolean>;
     readonly get: (threadId: ThreadId) => Effect.Effect<WorktreeSetupSnapshot | null>;
     /** Emits the current snapshot (or null) first, then every change until unsubscribed. */
@@ -302,7 +306,11 @@ export const make = Effect.gen(function* () {
   const get: WorktreeSetupTracker["Service"]["get"] = (threadId) =>
     Ref.get(setups).pipe(Effect.map((current) => current.get(threadId)?.snapshot ?? null));
 
-  /** Whole-state snapshots allow a one-slot sliding mailbox to bound memory for slow clients. */
+  /**
+   * Each subscriber gets a one-slot sliding mailbox: a slow WebSocket only
+   * ever holds the newest snapshot, so a chatty setup script cannot grow the
+   * server heap. Snapshots are whole states, so skipping intermediates is safe.
+   */
   const stream: WorktreeSetupTracker["Service"]["stream"] = (threadId) =>
     Stream.callback<WorktreeSetupSnapshot | null>(
       (mailbox) =>

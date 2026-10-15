@@ -1,4 +1,3 @@
-/** Unknown drivers or invalid configs yield unavailable shadows so downgrades and forks can load settings. */
 import {
   providerInstanceConfigEnabledFlag,
   ProviderInstanceId,
@@ -28,13 +27,31 @@ export class ProviderInstanceRegistry extends Context.Service<
     readonly getInstance: (
       instanceId: ProviderInstanceId,
     ) => Effect.Effect<ProviderInstance | undefined>;
-    /** Available instances in settings-author order. */
+    /**
+     * Every available (driver-registered, successfully created) instance,
+     * in stable settings-author order.
+     */
     readonly listInstances: Effect.Effect<ReadonlyArray<ProviderInstance>>;
-    /** Unavailable shadows for unknown drivers or invalid configs, ready for ProviderRegistry output. */
+    /**
+     * Wire-shape shadow snapshots for instances whose driver is unknown to
+     * this build (or whose config failed to decode). Suitable for merging
+     * directly into `ProviderRegistry` output.
+     */
     readonly listUnavailable: Effect.Effect<ReadonlyArray<ServerProvider>>;
-    /** Use subscribeChanges before forking consumers that must not miss a publish; this stream subscribes lazily. */
+    /**
+     * NOTE: because `Stream.fromPubSub` defers `PubSub.subscribe` until the stream starts
+     * running, forking a consumer via `Stream.runForEach(...).pipe(Effect.forkScoped)` races
+     * the next publish — the forked fiber may not have subscribed yet when the publish lands.
+     * Hot-reload consumers that must not miss a publish should use `subscribeChanges` below
+     * instead, which acquires the subscription synchronously in the caller's fiber before the
+     * consumer loop is forked.
+     */
     readonly streamChanges: Stream.Stream<void>;
-    /** Acquire in the caller's fiber before forking a consumer, avoiding the lazy stream's subscription gap. */
+    /**
+     * Acquire a subscription to the registry's change channel synchronously in the caller's
+     * fiber. Returns a `PubSub.Subscription<void>` whose lifetime is scoped to the provided
+     * `Scope` (the subscription is released when the scope closes).
+     */
     readonly subscribeChanges: Effect.Effect<PubSub.Subscription<void>, never, Scope.Scope>;
   }
 >()("t3/provider/ProviderInstanceRegistry") {}
@@ -51,11 +68,22 @@ interface RegistryState {
   readonly changes: PubSub.PubSub<void>;
 }
 
-/** Opaque config payloads need structural equality to avoid rebuilding unchanged instances. */
+/**
+ * Config payloads are opaque `unknown` at the envelope layer; `Equal.equals` falls back to
+ * structural equality for plain records, which matches how the schema decode output is
+ * constructed.
+ */
 const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
   Equal.equals(a, b);
 
-/** Either disable flag wins so conflicting settings cannot silently re-enable an instance. */
+/**
+ * Resolve an entry's enabled state. An explicit false on either the
+ * envelope or the raw config blob wins (most restrictive) — old settings
+ * files can carry both flags with conflicting values, and a user's disable
+ * must never be silently undone. Otherwise the envelope flag wins, then the
+ * decoded config's flag (which carries the driver schema's default for
+ * built-ins and forks alike), then enabled by default.
+ */
 const resolveEntryEnabled = (entry: ProviderInstanceConfig, typedConfig: unknown): boolean => {
   const rawConfigEnabled = providerInstanceConfigEnabledFlag(entry.config);
   if (entry.enabled === false || rawConfigEnabled === false) {
@@ -116,7 +144,11 @@ const buildEntry = <R>(input: {
 
     const typedConfig = decodeResult.success;
     const childScope = yield* Scope.make();
-    // Parent teardown also closes surviving instances; repeated Scope.close after reconciliation is idempotent.
+    // Attach the child scope to the registry's parent scope: if the
+    // registry scope closes, each surviving instance's child scope is
+    // closed through this finalizer. `reconcile` manually closes the
+    // child scope on remove/replace; subsequent close via the parent's
+    // finalizer is a no-op because `Scope.close` is idempotent.
     yield* Scope.addFinalizer(parentScope, Scope.close(childScope, Exit.void).pipe(Effect.ignore));
 
     const createResult = yield* driver
@@ -173,7 +205,9 @@ const makeReconcile = <R>(input: {
         nextRaw.map(([raw]) => ProviderInstanceId.make(raw)),
       );
 
-      // Close removed or changed instances before building replacements so each id has at most one live scope.
+      // 1. Close scopes for instances that disappeared or whose config
+      //    changed. Do this BEFORE creating replacements so ids map 1-to-1
+      //    to live scopes at all times.
       const removedIds: Array<ProviderInstanceId> = [];
       const replacedIds = new Set<ProviderInstanceId>();
       for (const [instanceId, live] of previousEntries) {
@@ -193,7 +227,6 @@ const makeReconcile = <R>(input: {
         }
       }
 
-      // Preserve settings-author order.
       const builtEntries = new Map<ProviderInstanceId, LiveEntry>();
       const builtUnavailable = new Map<ProviderInstanceId, ServerProvider>();
       let orderChanged = false;
@@ -257,7 +290,10 @@ const makeReconcile = <R>(input: {
     });
 };
 
-/** The caller's scope owns all instances, including those added by later reconciliation. */
+/**
+ * The scope that this effect runs in owns every per-instance child scope created during
+ * `reconcile`. Closing that scope closes every live instance.
+ */
 export const makeProviderInstanceRegistry = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
   readonly configMap: ProviderInstanceConfigMap;
@@ -274,10 +310,14 @@ export const makeProviderInstanceRegistry = <R>(input: {
       input.drivers.map((driver) => [driver.driverKind, driver]),
     );
 
-    // Later reconciliation must attach instances to the registry's scope, not the caller's.
+    // Capture the enclosing scope so per-instance child scopes can be
+    // attached to it at `reconcile` time. Without this, `reconcile`
+    // called later (e.g. from the hydration layer) would attach child
+    // scopes to the *caller's* scope instead of the registry's.
     const parentScope = yield* Scope.Scope;
 
-    // Capture driver dependencies so later reconciliation needs no caller-provided context.
+    // Capture the driver R context at construction time so `reconcile`
+    // can be invoked later without re-providing driver dependencies.
     const driverContext = yield* Effect.context<R>();
 
     const entries = yield* Ref.make<ReadonlyMap<ProviderInstanceId, LiveEntry>>(new Map());
@@ -303,6 +343,8 @@ export const makeProviderInstanceRegistry = <R>(input: {
       listUnavailable: Ref.get(unavailable).pipe(
         Effect.map((map) => Array.from(map.values()) as ReadonlyArray<ServerProvider>),
       ),
+      // Getters: each read constructs a fresh Stream / Effect descriptor so multiple consumers
+      // don't share a single already-started Channel or subscription.
       get streamChanges() {
         return Stream.fromPubSub(changes);
       },

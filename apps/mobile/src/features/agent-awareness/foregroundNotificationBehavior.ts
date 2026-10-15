@@ -17,8 +17,8 @@ const SUPPRESS: NotificationBehavior = {
 };
 
 /**
- * The live feed already shows this thread, so suppress its notification.
- * `deepLinkOnScreen` is its normalized `/threads/:env/:thread` path, or null.
+ * `deepLinkOnScreen` is the normalized `/threads/:env/:thread` path of the
+ * current route, or null when no thread is open.
  */
 export function foregroundNotificationBehavior(
   notification: Notification,

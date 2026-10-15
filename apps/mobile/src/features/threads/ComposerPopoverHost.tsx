@@ -15,8 +15,12 @@ export function useComposerPopoverHost() {
   return useContext(ComposerPopoverHostContext);
 }
 
-/** Mount inside KeyboardStickyView for Android scroll hit-testing; wrap the composer because measureLayout needs an ancestor.
- * Set hidden with the composer because portaled popovers do not inherit its visibility. */
+/**
+ * Mount it inside the composer's KeyboardStickyView: popovers placed here move with the composer
+ * and sit inside a parent that covers them, so Android delivers their scroll gestures. It wraps
+ * the composer because measureLayout needs an ancestor. Pass `hidden` whenever the composer itself
+ * is hidden: popovers live outside the composer's subtree, so they don't hide with it.
+ */
 export function ComposerPopoverHost(props: {
   readonly hidden: boolean;
   readonly children: ReactNode;

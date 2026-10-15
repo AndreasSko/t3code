@@ -28,9 +28,7 @@ import { writeFileAtomically } from "./atomic-file";
 export interface DraftComposerImageAttachment extends Omit<UploadChatImageAttachment, "dataUrl"> {
   readonly id: string;
   readonly previewUri: string;
-  /** App-owned image file bytes. */
   readonly fileUri?: string;
-  /** Inline image bytes. */
   readonly dataUrl?: string;
   readonly uploadedAttachmentId?: string;
   readonly uploadEnvironmentId?: EnvironmentId;
@@ -79,8 +77,13 @@ export async function createPastedTextComposerAttachment(input: {
 
 export type DraftComposerAttachment = DraftComposerImageAttachment | DraftComposerFileAttachment;
 
-/** Media needs thumbnails; non-media must keep its inline chip.
- * Chipless surfaces must pass attachments directly to the strip instead of through this filter. */
+/**
+ * The chip is not optional for a non-media file. Every path that attaches one also writes
+ * its reference, so a file with no chip means the draft lost it rather than that the strip
+ * should stand in. Which attachments carry a chip is therefore not consulted at all; surfaces
+ * whose attachments never get chips (a question answer) pass them to the strip directly
+ * instead of through this filter.
+ */
 export function composerStripAttachments(
   attachments: ReadonlyArray<DraftComposerAttachment>,
 ): ReadonlyArray<DraftComposerAttachment> {
@@ -89,7 +92,10 @@ export function composerStripAttachments(
   );
 }
 
-/** The document picker labels images as files, so detect their media type from the attachment. */
+/**
+ * The document picker types every pick as a plain file, so the answer comes from the
+ * attachment itself rather than from which picker made it.
+ */
 export function isComposerImageAttachment(
   attachment: DraftComposerAttachment,
 ): attachment is DraftComposerImageAttachment {
@@ -104,7 +110,12 @@ export function isFileBackedComposerAttachment(
   return attachment.fileUri !== undefined;
 }
 
-/** Inline draft ids are local, so preview their bytes instead of falling back to a remote asset URL. */
+/**
+ * A picture taken from the photo library or the clipboard owns no file and carries its bytes
+ * inline, and its `attachmentId` is a local draft id the server has never seen — so falling
+ * back to a remote asset for one only ever fails. Returns undefined when the attachment
+ * really is remote-only.
+ */
 export function composerAttachmentInlineUri(
   attachment: DraftComposerAttachment | undefined,
 ): string | undefined {
@@ -175,7 +186,8 @@ export async function persistComposerAttachmentFile(
   try {
     await source.copy(destination);
   } catch (error) {
-    // Failed copies leave partial destinations with no returned URI for later cleanup.
+    // A failed copy can leave a partial destination file behind with no URI
+    // returned to release it later; delete it before surfacing the failure.
     try {
       if (destination.exists) {
         destination.delete();
@@ -185,7 +197,9 @@ export async function persistComposerAttachmentFile(
     }
     throw error;
   }
-  // Android content streams may exceed their reported size; enforce the cap on the persisted copy.
+  // An Android content: stream can deliver more bytes than the size it
+  // reported before the copy. Validate the persisted copy so an oversized
+  // file is never retained under a stale recorded size.
   const copiedSize = destination.size;
   if (maxBytes !== undefined && copiedSize !== null && copiedSize > maxBytes) {
     try {
@@ -269,7 +283,8 @@ export async function pickComposerFiles(input: {
   const endHandoff = beginForegroundHandoff();
   let result: DocumentPickerResult;
   try {
-    // File providers may expose unreadable source URIs; import a cache copy first.
+    // File providers may expose a URI that FileSystem cannot read directly.
+    // Import a readable cache copy before persisting the draft's owned file.
     result = await getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
   } catch (cause) {
     return {
@@ -294,7 +309,9 @@ export async function pickComposerFiles(input: {
       exceededAttachmentLimit = true;
       break;
     }
-    // SAF pickers may return blank names, which the send contract rejects.
+    // A SAF/document picker can hand back a blank display name; the wire
+    // contract rejects empty names at send time, so fall back before the name
+    // reaches storage, errors, or the attachment itself.
     const name = file.name.trim().length > 0 ? file.name : "file";
     try {
       attachments.push(
@@ -378,8 +395,9 @@ export async function pickComposerMedia(input: {
       mediaTypes: input.maxVideoBytes === undefined ? ["images"] : ["images", "videos"],
       allowsMultipleSelection: true,
       selectionLimit: remainingSlots,
-      // Requesting base64 makes iOS convert full-size photos and bridge 10 MB+ strings,
-      // stalling the composer for seconds before we can bound them.
+      // Bytes stay in the picker's file until we know how much of them we need. Asking for
+      // base64 here made iOS decode and re-encode every camera photo at full resolution and
+      // hand JS a 10 MB+ string, which stalled the composer for seconds.
       base64: false,
       quality: 1,
       shouldDownloadFromNetwork: true,
@@ -438,7 +456,9 @@ export async function pickComposerMedia(input: {
     }
 
     const name = asset.fileName?.trim() || "image";
-    // Android streams can exceed picker-reported sizes; only the file size can bound bytes loaded into JS.
+    // The picker's reported size is a hint, not a measurement: Android content streams can
+    // deliver more bytes than they advertise. Only a size read from the file itself decides
+    // whether the original bytes are safe to load into JS.
     let sourceBytes: number | null = null;
     try {
       const { File } = await import("expo-file-system");
@@ -446,7 +466,9 @@ export async function pickComposerMedia(input: {
     } catch {
       sourceBytes = null;
     }
-    // Preserve supported originals for transparency and animation; bound all other images with native JPEG conversion.
+    // Originals the provider can read and that fit the cap pass through byte for byte so
+    // transparency and animation survive. Everything else (HEIC/HEIF, oversized JPEGs,
+    // unmeasurable sources) is rendered to a bounded JPEG off the JS thread.
     const originalMimeType =
       mimeType !== undefined &&
       isProviderSendTurnSupportedImageMimeType(mimeType) &&

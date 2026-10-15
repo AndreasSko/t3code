@@ -372,7 +372,9 @@ function ReviewFileNavigator({
       contentContainerStyle={{
         paddingHorizontal: 8,
         paddingBottom: 8,
-        // The translucent native header needs content underneath for its scroll-edge effect.
+        // The nested native header is translucent; start the list below it so
+        // the scroll-edge effect can sample the content (same treatment as
+        // FileTreeBrowser in the Files pane).
         paddingTop: Platform.OS === "ios" ? insets.top + IOS_NAV_BAR_HEIGHT + 8 : 8,
       }}
       scrollIndicatorInsets={
@@ -504,8 +506,10 @@ export function ReviewSheet(props: ReviewSheetProps) {
     revision: diffPreviewRevision,
     draftMessage,
   });
-  // Expo may not have registered this view, or the binary may lack it entirely.
-  // Rendering a null component type crashes, so use the raw fallback.
+  // Resolution returns null while Expo registers the native view (or forever
+  // when the binary lacks it). Rendering a null component type crashes the
+  // app, so callers must fall back — ThreadFeed's ReviewCommentCard does the
+  // same check.
   const NativeReviewDiffView = resolveNativeReviewDiffView();
   const nativeReviewDiffViewRef = useRef<NativeReviewDiffViewHandle>(null);
   const showcasedReviewDrawRef = useRef<string | null>(null);
@@ -597,8 +601,6 @@ export function ReviewSheet(props: ReviewSheetProps) {
       <ReviewFileNavigator
         ref={reviewFileNavigatorRef}
         files={nativeReviewDiffData.files}
-        // The workspace inspector column spans the full window height, so the
-        // pane clears the status bar itself.
         headerInset={insets.top}
         sectionId={selectedSection?.id ?? null}
         onSelectFile={handleSelectFile}
@@ -660,8 +662,11 @@ export function ReviewSheet(props: ReviewSheetProps) {
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
-  // The file navigator calls the native surface's scrollToFile; raw fallback
-  // cannot respond to those controls.
+  // The changed-files navigator drives the native diff surface via
+  // scrollToFile, so it is only useful when that surface resolved. In raw
+  // fallback mode the ref is necessarily null and the raw patch neither
+  // scrolls nor filters — registering the navigator would present working
+  // controls that cannot navigate.
   const showChangedFilesPane =
     !showConnectionNotice &&
     selectedSection !== null &&
@@ -807,7 +812,10 @@ export function ReviewSheet(props: ReviewSheetProps) {
               showsVerticalScrollIndicator={false}
               className="flex-1"
               refreshControl={
-                // Raw/empty fallbacks need their own refresh control; iOS has no refresh menu.
+                // The native diff surface owns pull-to-refresh via onPullToRefresh;
+                // the raw fallback (and empty states) need an explicit control —
+                // iOS has no other refresh affordance here (the explicit
+                // "Refresh current diff" menu is Android-only).
                 <RefreshControl
                   refreshing={isPullRefreshing || isSelectedSectionPending || areFilePatchesPending}
                   onRefresh={() => void handlePullToRefresh()}

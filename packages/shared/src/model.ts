@@ -361,8 +361,10 @@ export interface CustomModelDefinition {
 const decodeCustomModelCapabilities = Schema.decodeUnknownOption(ModelCapabilities);
 
 /**
- * Accept stored custom models and opaque provider config; malformed capabilities become null.
- * Trim and deduplicate slugs with first occurrence winning; names default to the slug.
+ * Read a `customModels` setting into resolved definitions. Accepts the typed
+ * union as well as the opaque `providerInstances[id].config` blob clients see,
+ * so it tolerates bare slugs, malformed rows, and unparseable capabilities
+ * (dropped rather than failing the whole list).
  */
 export function readCustomModelEntries(value: unknown): CustomModelDefinition[] {
   if (!Array.isArray(value)) return [];
@@ -396,7 +398,6 @@ export function readCustomModelEntries(value: unknown): CustomModelDefinition[] 
   return entries;
 }
 
-/** Store uncustomized models as bare slugs; other entries contain only customized fields. */
 export function toCustomModelSetting(entry: CustomModelDefinition): CustomModelSetting {
   const descriptors = entry.capabilities?.optionDescriptors ?? [];
   const name = entry.name !== entry.slug ? entry.name : undefined;
@@ -475,7 +476,11 @@ export function createModelSelection(
   return selections.length > 0 ? { ...base, options: selections } : base;
 }
 
-/** Accept effort values listed in any select descriptor's promptInjectedValues. */
+/**
+ * Unlike a single `find`, this checks every descriptor so that the
+ * correct descriptor's `promptInjectedValues` list is consulted even when
+ * multiple select descriptors exist.
+ */
 export function resolvePromptInjectedEffort(
   caps: ModelCapabilities,
   rawEffort: string | null | undefined,

@@ -32,7 +32,6 @@ import type { PendingReviewComment } from "./pullRequestReviewStore";
 const CARD_CLASS =
   "mx-3 my-2 rounded-xl border border-border/70 bg-background p-3 text-sm shadow-sm";
 
-/** Sends a reply on ⌘/Ctrl+Enter and abandons it on Escape. */
 function submitKeys(input: {
   readonly value: string;
   readonly pending: boolean;
@@ -137,7 +136,6 @@ export function ReviewThreadCard({
   onReply: (body: string) => Promise<boolean>;
   onLoadMore: (cursor: string) => Promise<PullRequestThreadCommentsResult | null>;
   canEditComment: (comment: PullRequestThreadComment) => boolean;
-  /** Resolves to whether the host took it, like `onReply`. */
   onEditComment: (commentId: string, body: string) => Promise<boolean>;
   onToggleResolved: () => void;
   onReacted: () => void;
@@ -180,10 +178,10 @@ export function ReviewThreadCard({
     const trimmed = reply.trim();
     if (trimmed.length === 0 || pending || sendingRef.current) return;
     sendingRef.current = true;
-    // Clear replies only after host confirmation so failures preserve user text.
     try {
       if (await onReply(trimmed)) {
-        // Reply mutations return no comment; reopen the loaded cursor so the reply remains reachable.
+        // The mutation returns no comment. Keep what the reader loaded and reopen its cursor so
+        // the new reply remains reachable without spending requests until they ask to load it.
         setLoadedPage((previous) =>
           previous?.threadId === thread.id
             ? {

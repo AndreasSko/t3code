@@ -1,6 +1,7 @@
 /**
- * GitHub alerts are not GFM, so remark-gfm leaves their markers as literal text.
- * A marker must occupy its own line; > [!NOTE] aside remains an ordinary quote.
+ * GitHub's blockquote alerts: a quote whose first line is `[!NOTE]` — or TIP, IMPORTANT,
+ * WARNING, CAUTION — renders as a titled callout. They are GitHub's own extension rather than
+ * GFM, so remark-gfm leaves the marker as literal text in the quote.
  */
 
 interface MarkdownAstNode {
@@ -25,8 +26,9 @@ function readGithubAlert(node: MarkdownAstNode): void {
   if (!match?.[1]) return;
 
   const remainder = text.value.slice(match[0].length);
-  // An empty remainder can precede either next-line inline siblings or same-line content;
-  // only a newline in this text node distinguishes those cases.
+  // Whether the marker's own line ended inside this text node. Without it, an empty remainder
+  // is ambiguous: `[!NOTE]\n**bold**` parses as [text "[!NOTE]\n", strong] — next-line content
+  // in a sibling — while `[!NOTE]*aside*` parses the same way minus the newline.
   const markerEndsItsLine = match[0].endsWith("\n");
   if (remainder.length > 0) {
     text.value = remainder;
@@ -36,8 +38,6 @@ function readGithubAlert(node: MarkdownAstNode): void {
       node.children?.shift();
     }
   } else {
-    // Something else shares the marker's line — `[!NOTE]*aside*` — which GitHub does not
-    // read as an alert.
     return;
   }
 

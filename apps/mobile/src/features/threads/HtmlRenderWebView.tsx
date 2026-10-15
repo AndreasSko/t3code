@@ -50,7 +50,6 @@ function postTheme(view: WebView<object> | null, theme: HtmlRenderTheme) {
 
 const OVERFLOW_MESSAGE_TYPE = "t3-html-render-overflow";
 
-// Only overflowing pages should claim feed scroll gestures.
 const OVERFLOW_SCRIPT = `(function(){var last;function report(){var d=document.documentElement,b=document.body;var x=Math.max(d.scrollWidth,b?b.scrollWidth:0)>window.innerWidth+1,y=Math.max(d.scrollHeight,b?b.scrollHeight:0)>window.innerHeight+1,o=x+","+y;if(o===last)return;last=o;window.ReactNativeWebView.postMessage(JSON.stringify({type:${JSON.stringify(OVERFLOW_MESSAGE_TYPE)},x:x,y:y}));}report();if(window.ResizeObserver){var r=new ResizeObserver(report);r.observe(document.documentElement);if(document.body)r.observe(document.body);}window.addEventListener("resize",report);})();true;`;
 
 type Overflow = { readonly x: boolean; readonly y: boolean };
@@ -139,11 +138,14 @@ export function HtmlRenderWebView(props: {
         showsVerticalScrollIndicator={!props.nested}
         showsHorizontalScrollIndicator={!props.nested}
         scrollEnabled={scrollable}
-        // patches/react-native-webview hands Android vertical drags to the feed at an edge.
-        // Sideways-only pages do not claim vertical drags.
+        // Android only: the page holds vertical drags until it reaches an edge,
+        // then hands them to the feed (patches/react-native-webview). A page
+        // that only overflows sideways leaves vertical drags to the feed.
         nestedScrollEnabled={props.nested && overflow.y}
         overScrollMode={props.nested ? "never" : "always"}
-        // Only tap-triggered new-window links may leave the page; top-frame navigation is blocked.
+        // Only the page itself loads here; other top-frame navigations are
+        // dropped. A link the reader taps opens as a new window, which the
+        // platform allows only from a tap, and goes to the browser.
         onShouldStartLoadWithRequest={(request) =>
           request.isTopFrame === false ||
           withoutFragment(request.url) === withoutFragment(props.uri)
@@ -208,7 +210,8 @@ export function ThreadHtmlRender(props: {
   const [uri, setUri] = useState<string | null>(null);
   if (uri === null && asset._tag === "Success") setUri(asset.url);
   const [failed, setFailed] = useState(false);
-  // Retry once even on the same URL: the connection may have caused the failure.
+  // A failed load retries once with a fresh URL, or remounts on the same one,
+  // since the failure may have been the connection rather than the URL.
   const [attempt, setAttempt] = useState(0);
   const retried = useRef(false);
   const handleLoadError = () => {

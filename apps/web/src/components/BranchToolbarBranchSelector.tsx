@@ -247,8 +247,10 @@ export function BranchToolbarBranchSelector({
   );
   const trimmedBranchQuery = branchQuery.trim();
   const deferredTrimmedBranchQuery = deferredBranchQuery.trim();
-  // Query the sanitized name: substring filtering would hide "new-branch" for "new branch".
-  // Spaces are invalid ref characters, so sanitizing loses no matches.
+  // The server filters refs by substring, so it has to be given the sanitized
+  // name as well: querying the raw "new branch" drops an existing new-branch
+  // from the response entirely, which would defeat the collision check below.
+  // Ref names cannot contain an ASCII space, so sanitizing loses no matches.
   const branchRefQuery = sanitizeNewRefName(deferredTrimmedBranchQuery);
   const branchRefState = usePaginatedBranches({
     environmentId,
@@ -288,7 +290,9 @@ export function BranchToolbarBranchSelector({
       : null;
   const canCreateBranch =
     canChangeThreadBranch && !isSelectingWorktreeBase && trimmedBranchQuery.length > 0;
-  // Creation and collision checks must use the same sanitized ref name.
+  // The ref is created under its sanitized name, so the collision check has to
+  // use that name too. Matching on the raw query would offer to create a ref
+  // that already exists whenever sanitizing changes the name.
   const newRefName = sanitizeNewRefName(trimmedBranchQuery);
   const hasExactBranchMatch = branchByName.has(newRefName);
   const createBranchItemValue = canCreateBranch
@@ -404,7 +408,6 @@ export function BranchToolbarBranchSelector({
       !readEnvironmentScope(environmentId, AuthSourceControlWriteScope) ||
       (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
     ) {
-      // The menu already closed when the item was chosen; explain the no-op.
       toastManager.add(
         stackedThreadToast({
           type: "error",

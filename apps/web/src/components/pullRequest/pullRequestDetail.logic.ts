@@ -119,7 +119,6 @@ export function pullRequestCheckoutCommand(
     .checkoutCommand({ number, headBranch, headRepositoryNameWithOwner, repositoryUrl });
 }
 
-/** Build a checkout command from identity metadata while the detail request is still pending. */
 export function loadingPullRequestCheckoutCommand(
   reference: PullRequestRef,
   identity: RepositoryIdentity | null | undefined,
@@ -174,8 +173,14 @@ export function editPullRequestThreadComment<
 
 type LegacyLinkedPullRequest = Pick<ThreadLinkedPullRequest, "repository" | "number">;
 
-/** Use all thread links before legacy fallback so linked stack layers cannot
- * offer duplicate checkouts; match project too because repositories can have multiple checkouts. */
+/**
+ * Decided from the thread's full link list, never from the single legacy `linkedPullRequest`:
+ * that field is one server-chosen link out of many, and a thread's own second link or lower
+ * stack layer would otherwise be handed a checkout button for a branch it already works on.
+ * Repository and number are not enough either way: one environment can hold two checkouts of
+ * the same repository under different projects, and the other project's checkout is somebody
+ * else's branch.
+ */
 export function pullRequestPanelContext(
   thread: {
     readonly projectId: string | null;
@@ -314,7 +319,6 @@ export function isPullRequestConflicting(
   return detail?.state === "open" && detail.mergeability === "conflicting";
 }
 
-/** Failures outrank running checks because they already need action. */
 export type PullRequestChecksState = "none" | "pending" | "failing" | "passing";
 
 export function classifyPullRequestChecks(
@@ -330,7 +334,6 @@ export function classifyPullRequestChecks(
   return "passing";
 }
 
-/** Show both failure and progress counts when a run has both. */
 export function describePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
   if (checks.length === 0) return "No checks reported";
   const failed = checks.filter(
@@ -363,7 +366,6 @@ export function groupPullRequestChecks(checks: ReadonlyArray<PullRequestCheck>) 
 
 export type ThreadPanelPullRequestAction = "resolve" | "ready" | "fix" | "merge";
 
-/** Choose the next merge blocker; offer no action while checks are running. */
 export function resolveThreadPanelPullRequestAction(
   detail: (PullRequestActionableDetail & Pick<PullRequestDetail, "checks">) | null,
 ): ThreadPanelPullRequestAction | null {
@@ -390,7 +392,11 @@ export function orderPullRequestComments<T extends { readonly createdAt: string 
 
 export type PullRequestReviewOutcome = "approved" | "changes-requested" | "dismissed";
 
-/** Hosts vary verdict casing and separators; unknown or comment-only states are not verdicts. */
+/**
+ * Hosts spell the same three differently — GitHub reports `CHANGES_REQUESTED`, Bitbucket
+ * `changes_requested` — so case and separator are ignored, and anything else (GitHub's
+ * `COMMENTED`, a state no host here reports yet) is not a verdict.
+ */
 export function pullRequestReviewOutcome(
   reviewState: string | null,
 ): PullRequestReviewOutcome | null {
@@ -406,13 +412,14 @@ export function pullRequestReviewOutcome(
   }
 }
 
-/** ISO timestamps can retain offsets, so strings do not sort by instant.
- * NaN means the caller cannot establish ordering. */
+/**
+ * Every host returns ISO-8601 but not all of them in UTC, and `2026-07-05T01:00:00+02:00` sorts
+ * after `2026-07-05T00:30:00Z` as text while falling an hour and a half before it in time.
+ */
 function instant(iso: string): number {
   return Date.parse(iso);
 }
 
-/** Null means no reported commit timestamp can establish verdict freshness. */
 export function newestPullRequestCommitAt(
   commits: ReadonlyArray<PullRequestCommit>,
 ): string | null {
@@ -427,8 +434,14 @@ export function newestPullRequestCommitAt(
   return newest;
 }
 
-/** Commit dates only approximate push order: old-commit pushes and rebases
- * need host review-to-commit links for exact verdict freshness. */
+/**
+ * Measured against commit dates, which is the only thing the detail carries. That is a proxy and
+ * not the question: a commit date says when the work was written, not when it reached this change
+ * request, so pushing a branch of older commits after an approval leaves the approval reading as
+ * current, and a rebase re-dates commits a verdict already covered. Answering it exactly needs
+ * the host's own review-to-commit link — GitHub hangs a commit off every review — which no
+ * adapter reads yet.
+ */
 export function isPullRequestVerdictStale(at: string, newestCommitAt: string | null): boolean {
   if (newestCommitAt === null) return false;
   const verdictAt = instant(at);
@@ -437,7 +450,11 @@ export function isPullRequestVerdictStale(at: string, newestCommitAt: string | n
 }
 
 export interface PullRequestReviewOutcomeEntry {
-  /** Authorless reviews use their own id so deleted accounts cannot collapse into one reviewer. */
+  /**
+   * A login where the host reported one, and otherwise the review's own id — so a surface listing
+   * these has a key that separates the same two authorless verdicts this does, rather than
+   * collapsing them back into one row.
+   */
   readonly key: string;
   readonly actor: PullRequestActor | null;
   readonly outcome: PullRequestReviewOutcome;
@@ -445,10 +462,14 @@ export interface PullRequestReviewOutcomeEntry {
   readonly stale: boolean;
 }
 
-/** Keep each reviewer's latest verdict; dismissals remove it rather than appear as verdicts. */
+/**
+ * One entry per person and only their last word: a host keeps every review somebody ever
+ * submitted, and an approval later followed by a request for changes is not an approval any
+ * more. A dismissal is a verdict taken back, so it leaves nothing to show rather than showing
+ * itself.
+ */
 export function latestPullRequestReviewOutcomes(
   comments: ReadonlyArray<PullRequestComment>,
-  /** Left empty by a caller with no commits to hand, which makes no verdict stale. */
   commits: ReadonlyArray<PullRequestCommit> = [],
 ): ReadonlyArray<PullRequestReviewOutcomeEntry> {
   const newestCommitAt = newestPullRequestCommitAt(commits);
@@ -456,7 +477,8 @@ export function latestPullRequestReviewOutcomes(
   for (const comment of comments) {
     const outcome = pullRequestReviewOutcome(comment.reviewState);
     if (outcome === null) continue;
-    // Deleted accounts need separate review ids to avoid overwriting and undercounting verdicts.
+    // Two deleted accounts are two reviewers. Keying both as "ghost" would let one overwrite the
+    // other and undercount the verdicts, so a review with no author identity stands alone.
     const login = comment.author?.login ?? `ghost:${comment.id}`;
     const current = latest.get(login);
     // Not every host returns its reviews in order, so the newest wins rather than the last read.
@@ -478,9 +500,8 @@ export interface PullRequestTimelineEvent {
   readonly kind: "opened" | "commit" | "comment" | "review" | "merged" | "closed";
   readonly title: string;
   readonly body: string | null;
-  /** Whether `body` is markdown. A commit headline is plain text and must not be parsed as one. */
+  /** A commit headline is plain text and must not be parsed as one. */
   readonly markdown: boolean;
-  /** Where the entry can be read on the host. Null for events the host gives no page of its own. */
   readonly url: string | null;
   readonly actor: PullRequestActor | null;
   /** Every author attributed by the host, with the first used for the timeline marker. */
@@ -496,8 +517,6 @@ export type PullRequestTimelineRow =
   | { readonly kind: "event"; readonly event: PullRequestTimelineEvent }
   | { readonly kind: "comments"; readonly events: ReadonlyArray<PullRequestTimelineEvent> };
 
-/** Commits, lifecycle events, and verdicts split conversation sections so
- * collapsed comments cannot hide work or approval state. */
 export function groupPullRequestTimelineConversations(
   events: ReadonlyArray<PullRequestTimelineEvent>,
 ): ReadonlyArray<PullRequestTimelineRow> {
@@ -520,13 +539,20 @@ export function groupPullRequestTimelineConversations(
   return rows;
 }
 
-/** Marker-only bot bodies render empty; strip comments only to decide
- * visibility, then preserve authored content including comments in code fences. */
+/**
+ * Review bots keep their bookkeeping in HTML comments, which the markdown renderer drops. A body
+ * that is nothing but a marker therefore renders as an empty block, so it is treated as no body
+ * at all. The stripped text decides that and nothing else: the body itself is passed on whole,
+ * because a comment demonstrating an HTML comment inside a code fence still has to show it.
+ */
 export function visibleBody(body: string): string | null {
   return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
 }
 
-/** GitHub merges set both closed and merged timestamps; merged must take precedence. */
+/**
+ * Merged wins over closed: GitHub sets both timestamps on a merge, and reporting "closed" for a
+ * merged pull request would misstate what happened.
+ */
 export function buildPullRequestTimeline(
   detail: Pick<
     PullRequestDetailView,
@@ -639,8 +665,6 @@ function boundedField(value: string): string {
   return bounded(value.replace(/\s+/gu, " "));
 }
 
-/** Review-thread chips name diff lines without code because the checkout
- * has not fetched that diff; readers can open the source themselves. */
 function reviewThreadContext(
   thread: PullRequestReviewThread,
   pullRequestNumber: number,
@@ -671,7 +695,6 @@ function reviewThreadContext(
   };
 }
 
-/** Share handoff context and quoted-content boundaries across whole reviews and individual findings. */
 function handoffPreamble(input: {
   readonly number: number;
   readonly title: string;
@@ -692,10 +715,8 @@ export interface FixFindingsHandoff {
   readonly reviewComments: ReadonlyArray<ReviewCommentContext>;
 }
 
-/** PR-owned prefixes distinguish handoff chips from user-authored annotations. */
 const HANDOFF_COMMENT_ID_PREFIX = "pull-request-";
 
-/** Removes references owned by the previous PR handoff before its prose is replaced. */
 export function stripPullRequestHandoffReferences(
   prompt: string,
   comments: ReadonlyArray<ReviewCommentContext>,
@@ -709,12 +730,14 @@ export function stripPullRequestHandoffReferences(
   return next;
 }
 
-/** Replace only text matching the last handoff contribution; preserve user
- * edits and append incoming tasks below them. Empty asks leave user text alone. */
 export function handoffPrompt(
   existing: {
     readonly prompt: string;
-    /** Track only the handoff contribution, never the merged draft that may contain user text. */
+    /**
+     * What the last hand-off into this draft wrote — its own contribution alone, never the
+     * merged prompt it landed in, or a draft that held the reader's text before the first
+     * hand-off would read as all hand-off and be replaced wholesale by the second.
+     */
     readonly lastHandoffPrompt: string | undefined;
   },
   incoming: string,
@@ -733,7 +756,6 @@ export function handoffPrompt(
   return incoming.length === 0 ? kept : `${kept}\n\n${incoming}`;
 }
 
-/** Replace previous PR handoff chips while preserving user attachments. */
 export function handoffReviewComments(
   existing: ReadonlyArray<ReviewCommentContext>,
   incoming: ReadonlyArray<ReviewCommentContext>,
@@ -745,9 +767,8 @@ export function handoffReviewComments(
 }
 
 /**
- * The task for handing a pull request's review findings to a fresh thread. Everything derived
- * from the pull request is explicitly marked untrusted: review bodies and check output are
- * attacker-controlled on public repositories.
+ * Everything derived from the pull request is explicitly marked untrusted: review bodies
+ * and check output are attacker-controlled on public repositories.
  */
 export function buildFixFindingsHandoff(input: {
   readonly number: number;
@@ -764,8 +785,14 @@ export function buildFixFindingsHandoff(input: {
     (thread) =>
       !thread.isResolved && thread.comments.some((comment) => comment.body.trim().length > 0),
   );
-  // Unattached remarks still need prompt text; exclude every threaded comment
-  // so resolved findings cannot be quoted again as unfinished work.
+  // Not every finding can be a chip. A review submitted with words and no inline comment has no
+  // line to hang on, and a host that reports no threads at all — Azure DevOps has no diff to pin
+  // one to — has only these. They travel as text, the way a failing check does, rather than
+  // being dropped for lacking somewhere to point.
+  // Every thread's comments, not only the unresolved ones the sweep is about to include: the
+  // flat conversation carries resolved threads too, and a comment that is already on a line is
+  // not a remark with nowhere to hang — quoting a settled finding is how a fixed thing gets
+  // fixed twice.
   const attached = new Set(
     input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
   );
@@ -786,7 +813,6 @@ export function buildFixFindingsHandoff(input: {
     .map((check) =>
       boundedField(check.description ? `${check.name} — ${check.description}` : check.name),
     );
-  // Share the findings bound across current checks and recent review remarks.
   const includedChecks = failingChecks.slice(-FINDING_LIMIT);
   const includedRemarks = unattachable.slice(
     Math.max(0, unattachable.length - (FINDING_LIMIT - includedChecks.length)),
@@ -856,8 +882,11 @@ export function pullRequestFindingKey(finding: PullRequestFinding): string {
   }
 }
 
-/** Explicit single-finding requests include resolved threads or passing
- * checks that a whole-review sweep would skip. */
+/**
+ * Deliberately unfiltered where the whole review is not: pressing this on a resolved thread
+ * or a passing check is an explicit request for that one thing, not a sweep that should skip
+ * finished work.
+ */
 export function buildFixFindingHandoff(input: {
   readonly number: number;
   readonly title: string;
@@ -914,7 +943,6 @@ export function buildResolveConflictsPrompt(input: {
   ].join("\n");
 }
 
-/** Keep PR preamble in a removable chip so it cannot crowd the user's writing field. */
 function pullRequestContextComment(
   input: {
     readonly number: number;
@@ -954,7 +982,11 @@ function pullRequestContextComment(
   };
 }
 
-/** User-inserted PR references stay outside handoff-owned prefixes so later handoffs cannot delete them. */
+/**
+ * It is the reader's own chip, so it sits outside the `pull-request-` namespace a
+ * hand-off owns and sweeps: a later hand-off must not delete a reference the reader put
+ * there themselves.
+ */
 export function buildPullRequestReferenceContext(
   input: PullRequestContextMetadata,
 ): ReviewCommentContext {
@@ -966,7 +998,6 @@ const ANSWER_INSTRUCTIONS = [
   "Answer the question asked in this message. Do not change any code, and do not check anything out unless asked to.",
 ];
 
-/** Leave the composer empty for the user's question; context belongs in the chip. */
 export function buildAskAboutPullRequestHandoff(input: {
   readonly number: number;
   readonly title: string;
@@ -982,7 +1013,6 @@ export function buildAskAboutPullRequestHandoff(input: {
   };
 }
 
-/** Keep the walkthrough request in the composer and detailed instructions in the chip. */
 export function buildExplainPullRequestHandoff(input: {
   readonly number: number;
   readonly title: string;
@@ -1020,7 +1050,6 @@ export function buildAddSelectionToAgentHandoff(input: {
   };
 }
 
-/** Carry stop context in a chip and prefill only the requested question. */
 export function buildAskAboutGuideStopHandoff(input: {
   readonly number: number;
   readonly title: string;
@@ -1086,20 +1115,16 @@ export function isPullRequestNotFound(failure: unknown): boolean {
   return isPullRequestOperationError(failure) && failure.reason === "not-found";
 }
 
-/** Strip internal operation/tool prefixes from user-visible failures. */
 const OPERATION_PREFIX = /^Pull request operation \w+ failed:\s*/iu;
 
-/** Replace only tool-exit noise; preserve useful host explanations. */
 const TOOL_NOISE = [
   /^(github|gitlab|bitbucket|azure devops)?\s*(cli|api)?\s*(command\s*)?failed\.?$/iu,
   /^exited? with (code|status) \d+\.?$/iu,
   /^unknown error\.?$/iu,
 ];
 
-/** Cap host failure details at 320 characters so toasts remain readable. */
 const FAILURE_DETAIL_MAX_LENGTH = 320;
 
-/** Prefer host reasons; use the supplied recovery hint only when no useful reason was returned. */
 export function readableFailure(failure: unknown, hint: string): string {
   const raw =
     failure instanceof Error ? failure.message : typeof failure === "string" ? failure : "";
@@ -1112,8 +1137,6 @@ export function readableFailure(failure: unknown, hint: string): string {
   return bounded;
 }
 
-/** Offer updates only for open, behind, explicitly mergeable branches;
- * unknown host state must not claim freshness or clean mergeability. */
 export function resolveBaseFreshness(detail: {
   readonly state: PullRequestState;
   readonly mergeability: PullRequestMergeability;
@@ -1140,8 +1163,10 @@ export function resolveBaseFreshness(detail: {
   };
 }
 
-/** Branch updates invalidate diff heads; workflow approvals change omitted
- * GitHub data. Record every action so new ones must choose refresh behavior. */
+/**
+ * Updating a branch moves the diff's head. Approving workflows changes data GitHub omits from the
+ * normal pull-request detail.
+ */
 const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   "update-branch": true,
   merge: false,
@@ -1187,7 +1212,6 @@ const pullRequestDetailSnapshotKey = (
 
 const decodeDetailSnapshot = Schema.decodeUnknownOption(PullRequestDetail);
 
-/** Hydrate stable detail chrome across reloads, then reconcile live reads in place. */
 export function readPullRequestDetailSnapshot(
   storage: SnapshotStorage | undefined,
   environmentId: string,
@@ -1222,12 +1246,9 @@ export function writePullRequestDetailSnapshot(
       pullRequestDetailSnapshotKey(environmentId, reference),
       JSON.stringify(detail),
     );
-  } catch {
-    // Missing snapshot storage falls back to live reads.
-  }
+  } catch {}
 }
 
-/** Live host state wins; a snapshot is only the same change request, never a neighbour's. */
 export function resolveDisplayedPullRequestDetail(input: {
   readonly live: PullRequestDetail | null;
   readonly cached: PullRequestDetail | null;

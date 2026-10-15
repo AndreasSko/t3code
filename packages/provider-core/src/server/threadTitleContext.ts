@@ -62,7 +62,6 @@ export function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMess
 
   const firstUser = sections.find((section) => section.message.role === "user");
   if (firstUser) add(firstUser, MAX_MESSAGE);
-  // Up to 6,000 characters go to user messages. Assistant output cannot evict them.
   for (const section of sections.toReversed()) {
     if (section.message.role === "user") {
       add(section, Math.min(MAX_MESSAGE, remaining - 2_000));

@@ -32,7 +32,6 @@ interface CustomModelEditorProps {
   readonly instanceId: string;
   readonly driverKind: ProviderDriverKind | null;
   readonly entry: CustomModelDefinition;
-  /** Built-in models whose descriptors can be copied as a starting point. */
   readonly builtInModels: ReadonlyArray<ServerProviderModel>;
   readonly onSave: (next: CustomModelDefinition) => void;
   readonly onCancel: () => void;

@@ -12,7 +12,11 @@ const defaults = defaultThemeVariables as Readonly<
   Record<MobileThemeAppearance, MobileThemeVariables>
 >;
 
-/** Use the registered CSS theme's palette for native APIs that cannot consume Uniwind classes. */
+/**
+ * Complete palette for native and third-party APIs that cannot consume a
+ * Uniwind className. Every palette shares the source that generates its
+ * registered CSS theme.
+ */
 export function getMobileThemeRuntimeVariables(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
@@ -22,7 +26,6 @@ export function getMobileThemeRuntimeVariables(
   const variables = usesDefaultPalette
     ? defaults[appearance]
     : getMobileThemeVariables(themeId, appearance);
-  // Android frames and light iPad sidebars use a stronger tonal fill; dark sidebars keep the shared pane.
   const frame = themeColorWithAlpha(
     variables[usesDefaultPalette ? "--color-row-hover" : "--color-drawer"],
     1,

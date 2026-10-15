@@ -10,7 +10,10 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
 
-/** Remove partial snapshots on failed writes: they can hold secrets and failures often mean full disks. */
+/**
+ * A failed write logs a warning and removes any partial file, because that file can hold secrets
+ * and the failure is often a full disk.
+ */
 export const writeHeapSnapshot = Effect.fn("server.heapSnapshot", { root: true })(
   function* (logsDir: string) {
     const fs = yield* FileSystem.FileSystem;
@@ -25,8 +28,10 @@ export const writeHeapSnapshot = Effect.fn("server.heapSnapshot", { root: true }
   Effect.catch((cause) => Effect.logWarning("Failed to write heap snapshot.", { cause })),
 );
 
-/** SIGUSR2 writes a blocking heap snapshot; signals serialize naturally.
- * Windows lacks SIGUSR2, so this layer does nothing there. */
+/**
+ * The write blocks the event loop, so two snapshots never overlap: a signal sent during a write
+ * waits until it finishes. Windows has no SIGUSR2, so the layer does nothing there.
+ */
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     if ((yield* HostProcess.Platform) === "win32") return;

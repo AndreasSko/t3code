@@ -1,4 +1,3 @@
-/** Rejections do not prevent subsequent operations from running in call order. */
 export class SerializedAsyncQueue {
   private tail: Promise<void> = Promise.resolve();
 

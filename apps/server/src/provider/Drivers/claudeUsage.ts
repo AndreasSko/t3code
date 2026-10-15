@@ -13,8 +13,9 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 /**
- * Assistant content-block records repeat the parent message's full usage.
- * Summing repeats overcounted a real workload by ~2.4x; keep the first record for each dedupeKey.
+ * T3 Code writes one record per assistant *content block*, and every one of those records repeats
+ * the same complete `usage` object for the parent message. Summing them overcounts by roughly
+ * 2.4x on a real workload, so the caller must drop repeats by `dedupeKey` and keep the first.
  */
 export function parseClaudeLine(line: string): UsageRecord | null {
   let parsed: unknown;
@@ -48,7 +49,8 @@ function parseClaudeRecord(parsed: unknown): UsageRecord | null {
 
   const messageId = typeof messageRecord["id"] === "string" ? messageRecord["id"] : null;
   const requestId = typeof record["requestId"] === "string" ? record["requestId"] : null;
-  // Match ccusage's message/request pair key.
+  // Matches ccusage: prefer the message/request pair, fall back to whichever
+  // half exists. Records with neither cannot be de-duplicated.
   const dedupeKey =
     messageId === null && requestId === null ? null : `${messageId ?? ""}:${requestId ?? ""}`;
 
@@ -77,7 +79,7 @@ const orEmpty = (record: UsageRecord | null): readonly UsageRecord[] =>
   record === null ? [] : [record];
 
 export const claudeUsageFormat: TranscriptUsageFormat<void> = {
-  // Select the whole usage subtree to retain future token fields.
+  // Keeps the dedupe and cost metadata. The `usage` subtree keeps future token fields.
   selectFields: {
     type: true,
     timestamp: true,

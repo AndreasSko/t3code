@@ -67,7 +67,6 @@ export type AcpIncomingNotification =
       readonly params: unknown;
     };
 
-/** Standard I/O whose input can report provider-specific ACP failures. */
 export interface AcpStdio extends Omit<Stdio.Stdio, "stdin"> {
   readonly stdin: Stream.Stream<Uint8Array, PlatformError.PlatformError | AcpError.AcpError>;
 }
@@ -165,7 +164,6 @@ const makeStrictNdJsonRpcParser = () => {
   };
 };
 const MAX_BUFFERED_RAW_NOTIFICATIONS = 32;
-// Outbound JSON-RPC notification: no `id`, so peers never treat it as a request.
 const encodeJsonRpcNotification = Schema.encodeUnknownExit(
   Schema.fromJsonString(
     Schema.Struct({
@@ -180,8 +178,10 @@ const isEffectRpcRequestId = (requestId: AcpError.AcpRequestId): boolean =>
   typeof requestId === "number" && Number.isSafeInteger(requestId);
 
 /**
- * Effect treats standard JSON-RPC errors as defects without its private Cause
- * envelope; restore ACP's {code,message,data?} to the typed failure channel.
+ * Effect RPC's JSON-RPC codec treats a standard JSON-RPC error object as a
+ * defect unless it carries Effect's private `_tag: "Cause"` envelope. ACP
+ * agents correctly send the standard `{ code, message, data? }` shape, so
+ * restore it to the typed failure channel before handing it to RpcClient.
  */
 function normalizeAcpJsonRpcError(
   message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
@@ -460,8 +460,9 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       })
       .pipe(
         Effect.matchCauseEffect({
-          // A handler defect must answer its request without killing the reader;
-          // it takes precedence over typed failures in the same cause.
+          // A dying handler answers its own request, like a core handler, and
+          // leaves the reader running. A defect wins over a typed failure in
+          // the same cause, so it is never hidden behind an expected error.
           onFailure: (cause) => {
             const failure = Cause.hasDies(cause) ? Option.none() : Cause.findErrorOption(cause);
             if (Option.isSome(failure)) {
@@ -813,7 +814,9 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         onSuccess: () =>
           Ref.get(outgoingWriterState).pipe(
             Effect.flatMap((state) => {
-              // Intentional Queue.end is a clean shutdown, not a transport or protocol failure.
+              // Intentional Queue.end (serverProtocol.end) completes the writer
+              // successfully. Do not invent a transport failure or client protocol
+              // error for a clean RPC shutdown.
               const handled = state.intentionalEnd
                 ? completeOutgoingWrites()
                 : (() => {
@@ -893,7 +896,8 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     supportsNotifications: true,
   });
 
-  // Notifications must omit id; Grok silently drops Request-shaped session/cancel frames.
+  // JSON-RPC notifications carry no `id`. Encoding a Request without `isNotification`
+  // emits an `id`, which real agents (Grok CLI) parse as a malformed request and silently drop.
   const sendNotification = Effect.fn("sendNotification")(function* (
     method: string,
     payload: unknown,

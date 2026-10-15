@@ -185,7 +185,8 @@ function providerEnvironmentDetail(environment: EnvironmentPresentation): string
   return environment.displayUrl ?? "Remote device";
 }
 
-// Share card height with placeholder states so changing devices cannot alter its footprint.
+// Shared by the editor grid and the placeholder states so switching devices
+// never changes the card's footprint.
 const providerCardHeightClassName =
   "@min-[48rem]/providers:h-[min(44rem,calc(100dvh-11rem))] @min-[48rem]/providers:min-h-[32rem]";
 
@@ -242,14 +243,16 @@ function EnvironmentUnavailablePlaceholder({
     : access.kind === "error"
       ? "Could not connect to this device"
       : "Provider settings are unavailable";
-  // Long CLI failures belong in the expandable body, not the status summary.
+  // Keep the description to a short status; the raw failure can be a
+  // multi-paragraph CLI dump, so it goes below, clamped and expandable.
   const description = isLoading
     ? access.reason === "permissions"
       ? "Checking what this session is allowed to change."
       : `Waiting for ${environment.label}'s configuration.`
     : connectionStatusTitle(environment.connection);
   const error = isLoading ? null : environment.connection.error;
-  // Wedged-device states can persist indefinitely; a spinner would repaint the whole time.
+  // No spinner: this state can persist indefinitely for a wedged device, and a
+  // continuously repainting animation would run the whole time.
   return (
     <ProviderSettingsPlaceholder
       deviceTabs={deviceTabs}
@@ -275,7 +278,10 @@ interface ProviderSettingsTarget {
   readonly instanceId?: ProviderInstanceId;
   readonly scoped?: boolean;
   readonly environmentIds?: readonly EnvironmentId[];
-  /** Update every checkout override on the selected environment so enablement cannot diverge. */
+  /**
+   * The project's checkouts on the selected environment, if a project is in
+   * scope. The enable toggle writes each one's override so they never diverge.
+   */
   readonly projectIds?: readonly ProjectId[];
 }
 
@@ -299,7 +305,9 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
       buildProviderEnvironmentOptions(environments, primaryEnvironmentId, target.environmentIds),
     [environments, primaryEnvironmentId, target.environmentIds],
   );
-  // Preserve the explicit device pick through disconnects while falling back for display.
+  // Raw user intent; the effective selection is re-derived every render so a
+  // device that drops out of the catalog falls back without erasing the pick —
+  // if it reappears (e.g. after a reconnect) the selection is restored.
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     target.environmentId ?? primaryEnvironmentId,
   );
@@ -554,8 +562,12 @@ export function EnvironmentProviderSettings({
   readonly deviceTabs?: ReactNode;
   readonly targetInstanceId?: ProviderInstanceId | undefined;
   readonly projectIds?: readonly ProjectId[];
-  /** Read-only disables writes under missing providers:manage grants while
-   * keeping selection and actual configuration readable. */
+  /**
+   * Grey out and freeze every write control when this session's credential
+   * lacks `providers:manage` on the environment. Selecting providers
+   * still works so the real configuration stays readable; switches, forms,
+   * are inert so no write is offered and then rejected.
+   */
   readonly readOnly?: boolean;
 }) {
   const settings = useEnvironmentSettings(environmentId);
@@ -568,7 +580,9 @@ export function EnvironmentProviderSettings({
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const projects = useProjects().filter((project) => project.environmentId === environmentId);
-  // Older servers discard providerInstances overrides, so hide toggles that cannot take effect.
+  // Older servers decode an unknown providerInstances key away, so sending
+  // a project override patch would silently do nothing. Hide the switch
+  // instead of offering a control that can never take effect.
   const supportsProjectProviderOverrides =
     useServerConfigs().get(environmentId)?.environment.capabilities
       .projectProviderInstanceOverrides === true;
@@ -687,7 +701,8 @@ export function EnvironmentProviderSettings({
       targetVersion?: string,
     ) => {
       if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
-      // React state updates can lag this dispatch; guard re-entry synchronously with a ref.
+      // Ref-based re-entry guard, mirroring refreshProviders: a state updater
+      // may run after this function returns, so it cannot gate the dispatch.
       if (updatingInstanceIdsRef.current.has(candidate.instanceId)) {
         return;
       }
@@ -855,7 +870,9 @@ export function EnvironmentProviderSettings({
     const agentId = providerConfigString(row.instance.config, "agentId");
     if (agentId === null) return;
 
-    // Only the server's latest settings can decide last-instance cleanup; client snapshots race removals.
+    // The server decides from its latest settings whether this was the last
+    // instance using the managed agent. A client-side snapshot check can race
+    // two removals and make both callers skip cleanup.
     const uninstallResult = await uninstallAcpRegistryManagedBinary({
       environmentId,
       input: { agentId },

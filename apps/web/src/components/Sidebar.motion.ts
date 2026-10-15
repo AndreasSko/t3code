@@ -1,7 +1,10 @@
 const motionTiming = { duration: 150, easing: "ease-out" };
-// Clamp solo travel so tall cards do not slide their full height without a displaced neighbour.
 const rowTravel = (height: number) => Math.min(height, 40);
-// Fades clone rows and force reflows; cap their count while allowing cheap displaced-row transforms.
+// A project filter change or a bulk snooze swaps a large part of the list at
+// once. Fades are the expensive part: every removed row gets a deep clone and
+// every clone and entering row gets its own animation, and the layout reads
+// in between force synchronous reflows. Translating displaced rows is cheap,
+// so only the fade count decides whether an update animates.
 const MAX_FADED_ROWS_PER_UPDATE = 40;
 
 type RowPosition = { top: number; left: number; width: number; height: number };
@@ -169,7 +172,6 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       };
       if (!shouldAnimate) clearFades();
       else {
-        // Apply the shelf's shared displacement to entering/exiting rows so they move as one block.
         for (const [node, position] of next) {
           const previousTop = positions!.get(node)?.top;
           if (previousTop === undefined || previousTop === position.top) continue;
@@ -233,7 +235,10 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       }
       positions = next;
     },
-    /** Capture visual tops before dnd-kit clears drag transforms; the next update uses them as its starting positions. */
+    /** Called on drag release, before the commit that clears dnd-kit's
+     * transforms. Takes every row's visual top, including the lifted row
+     * under the pointer and the peers holding the label gaps open, so the
+     * next update glides each of them into its committed slot. */
     release() {
       suspend();
       const origin = parent.getBoundingClientRect().top;

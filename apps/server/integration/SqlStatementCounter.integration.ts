@@ -2,12 +2,17 @@ import * as Tracer from "effect/Tracer";
 
 export interface SqlStatementCounter {
   readonly tracer: Tracer.Tracer;
-  /** Statements executed so far. Read before and after a phase and subtract. */
   readonly count: () => number;
 }
 
-/** Effect SQL emits one client span named by db.system.name (sqlite) per statement.
- * Share a counter across runtimes so background and request SQL spans share a count. */
+/**
+ * Counts the client spans the Effect SQL client opens once per statement. Our
+ * SQLite client names them after its `db.system.name`, `sqlite`.
+ *
+ * Install the same counter on every runtime under test, otherwise statements
+ * run by background reactors and statements run by request handlers land in
+ * different counters.
+ */
 export function makeSqlStatementCounter(): SqlStatementCounter {
   let statements = 0;
   const tracer = Tracer.make({

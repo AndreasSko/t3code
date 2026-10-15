@@ -48,9 +48,7 @@ export function getNativeShowcasePairingUrls(): ReadonlyArray<string> {
             typeof candidate === "string" && candidate.trim().length > 0,
         );
       }
-    } catch {
-      // Older runners pass a single URL rather than a JSON array.
-    }
+    } catch {}
     return [raw];
   } catch {
     return [];
@@ -66,7 +64,10 @@ export function getNativeShowcaseScene(): ShowcaseScene | null {
   }
 }
 
-/** Null leaves the stored palette untouched, including when the runner names an unknown palette. */
+/**
+ * An unknown id also reads as null rather than silently falling back, so a
+ * capture never claims to show a theme it does not.
+ */
 export function getNativeShowcaseTheme(): MobileThemeId | null {
   try {
     const theme = nativeShowcaseControls()?.getShowcaseTheme?.()?.trim();
@@ -79,9 +80,7 @@ export function getNativeShowcaseTheme(): MobileThemeId | null {
 export function prepareNativeShowcaseCapture(): void {
   try {
     nativeShowcaseControls()?.prepareShowcaseCapture?.();
-  } catch {
-    // The harness still works when a development build predates this helper.
-  }
+  } catch {}
 }
 
 export function getNativeShowcaseOrientation(): ShowcaseOrientation | null {
@@ -98,7 +97,8 @@ export async function applyNativeShowcaseOrientation(
 ): Promise<boolean> {
   const controls = nativeShowcaseControls();
   if (!controls?.applyShowcaseOrientation || !controls.getInterfaceOrientation) {
-    // Missing native controls keep the default orientation; do not retry forever.
+    // A development build that predates this helper keeps its default
+    // orientation; report success so callers do not retry forever.
     return true;
   }
   try {

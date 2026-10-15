@@ -13,14 +13,33 @@ export type NavigationWithFinishTransitioning = {
   readonly addListener: (type: "finishTransitioning", callback: () => void) => () => void;
 };
 
-/** Start the ~250ms keyboard rise during the sheet's ~500ms dismissal; UIKit completion bounds a late timer. */
+/**
+ * How long after the dismissal's state change the keyboard starts rising, so
+ * its ~250ms show overlaps the tail of the sheet's ~500ms travel the way UIKit
+ * apps choreograph it. The navigator's `finishTransitioning` event (UIKit's
+ * real completion callback, surfaced by the repo's native-stack patch)
+ * additionally bounds the restore at the true landing moment should this timer
+ * ever lag it.
+ */
 const SHEET_DISMISSAL_KEYBOARD_OVERLAP_MS = 300;
 
-/** JS dismissals pop before their ~500ms animation; gestures finish before popping.
- * A completion within 150ms of the pop therefore identifies an already-finished gesture dismissal. */
+/**
+ * A JS-initiated dismissal pops state before its animation runs; a
+ * gesture-driven one animates natively first and pops afterwards, with the
+ * navigator's completion event landing a few dozen milliseconds before the
+ * pop. A completion this fresh at pop time therefore means the sheet is
+ * already gone and the keyboard should return immediately. The two orderings
+ * are separated by the sheet's full ~500ms travel, so this window is a
+ * classification with wide margin, not an animation race.
+ */
 const NATIVE_DISMISSAL_ECHO_WINDOW_MS = 150;
 
-/** Avoid inputView overrides: removing them reloads UIKit input views and visibly replays the keyboard show. */
+/**
+ * A plain blur/focus pair costs one keyboard animation each way —
+ * keepFocus-style inputView overrides are avoided because removing them forces
+ * UIKit to reload input views, replaying the keyboard's show as a visible
+ * collapse/re-open.
+ */
 export function useThreadSettingsSheetPresentation(input: {
   readonly editorRef: RefObject<ComposerEditorHandle | null>;
   readonly isEditorFocused: boolean;
@@ -75,7 +94,9 @@ export function useThreadSettingsSheetPresentation(input: {
     const openingId = openingIdRef.current + 1;
     openingIdRef.current = openingId;
 
-    // Dismiss before resigning the editor so keyboard and sheet transitions overlap.
+    // Start the keyboard transition before the custom native editor resigns
+    // first responder, then present the sheet on the next frame. The sheet and
+    // keyboard animate together instead of serializing two native transitions.
     void KeyboardController.dismiss({ animated: true });
     input.editorRef.current?.blur();
 
@@ -92,7 +113,9 @@ export function useThreadSettingsSheetPresentation(input: {
     focusRestoreIdRef.current = focusRestoreId;
     let attemptsRemaining = 20;
 
-    // UIKit may briefly refuse first-responder status at the transition boundary.
+    // Restoration runs after the dismissal transition, so the first attempt
+    // normally succeeds; the retries are insurance against UIKit briefly
+    // refusing first-responder status right at the transition boundary.
     const restoreFocus = () => {
       if (!isMountedRef.current || focusRestoreIdRef.current !== focusRestoreId) {
         return;
@@ -109,7 +132,6 @@ export function useThreadSettingsSheetPresentation(input: {
     requestAnimationFrame(restoreFocus);
   }, [input.editorRef]);
 
-  /** Runs the queued restore once — whichever completion signal arrives first. */
   const runPendingDismissalRestore = useCallback(() => {
     if (!restorePendingRef.current) {
       return;
@@ -130,7 +152,9 @@ export function useThreadSettingsSheetPresentation(input: {
       setPhase("closed");
       return;
     }
-    // Keep the card expanded: a hardware keyboard provides no travel to hide a collapse.
+    // Keep the card expanded across the handoff back to its editor. With a
+    // hardware keyboard there is no software-keyboard travel to hide a collapse
+    // while the sheet dismissal and focus restoration finish.
     setPhase("restoring");
     restoreFocusAfterDismissRef.current = false;
     restorePendingRef.current = true;

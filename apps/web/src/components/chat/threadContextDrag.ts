@@ -1,9 +1,6 @@
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { type RefObject, useEffect, useEffectEvent, useSyncExternalStore } from "react";
 
-/** DOM drop events decouple the sidebar from the composer. Ghost state lives here
- * so pointer moves only rerender the ghost. */
-
 export const THREAD_CONTEXT_DROP_EVENT = "t3-thread-context-drop";
 
 export function useThreadContextDrop(

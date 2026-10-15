@@ -7,7 +7,6 @@ import { AccountLimits, ResetCredits } from "../usage/UsageLimitsSection";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
 
-/** Opaque because the composer popover has no blur behind it. */
 export function ComposerUsageLimits({
   report,
   environmentId,

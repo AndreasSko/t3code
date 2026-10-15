@@ -21,8 +21,10 @@ import * as NodeCrypto from "node:crypto";
 import * as ServerConfig from "../config.ts";
 import { openZipArchive } from "../zipArchive.ts";
 
-// Both render previews and server tabs use this pin. Choose updates from https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json,
-// then replace the version and every platform archive's byte count and SHA-256.
+// To bump the pin, pick a version from
+// https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json,
+// download each platform's chrome-headless-shell zip, and replace the version and every byte count
+// and SHA-256 below.
 const VERSION = "154.0.8037.92";
 const ARCHIVES = {
   linux64: {
@@ -125,7 +127,11 @@ export class PreviewBrowserUnsupportedError extends Schema.TaggedError<PreviewBr
 export class PreviewBrowser extends Context.Service<
   PreviewBrowser,
   {
-    /** Start or join installation; after a bounded wait, report progress while installation continues. */
+    /**
+     * Path to the installed headless shell. The first call starts the
+     * install; callers wait for it up to a bound and then get its progress
+     * instead, while the install keeps running.
+     */
     readonly executable: Effect.Effect<
       string,
       PreviewBrowserInstallError | PreviewBrowserInstallingError | PreviewBrowserUnsupportedError
@@ -326,8 +332,8 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
         yield* fs.remove(destination, { recursive: true, force: true });
         yield* fs.rename(unpacked, destination);
       }).pipe(Effect.scoped);
-      // Servers can share a home; preserve staging directories touched within the last hour
-      // because another server may still be installing there.
+      // Two servers can share a home, so a staging directory touched within the
+      // last hour may be another server's install in progress and stays.
       const entries = yield* fs.readDirectory(installRoot);
       const now = yield* Clock.currentTimeMillis;
       yield* Effect.forEach(

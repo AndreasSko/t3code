@@ -88,7 +88,6 @@ export interface LinkedThreadPullRequestStatus {
   readonly sourceControlProvider: NonNullable<VcsStatusResult["sourceControlProvider"]>;
 }
 
-/** Linked badges use persisted snapshots; only branch and legacy fallbacks lease summary reads. */
 export function useLinkedThreadPullRequest(
   environmentId: EnvironmentId | null,
   linkedPullRequest: ThreadLinkedPullRequest | null | undefined,
@@ -180,7 +179,6 @@ export function resolveThreadPullRequestBadgePresentation({
   readonly url?: string | undefined;
   readonly status: PrStatusIndicator | null;
 }): ThreadPullRequestBadgePresentation | null {
-  // Aggregate states already include draft state; single-PR resolution would discard it.
   if (badge?.kind === "stack") {
     const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
     return {
@@ -210,7 +208,6 @@ export function resolveThreadPullRequestBadgePresentation({
   };
 }
 
-/** The caller supplies the control through render; one PR becomes a link, stacks/counts open the thread's PR tab. */
 export function ThreadPullRequestBadgeControl({
   render,
   badge,
@@ -482,7 +479,10 @@ export function resolveThreadPr(input: {
   return gitStatus.pr ?? null;
 }
 
-/** Keep terminal PR snapshots above rows: settlement partitions can remount them. */
+/**
+ * Parent-held PR snapshot for Sidebar V2. Rows remount when settlement
+ * partitions move them, so terminal PR metadata must live above the row.
+ */
 export interface ThreadChangeRequestSnapshot {
   readonly branch: string;
   readonly pr: NonNullable<ThreadPr>;
@@ -562,7 +562,12 @@ export function setThreadChangeRequestSnapshot(
   });
 }
 
-/** undefined leaves the map unchanged; null clears it; a snapshot replaces it. */
+/**
+ * Authoritative snapshot update from live VCS status.
+ * - `undefined`: missing status, or a local checkout retaining a terminal PR — leave the map alone
+ * - `null`: no PR (without a retained terminal snapshot), a cleared branch, or a mismatch without a terminal PR — clear
+ * - snapshot: matching branch reports a PR — store/replace
+ */
 export function nextThreadChangeRequestSnapshot(input: {
   threadBranch: string | null;
   gitStatus: VcsStatusResult | null;
@@ -624,8 +629,13 @@ export function nextThreadChangeRequestSnapshot(input: {
   };
 }
 
-/** Local terminal PR snapshots survive shared-checkout branch changes.
- * Open PRs are retained only while live status is missing and the branch still matches. */
+/**
+ * Live PR when the checkout matches the thread branch; otherwise, for local
+ * checkouts only, a cached merged/closed PR for the thread. Local thread
+ * metadata follows the shared checkout, so the cached branch intentionally
+ * survives that metadata changing to the newly checked-out branch. Open PRs
+ * are retained only while live status is absent and the branch still matches.
+ */
 export function resolveDisplayedThreadPr(input: {
   threadBranch: string | null;
   gitStatus: VcsStatusResult | null;

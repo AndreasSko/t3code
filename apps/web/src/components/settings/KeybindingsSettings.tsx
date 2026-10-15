@@ -110,7 +110,6 @@ function KeybindingPill({ value }: { value: string }) {
   );
 }
 
-/** Filter box in the page toolbar; Mod+F focuses it from anywhere on the page. */
 function KeybindingsSearchInput({
   query,
   onChange,
@@ -1270,7 +1269,9 @@ function BrowserKeybindingNotice() {
 }
 
 export function KeybindingsSettingsPanel() {
-  // Show representative bindings while fanning edits out to every connected selected environment.
+  // The representative environment supplies the displayed bindings; edits
+  // fan out to every connected environment in the selection, so one
+  // shortcut change reaches each machine the user runs T3 Code on.
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
   const canOpenKeybindingsFile = useEnvironmentScope(
     primaryEnvironment?.environmentId ?? null,
@@ -1314,7 +1315,8 @@ export function KeybindingsSettingsPanel() {
     }
     return ids;
   }, [rows]);
-  // The page owns its search-target context; read settings-search jumps from the route hash.
+  // The search-target context is provided by this panel's own page container,
+  // so the jump target is read from the route hash here.
   const searchTargetId = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
   const [handledSearchTargetId, setHandledSearchTargetId] = useState(searchTargetId);
 

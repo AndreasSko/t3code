@@ -14,7 +14,14 @@ export interface UsageDailyChartProps {
   readonly height: number;
 }
 
-/** Shared x values stack in Swift Charts; dense day labels use the screen's edge labels instead. */
+/**
+ * Points sharing an x value stack, so emitting one point per provider per day
+ * yields per-provider bands whose stack height is the day's total; changes
+ * animate natively.
+ *
+ * Axes are hidden: 30-90 categorical day labels cannot fit on a phone, so the
+ * screen renders its own edge labels under the chart instead.
+ */
 export function UsageDailyChart({ days, daily, metric, height }: UsageDailyChartProps) {
   const colors = useProviderColors();
 

@@ -104,7 +104,6 @@ export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
 
 export const relayUrlConfig = makeRelayUrlConfig();
 
-/** Override the hosted OAuth origin to match staging or nightly deployments. */
 export const hostedAppUrlConfig = makePublicValueConfig(
   "T3CODE_HOSTED_APP_URL",
   DEFAULT_HOSTED_APP_URL,
@@ -145,8 +144,13 @@ function makePublicValueConfig(name: string, fallback: string) {
   );
 }
 
-// Browser authorization goes through hosted /connect after Clerk sign-in;
-// CLI token and headless device endpoints are called directly.
+/**
+ * The CLI never calls Clerk's /oauth/authorize itself: the browser leg goes
+ * through the hosted /connect page, which builds the authorize URL after a
+ * Clerk session exists (see CliTokenManager.login). The token endpoint and,
+ * for headless hosts, the device authorization endpoint are contacted
+ * directly.
+ */
 export interface CloudCliOAuthConfig {
   readonly tokenEndpoint: string;
   readonly deviceAuthorizationEndpoint: string;

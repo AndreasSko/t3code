@@ -4,18 +4,19 @@ import { IsoDateTime, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.t
 import { ModelSelection } from "./modelSelection.ts";
 
 /**
- * The server clamps excerpts and notes to changed lines and adds omitted files
- * to a closing stop so the guide accounts for the whole change.
+ * The one call a maintainer should make at a stop. Not a bug or a review nit; those belong to the
+ * review agents. The kind says what sort of judgment it asks for.
  */
-
-/** A maintainer judgment at a stop; bug findings belong to review agents. */
 export const PullRequestReviewGuideAttention = Schema.Struct({
   kind: Schema.Literals(["tradeoff", "contract", "product", "risk", "accessibility"]),
   note: TrimmedNonEmptyString,
 });
 export type PullRequestReviewGuideAttention = typeof PullRequestReviewGuideAttention.Type;
 
-/** Line numbers refer to the named side; old excerpts show removed code. */
+/**
+ * Lines worth reading, always inside the change. `old` shows removed code, for a change that is
+ * mostly deletion; line numbers are on the side named.
+ */
 export const PullRequestReviewGuideExcerpt = Schema.Struct({
   path: TrimmedNonEmptyString,
   side: Schema.Literals(["new", "old"]),
@@ -25,7 +26,9 @@ export const PullRequestReviewGuideExcerpt = Schema.Struct({
 });
 export type PullRequestReviewGuideExcerpt = typeof PullRequestReviewGuideExcerpt.Type;
 
-/** An explanation anchored inside its stop's excerpts, separate from bug findings. */
+/**
+ * An explanation, not a finding. Anchored inside one of its stop's excerpts.
+ */
 export const PullRequestReviewGuideNote = Schema.Struct({
   path: TrimmedNonEmptyString,
   line: PositiveInt,
@@ -39,7 +42,10 @@ export const PullRequestReviewGuideStop = Schema.Struct({
   summary: Schema.String,
   attention: Schema.NullOr(PullRequestReviewGuideAttention),
   excerpts: Schema.Array(PullRequestReviewGuideExcerpt),
-  /** Unexcerpted files appear in exactly one stop; excerpted files may span stops. */
+  /**
+   * Changed files the tour never excerpts, each listed by one stop. A file the tour does show may
+   * be excerpted by several stops, each showing the part that stop is about.
+   */
   files: Schema.Array(
     Schema.Struct({
       path: TrimmedNonEmptyString,
@@ -61,8 +67,9 @@ export const PullRequestReviewGuide = Schema.Struct({
 export type PullRequestReviewGuide = typeof PullRequestReviewGuide.Type;
 
 /**
- * Generation runs on the server so large changes do not hold a request open.
- * Restart drops in-progress runs.
+ * A run reads the change in a checkout and takes minutes on a large one, so it runs on the
+ * server and the page watches this instead of holding a request open. A server restart drops
+ * a run in progress; nothing claims it.
  */
 export const PullRequestReviewGuideRun = Schema.Union([
   Schema.TaggedStruct("Running", {
@@ -78,13 +85,11 @@ export const PullRequestReviewGuideRun = Schema.Union([
 export type PullRequestReviewGuideRun = typeof PullRequestReviewGuideRun.Type;
 
 /**
- * A guide is stale when its headSha differs from currentHeadSha.
- * A finished run leaves only guide; run tracks active or failed generation.
+ * `run` is the generation in progress, or the last failed one; a finished run leaves only `guide`.
  */
 export const PullRequestReviewGuideResult = Schema.Struct({
   guide: Schema.NullOr(PullRequestReviewGuide),
   run: Schema.NullOr(PullRequestReviewGuideRun),
-  /** Null where the host did not report a head with the detail. */
   currentHeadSha: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type PullRequestReviewGuideResult = typeof PullRequestReviewGuideResult.Type;

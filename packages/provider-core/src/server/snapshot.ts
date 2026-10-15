@@ -4,14 +4,21 @@ import type * as Stream from "effect/Stream";
 import type { ProviderMaintenanceCapabilities } from "./maintenance.ts";
 
 export interface ManagedServerProvider {
-  /** Use fresh:true before updates so execution never trusts pre-click ownership. */
+  /**
+   * Cached between reads; pass
+   * `{ fresh: true }` before executing an update so it never trusts a
+   * resolution older than the click.
+   */
   readonly resolveMaintenance: (options?: {
     readonly fresh?: boolean;
   }) => Effect.Effect<ProviderMaintenanceCapabilities>;
   readonly getSnapshot: Effect.Effect<ServerProvider>;
   readonly refresh: Effect.Effect<ServerProvider>;
   readonly streamChanges: Stream.Stream<ServerProvider>;
-  /** Sparse windows merge by id between probes; no usable window is a no-op. */
+  /**
+   * Sparse: windows merge by id and an
+   * update with no usable window leaves the snapshot untouched.
+   */
   readonly applyUsageLimits: (
     update: ProviderUsageLimitsUpdate & { readonly checkedAt: string },
   ) => Effect.Effect<void>;

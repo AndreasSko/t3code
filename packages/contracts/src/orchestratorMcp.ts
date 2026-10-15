@@ -49,8 +49,9 @@ const OrchestratorMcpClientRequestId = TrimmedNonEmptyString.check(
 ).annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
 
 /**
- * OpenCode 1.15 serializes nested MCP unions as JSON strings; decode that
- * compatibility form at the tool boundary while documenting structured objects.
+ * OpenCode 1.15 has been observed serializing nested MCP union objects as JSON
+ * strings. Keep the structured object as the documented form while accepting
+ * that compatibility shape at the tool boundary and decoding it immediately.
  */
 const OrchestratorMcpScheduleFromJsonString = Schema.fromJsonString(
   ScheduledTaskUpsertSchedule,
@@ -68,8 +69,9 @@ const OrchestratorMcpSchedule = Schema.Union([
 });
 
 /**
- * Decode shorthand target options strictly so invalid values fail the request
- * instead of being silently dropped by the persistence schema.
+ * Unlike the legacy-tolerant `ProviderOptionSelections` persistence schema,
+ * this decodes strictly: a value that is not a string or boolean fails the
+ * request rather than being silently dropped.
  */
 const OrchestratorMcpTargetOptionsFromRecord = Schema.Record(
   Schema.String,
@@ -111,8 +113,10 @@ export const OrchestratorMcpTarget = Schema.Struct({
     }),
   ),
   /**
-   * Accept an array or record of options advertised by orchestrator_capabilities.
-   * Omitted options inherit only when the child shares the parent's provider and model.
+   * Accepts the canonical `[{ id, value }]` array or the shorthand
+   * `{ id: value }` record; valid ids come from the option descriptors
+   * advertised by orchestrator_capabilities. When omitted, options inherit
+   * from the parent only when the child runs the parent's provider and model.
    */
   options: Schema.optional(
     OrchestratorMcpTargetOptions.annotate({
@@ -337,7 +341,6 @@ export type OrchestratorMcpThreadListItem = typeof OrchestratorMcpThreadListItem
 
 export const OrchestratorMcpThreadListResult = Schema.Struct({
   projectId: ProjectId,
-  /** The calling thread, or null when the caller is not a T3 thread. */
   currentThreadId: Schema.NullOr(ThreadId),
   threads: Schema.Array(OrchestratorMcpThreadListItem),
   nextCursor: Schema.NullOr(NonNegativeInt),
@@ -503,9 +506,7 @@ export const OrchestratorMcpProviderCapability = Schema.Struct({
 export type OrchestratorMcpProviderCapability = typeof OrchestratorMcpProviderCapability.Type;
 
 export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
-  /** The calling thread, or null when the caller is not a T3 thread. */
   parentThreadId: Schema.NullOr(ThreadId),
-  /** The calling thread's selection, or null when the caller is not a T3 thread. */
   inheritedProviderInstanceId: Schema.NullOr(ProviderInstanceId),
   inheritedModel: Schema.NullOr(Schema.String),
   runtimeMode: RuntimeMode,
@@ -535,8 +536,8 @@ export const OrchestratorMcpScheduleTaskInput = Schema.Struct({
     Schema.Boolean.annotate({ description: "Whether the schedule starts enabled; defaults true." }),
   ),
   /**
-   * Defaults to firing into the calling thread instead of creating a fresh thread.
-   * Thread-bound recurring wakes are reserved for agent-created tasks.
+   * This is the recurring "wake up in this thread" behaviour reserved for
+   * agent-created tasks.
    */
   bindToCurrentThread: Schema.optional(
     Schema.Boolean.annotate({

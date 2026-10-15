@@ -167,13 +167,20 @@ export const ChatFileAttachment = Schema.Struct({
     Schema.isGreaterThanOrEqualTo(1),
     Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
   ),
-  /** Folded text stays path-only so agents inspect it selectively rather than eagerly spending context. */
+  /** Clipboard text folded by a client. Providers keep these path-only so the
+      agent can inspect the file selectively instead of eagerly spending the
+      same context the fold is intended to preserve. */
   source: Schema.optional(PastedTextAttachmentSource),
 });
 export type ChatFileAttachment = typeof ChatFileAttachment.Type;
 
-/** Preserve unknown attachment base fields for older readers; exclude known tags
- * so malformed known payloads cannot bypass their size and MIME checks. */
+/**
+ * Attachments ride on persisted events and thread streams, so a newer server or client must be
+ * able to introduce a type without making older readers fail to decode the whole message.
+ * Decoders keep the shared base fields; consumers skip these or render them as unsupported.
+ * The known discriminators are excluded so a malformed image or file attachment fails its own
+ * schema instead of sliding through here with its size and mime constraints unchecked.
+ */
 export const ChatUnknownAttachment = Schema.Struct({
   type: TrimmedNonEmptyString.check(
     Schema.isMaxLength(50),

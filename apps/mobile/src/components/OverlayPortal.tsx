@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
-// An RN Modal takes window focus and closes the keyboard. Keep composer-pill
-// menus in the same window through this portal.
+// AndroidAnchoredMenu projects its dropdown here instead of into an RN Modal: a Modal is a
+// separate native window, so presenting one moves window focus and closes the soft keyboard —
+// which matters for menus anchored to the keyboard-sticky composer pills.
 type Entries = ReadonlyMap<number, ReactNode>;
 type Listener = (entries: Entries) => void;
 
@@ -17,7 +18,6 @@ function emit() {
   }
 }
 
-/** Projects children into the app-root OverlayPortalHost. */
 export function OverlayPortal(props: { readonly children: ReactNode }) {
   const keyRef = useRef<number | null>(null);
   keyRef.current ??= nextKey++;

@@ -142,7 +142,6 @@ export interface ThreadFeedMessage {
   readonly projectedItem?: OrchestrationV2ProjectedTurnItem;
 }
 
-/** A message shown before the server has it: a pending creation or local feedback. */
 export interface LocalThreadMessage {
   readonly id: MessageId;
   readonly role: string;
@@ -169,7 +168,6 @@ type RawThreadFeedEntry =
       readonly activity: ThreadFeedActivity;
     }
   | {
-      /** A page a completed `html_render` call published, shown in place of its work row. */
       readonly type: "html-render";
       readonly id: string;
       readonly createdAt: string;
@@ -177,7 +175,6 @@ type RawThreadFeedEntry =
       readonly render: HtmlRenderReference;
     }
   | {
-      /** An MCP App a completed tool call captured, hosted in place of its work row. */
       readonly type: "mcp-app";
       readonly id: string;
       readonly createdAt: string;
@@ -216,7 +213,6 @@ type ThreadFeedEntryContent =
       readonly hasFailure: boolean;
       readonly live: boolean;
       readonly shimmer: boolean;
-      /** First sentence of the latest thought, shown above the live status line. */
       readonly thought?: string;
     }
   | {
@@ -258,7 +254,6 @@ function compactWorkEntryText(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
 }
 
-/** Expanded work rows keep their detail while compact rows show a stable one-line label. */
 export function workEntryRowLabel(entry: WorkLogPresentationEntry, expanded = false): string {
   if (expanded && entry.itemType === "reasoning")
     return entry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought";
@@ -786,7 +781,6 @@ function toWorkLogEntry(
   }
 }
 
-/** Expanded detail for a row, from its wire item or the full item from getTurnItem. */
 export function formatItemFullDetail(
   row: OrchestrationV2ProjectedTurnItem,
   item: OrchestrationV2TurnItem,
@@ -1050,7 +1044,11 @@ export function failedFeedRunIds(
   return failed;
 }
 
-/** Keep only the latest active runless response open; starting a run must not reopen imported turns. */
+/**
+ * A prompt without a run (a provider-native subagent, or a turn imported from
+ * V1) folds its response like a run. `runlessWorkActive` keeps the latest
+ * runless response open; V2 work must not reopen imported turns.
+ */
 function deriveThreadFeedRunFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestRun: ThreadFeedLatestRun | null,
@@ -1079,7 +1077,8 @@ function deriveThreadFeedRunFolds(
     RunId,
     { entries: ThreadFeedEntry[]; startBoundary: string | null }
   >();
-  // Key runless folds per prompt so a new run cannot unfold every imported turn.
+  // Decide per prompt, not per thread: a V1 thread's first V2 run must not unfold every
+  // imported turn above it.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingUserBoundary: string | null = null;
@@ -1163,7 +1162,8 @@ function deriveThreadFeedRunFolds(
                   activity.prominent ||
                   activity.projectedItem.item.type === "notification" ||
                   activity.projectedItem.item.type === "handoff" ||
-                  // Live children can outlast their launching run, so their group must stay visible.
+                  // A child still working outlives its settled launching run;
+                  // its group stays visible while any member is live.
                   isLiveSubagentTurnItem(activity.projectedItem.item),
               )
             ),
@@ -1252,7 +1252,6 @@ export function deriveThreadFeedPresentation(
   expandedRunIds: ReadonlySet<RunId>,
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
   activeWorkStartedAt: string | null = null,
-  /** The live work is a provider-native subagent's runless root turn. */
   runlessWorkActive = false,
 ): ThreadFeedEntry[] {
   const retainedFeed = feed.filter(
@@ -1345,8 +1344,6 @@ export function deriveThreadFeedPresentation(
       );
     }
   }
-  // Keep exactly one live slot while a run is working. When no tool row can
-  // carry it yet (or the latest call failed), the slot reads "Thinking".
   if (
     isWorking &&
     activeWorkStartedAt !== null &&
@@ -1739,7 +1736,10 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
-/** Preserve the server-authored visible order; separate message and work collections cannot rebuild it. */
+/**
+ * It deliberately preserves the incoming order and never rebuilds chat from separate message,
+ * plan, or work-entry collections.
+ */
 export function buildThreadFeed(
   visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
   options?: {
@@ -1781,7 +1781,8 @@ export function buildThreadFeed(
     if (turnItemIsWorkspacePreparation(item)) continue;
     if (item.type === "todo_list" || item.type === "checkpoint") continue;
     if (item.type === "user_message" && foldedAnswerMessageIds.has(item.messageId)) continue;
-    // Interrupt requests are transient bookkeeping; only the terminal result belongs in the feed.
+    // Match the web timeline: only the terminal interrupt result is useful to
+    // users; the preceding request is transient bookkeeping.
     if (item.type === "run_interrupt_request") {
       continue;
     }

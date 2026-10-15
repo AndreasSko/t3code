@@ -29,7 +29,9 @@ function normalizeConnectionState(phase: string | undefined): EnvironmentUpdateC
     case "offline":
       return "disconnected";
     default:
-      // Unconfirmed backends count as settling so the popover's grace period applies.
+      // "available" (or anything not yet observed) — the backend has not
+      // confirmed it is serving yet, so treat it as still settling so the
+      // popover waits for it.
       return "connecting";
   }
 }
@@ -54,7 +56,9 @@ export function useLocalEnvironmentUpdateGroups(): {
 
       inputs.push({
         environmentId: environment.environmentId,
-        // Primary catalog labels may be account names; use platform labels to distinguish machines.
+        // Secondaries carry a meaningful label straight from the platform source
+        // (e.g. "WSL (Ubuntu)"). The primary's catalog label can be the account
+        // name, so fall back to its platform OS so the row reads "Windows"/"Linux".
         label: isPrimary
           ? deriveEnvironmentDisplayLabel({
               isWsl: false,

@@ -220,12 +220,14 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
   yield* runtime.auth.controller.subscribe("managed-codex-snapshot").pipe(
     // Disconnect also publishes idle when a saved account has no active sign-in flow.
     Stream.filter((state) => ["idle", "succeeded", "failed", "cancelled"].includes(state.phase)),
-    // Sign-out interrupts in-flight probes; keep listening so its idle event still refreshes the snapshot.
+    // Sign-out closes the scope of an in-flight probe, which fails that refresh
+    // with an interrupt. Keep listening so the sign-out's own idle still refreshes.
     Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
     Effect.forkScoped,
   );
   const resolveRuntime = runtime.auth.controller.withAccess!(runtime.resolve);
-  // ProviderAdapterRegistry already wraps openSession in withAccess; do not re-enter it when resolving launch settings.
+  // Launch settings resolve per session from the signed-in token. The registry
+  // already wraps openSession in withAccess, so resolve without re-entering it.
   const orchestrationAdapter = yield* createCodexAdapterV2(input, {
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     resolveRuntime: runtime.resolve,

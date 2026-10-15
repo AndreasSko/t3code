@@ -154,8 +154,13 @@ const buildExeCmd = Command.make(
   ),
 );
 
-/** Publish platform tarballs before the launcher so its executables are available.
- * Directory publishing strips the node_modules needed by native addons. */
+/**
+ * Publishes the tarballs scripts/build-npm-platform-packages.ts produced:
+ * every `@t3code/t3-<platform>.tgz` first, `t3.tgz` (the launcher) last, so
+ * the launcher is never installable before the executables it depends on.
+ * Tarballs rather than directories because `npm publish <dir>` strips the
+ * `node_modules/` the executable loads its native addons from.
+ */
 const publishCmd = Command.make(
   "publish",
   {
@@ -209,7 +214,6 @@ const publishCmd = Command.make(
         );
       });
 
-      // Each publish takes about 17s, so the platform packages go at once.
       yield* publishPlatformsThenLauncher({ platformTarballs, launcherTarball, publish });
     }),
 ).pipe(

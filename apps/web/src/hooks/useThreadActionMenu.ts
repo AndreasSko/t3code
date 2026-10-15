@@ -58,10 +58,12 @@ function failureToast(title: string, error: unknown) {
   );
 }
 
-/** Settle and snooze keep this thread open because the user is reading it. */
+/**
+ * Unlike the sidebar, settle and snooze here never navigate away: the caller is acting on the
+ * thread they are reading, and ChatView's parked-thread banner already offers the way back.
+ */
 export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
-  /** Fallback for "Copy path" when the thread has no worktree. */
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
 }) {

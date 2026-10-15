@@ -29,7 +29,10 @@ export interface ProcessRunInput {
   readonly maxOutputBytes?: number | undefined;
   readonly outputMode?: "error" | "truncate" | undefined;
   readonly truncatedMarker?: string | undefined;
-  /** `timedOutResult` returns a synthetic result without partial stdout/stderr. */
+  /**
+   * On timeout, return a synthetic timedOut result.
+   * Partial stdout/stderr are not preserved.
+   */
   readonly timeoutBehavior?: "error" | "timedOutResult" | undefined;
 }
 
@@ -262,7 +265,6 @@ function finalizeRunProcess<R>(
   );
 }
 
-/** The executable name without its directory, recorded as `process.command` on process spans. */
 export const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
 
 const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (

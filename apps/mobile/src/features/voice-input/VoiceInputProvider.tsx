@@ -100,7 +100,6 @@ export function useGlobalVoiceInput() {
 
 function useVoiceInputRuntime() {
   const registry = use(RegistryContext);
-  // Keep dictation preferences available without rerendering the provider on preference changes.
   useAtomMount(mobilePreferencesAtom);
   useAtomMount(updateMobilePreferencesAtom);
   const [{ state, ownerKey, label }, setState] = useState({
@@ -179,7 +178,9 @@ function useVoiceInputRuntime() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      // iOS permission dialogs report inactive; only background cancels preparation.
+      // iOS reports `inactive` while its permission dialog is open. Only the
+      // real background state cancels preparation; recorder status handles
+      // calls and route interruptions during capture.
       if (nextState === "background") controller.appMovedToBackground();
     });
     return () => subscription.remove();
@@ -251,8 +252,6 @@ function useVoiceInputRuntime() {
   const cancel = useCallback(() => controller.cancel(), [controller]);
 
   return {
-    // Store screenshots show the dictation button even on simulators, whose
-    // on-device transcription is unavailable.
     isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
     state,
     audioLevels,

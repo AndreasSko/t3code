@@ -14,7 +14,9 @@ import * as Schema from "effect/Schema";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
-// Asset requests repeat about 30 probes per miss, so cache favicon resolution.
+// Resolution probes 23 well-known paths plus 7 source files, so a miss
+// costs ~30 filesystem probes. AssetAccess resolves on every project-favicon
+// asset URL, and a project's icon does not move, so the answer is cached.
 const FAVICON_CACHE_CAPACITY = 512;
 const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
 const FAVICON_NEGATIVE_CACHE_TTL = Duration.minutes(1);
@@ -72,7 +74,9 @@ const ICON_SOURCE_FILES = [
   "src/index.html",
 ] as const;
 
-// Anchor HTML at <link; scan brace-free object runs to avoid quadratic rescans on large sources.
+// The tag pattern is anchored on `<link`, so it only starts at real candidates. Object metadata
+// is matched by scanning brace-free runs instead of by one combined pattern: an unanchored
+// pattern restarts at every offset and rescans forward, which is quadratic on large sources.
 const LINK_ICON_HTML_RE =
   /<link\b(?=[^>]*\brel=["'](?:icon|shortcut icon)["'])(?=[^>]*\bhref=["']([^"'?]+))[^>]*>/i;
 const ICON_REL_RE = /\brel\s*:\s*["'](?:icon|shortcut icon)["']/i;
@@ -100,14 +104,12 @@ export class ProjectFaviconResolutionError extends Schema.TaggedError<ProjectFav
 
 const isWorkspaceRootNotExistsError = Schema.is(WorkspacePaths.WorkspaceRootNotExistsError);
 
-/** True when the workspace root itself is gone, e.g. a moved or deleted checkout. */
 export const isMissingWorkspaceRoot = (error: ProjectFaviconResolutionError): boolean =>
   error.operation === "normalize-workspace" && isWorkspaceRootNotExistsError(error.cause);
 
 export class ProjectFaviconResolver extends Context.Service<
   ProjectFaviconResolver,
   {
-    /** Returns null when no icon file exists. */
     readonly resolvePath: (
       cwd: string,
       faviconPath?: string,
@@ -118,6 +120,8 @@ export class ProjectFaviconResolver extends Context.Service<
 function extractIconHref(source: string): string | null {
   const htmlMatch = source.match(LINK_ICON_HTML_RE);
   if (htmlMatch?.[1]) return htmlMatch[1];
+  // Icon metadata counts when `rel` and `href` share a brace-free run, so a run holding `rel`
+  // but no href falls through to the next one rather than ending the search.
   for (const run of source.split("}")) {
     if (!ICON_REL_RE.test(run)) continue;
     const hrefMatch = run.match(ICON_HREF_RE);
@@ -234,7 +238,11 @@ export const make = Effect.gen(function* () {
     return yield* findExistingFile(projectCwd, resolveIconHref(href), "workspace");
   });
 
-  // Parallel probes pay one round of disk latency; joining in order preserves precedence and error ordering.
+  // Starts every probe at once and returns the first hit in list order. A miss
+  // costs one round of filesystem latency instead of one per probe, which
+  // matters when the disk is slow. Fibers are joined in order, so a hit returns
+  // without waiting for lower-ranked probes (the scope interrupts them), and a
+  // failure surfaces only when no earlier probe found a file.
   const firstInOrder = <A>(
     items: ReadonlyArray<A>,
     probe: (item: A) => Effect.Effect<string | null, ProjectFaviconResolutionError>,
@@ -321,7 +329,9 @@ export const make = Effect.gen(function* () {
       return null;
     }
 
-    // Re-stat cached hits so deleted icons fall back immediately, without waiting for the TTL.
+    // A hit still confirms the file with one stat rather than the ~20 probes a
+    // full walk costs, so a deleted icon falls back at once instead of after
+    // the TTL.
     const stats = yield* optionOnNotFound(fileSystem.stat(cached)).pipe(
       Effect.mapError(
         (cause) =>

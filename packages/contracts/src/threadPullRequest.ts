@@ -16,7 +16,11 @@ import {
   PullRequestState,
 } from "./pullRequest.ts";
 
-/** Derived single-PR link for older clients; see @t3tools/shared/threadPullRequests. */
+/**
+ * Legacy single-PR link. Still emitted as the thread's derived current pull
+ * request (see `@t3tools/shared/threadPullRequests`) so clients from before
+ * `pullRequests` keep working independently of their release schedule.
+ */
 export const ThreadLinkedPullRequest = Schema.Struct({
   projectId: ProjectId,
   repository: TrimmedNonEmptyString,
@@ -25,7 +29,7 @@ export const ThreadLinkedPullRequest = Schema.Struct({
 });
 export type ThreadLinkedPullRequest = typeof ThreadLinkedPullRequest.Type;
 
-/** Who created a thread ↔ pull request link. `stack-dismissed` is a tombstone
+/** `stack-dismissed` is a tombstone
  * for a native-stack member the user unlinked, so the sync reactor does not
  * re-add it; clients hide it. */
 export const ThreadPullRequestLinkSource = Schema.Literals([
@@ -38,8 +42,9 @@ export const ThreadPullRequestLinkSource = Schema.Literals([
 export type ThreadPullRequestLinkSource = typeof ThreadPullRequestLinkSource.Type;
 
 /**
- * Null until first sync; optional overview fields allow cheap reads
- * and older snapshots to omit them.
+ * Host state persisted on a link by the sync reactor; null until first sync. The overview
+ * fields are optional: a host whose cheap read lacks them leaves them out, and snapshots
+ * written before they existed still decode.
  */
 export const ThreadPullRequestSnapshot = Schema.Struct({
   state: PullRequestState,
@@ -68,7 +73,7 @@ export const ThreadPullRequestStackLayer = Schema.Struct({
 });
 export type ThreadPullRequestStackLayer = typeof ThreadPullRequestStackLayer.Type;
 
-/** A host-native stack the pull request belongs to. Layers run bottom to top. */
+/** Layers run bottom to top. */
 export const ThreadPullRequestStack = Schema.Struct({
   kind: Schema.Literal("native"),
   id: TrimmedNonEmptyString,
@@ -88,7 +93,10 @@ export const ThreadPullRequestKey = Schema.Struct({
 });
 export type ThreadPullRequestKey = typeof ThreadPullRequestKey.Type;
 
-/** Records delivered check, comment and conflict changes so each wake is reported once. */
+/**
+ * The other fields record what the agent was last told, so each change is
+ * reported once.
+ */
 export const ThreadPullRequestWatch = Schema.Struct({
   startedAt: IsoDateTime,
   /** Head commit at the last pass; null where the host does not report one. */
@@ -97,7 +105,10 @@ export const ThreadPullRequestWatch = Schema.Struct({
   failedChecks: Schema.Array(TrimmedNonEmptyString),
   /** The agent was told the required checks on that commit passed. */
   passed: Schema.Boolean,
-  /** Names in the passing gate so a newly required, already-passed check is news. */
+  /**
+   * Names in the passing gate on that commit, so a required check that first shows up already
+   * passed is news.
+   */
   passedChecks: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),

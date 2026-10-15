@@ -153,9 +153,11 @@ function AddProjectShell(props: { readonly children: ReactNode; readonly title: 
   const insets = useSafeAreaInsets();
 
   return (
-    // Keep SettingsScreen's wrapper non-collapsible: RNS formSheet frame correction
-    // otherwise mistakes it for a header sibling and gives the ScrollView zero
-    // height when the sheet relays out, including when the keyboard opens.
+    // collapsable={false} is load-bearing: if this wrapper is flattened, the
+    // ScrollView lands directly under RNSSafeAreaView and RNS's formSheet
+    // scroll-view frame correction mistakes this full-height wrapper for a
+    // "header" sibling, coercing the ScrollView to zero height (blank sheet
+    // as soon as the sheet re-lays-out, e.g. when the keyboard opens).
     <SettingsScreen title={props.title}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -296,7 +298,6 @@ function ProjectPathInput(props: {
   );
 }
 
-// Keep the cloned repository name appended while the user browses parent folders.
 function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirectoryName = "") {
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
@@ -1226,7 +1227,6 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                 />
               }
               isFirst
-              // Deep links have no previous Add project screen to return to.
               onPress={() =>
                 navigation.canGoBack()
                   ? navigation.goBack()
@@ -1368,6 +1368,8 @@ export function AddProjectDestinationScreen(props: {
 
     setIsSubmitting(true);
     if (environment.supportsCloneTracking) {
+      // The server creates the project and clones in the background; the
+      // draft screen shows progress and holds Start until the files land.
       const projectId = ProjectId.make(uuidv4());
       const title = inferProjectTitleFromPath(resolved.path);
       const startResult = await startProjectClone({
@@ -1383,8 +1385,9 @@ export function AddProjectDestinationScreen(props: {
       if (AsyncResult.isFailure(startResult)) {
         setError(errorMessage(Cause.squash(startResult.cause)));
       } else {
-        // Wait for the create event: the draft resolves its project from the client store
-        // and otherwise falls back to the project picker, losing clone controls.
+        // The draft screen resolves its project from the client store, so it
+        // must not open before the create event has arrived (it would fall back
+        // to the project picker and lose the clone controls).
         const project = await waitForProject(
           { environmentId: environment.environmentId, projectId },
           15_000,

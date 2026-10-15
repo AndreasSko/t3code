@@ -12,8 +12,12 @@ import * as Result from "effect/Result";
 import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
 export const WORKTREE_BRANCH_PREFIX = "t3";
-// Match only generated t3/<8 hex>, flat fallback, and legacy t3code hex/UUID-v4 names.
-// A plain t3 branch blocks slash refs; legacy shapes keep existing threads eligible for regeneration.
+// Canonical form is `t3/<8 hex>`. `t3-<8 hex>` is the fallback when a plain `t3`
+// branch blocks the namespace. The matcher also accepts every legacy shape, so
+// existing threads stay eligible for branch regeneration: `t3code/<8 hex>` and
+// `t3code-<8 hex>` from before the prefix was shortened, and `t3code/<uuid>` from
+// older mobile builds that used Crypto.randomUUID() (always RFC 4122 v4, so version
+// nibble `4` and variant nibble `[89ab]`). Nothing looser than what was generated.
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
   "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -21,10 +25,6 @@ const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
   `^(?:${WORKTREE_BRANCH_PREFIX}[-/]${TEMP_WORKTREE_HEX_TOKEN}|t3code(?:[-/]${TEMP_WORKTREE_HEX_TOKEN}|\\/${TEMP_WORKTREE_UUID_V4_TOKEN}))$`,
 );
 
-/**
- * Sanitize an arbitrary string into a valid, lowercase git refName fragment.
- * Strips quotes, collapses separators, limits to 64 chars.
- */
 export function sanitizeBranchFragment(raw: string): string {
   const normalized = raw
     .trim()
@@ -62,7 +62,6 @@ export function formatGeneratedBranchName(raw: string, naming?: BranchNamingOpti
 }
 
 /**
- * Sanitize a generated branch name, preserving any slash-separated namespace.
  * Unprefixed fragments use the `feature/` namespace.
  */
 export function sanitizeFeatureBranchName(raw: string): string {
@@ -144,8 +143,11 @@ export function isTemporaryWorktreeBranch(refName: string): boolean {
 }
 
 /**
- * Azure SSH and web URLs use different hosts and paths for the same repository.
- * Key both by the web spelling so SSH clones match pull request URLs.
+ * Azure alone addresses one repository under two names that share no part: `ssh.dev.azure.com` and
+ * `v3/{org}/{project}/{repo}` over SSH, against `dev.azure.com` and `{org}/{project}/_git/{repo}`
+ * everywhere a person sees it. A project cloned over SSH would otherwise be a different repository
+ * to every comparison made against a pull request URL, which arrives in the web spelling. So the
+ * web spelling is the one both are keyed by.
  */
 function azureDevOpsRepositoryKey(host: string, segments: ReadonlyArray<string>): string | null {
   if (host !== "ssh.dev.azure.com" && host !== "vs-ssh.visualstudio.com") return null;
@@ -191,10 +193,6 @@ export function normalizeGitRemoteUrl(value: string): string {
   return normalized;
 }
 
-/**
- * Unquote a git config value: strip an inline `#` or `;` comment outside
- * quotes, then drop surrounding quotes and backslash escapes.
- */
 function parseGitConfigValue(raw: string): string {
   let out = "";
   let quoted = false;
@@ -289,15 +287,19 @@ function deriveLocalBranchNameCandidatesFromRemoteRef(
   return [...candidates];
 }
 
-// Replace ASCII whitespace inside the trimmed name; git permits Unicode whitespace.
-// Keep case and existing dashes, and let git report names invalid for other reasons.
+// Git rejects ASCII space and the ASCII control characters (tab, newline and
+// friends) in ref names, so the picker's "Create new ref" entry can only fail
+// for a typed name like "new branch". Replacing runs of those with a dash makes
+// the name usable without reimplementing check-ref-format: names invalid for
+// other reasons still surface the git error. Only the whitespace git actually
+// rejects is replaced — git accepts U+00A0 and friends, and rewriting those
+// would silently create a ref the user never asked for. Case and existing
+// dashes are left alone, since ref names are case sensitive and consecutive
+// dashes are valid.
 export function sanitizeNewRefName(rawName: string): string {
   return rawName.trim().replace(/[ \t\n\r\f\v]+/g, "-");
 }
 
-/**
- * Hide `origin/*` remote refs when a matching local refName already exists.
- */
 export function dedupeRemoteBranchesWithLocalMatches(
   refs: ReadonlyArray<VcsRef>,
 ): ReadonlyArray<VcsRef> {

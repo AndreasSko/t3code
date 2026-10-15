@@ -91,7 +91,10 @@ export const ProjectCommandRejection = Schema.Union([
 export type ProjectCommandRejection = typeof ProjectCommandRejection.Type;
 
 const ProjectCommandRejectionJson = Schema.fromJsonString(ProjectCommandRejection);
-/** Persist typed rejections so retries return the original error even if a fresh plan would succeed. */
+/**
+ * A rejected receipt stores its rejection as JSON, so a retried command id
+ * replays the same typed error even when a fresh plan would now succeed.
+ */
 export const encodeProjectCommandRejection = Schema.encodeSync(ProjectCommandRejectionJson);
 /** None for receipts that predate structured rejections. */
 export const decodeProjectCommandRejection = Schema.decodeUnknownOption(
@@ -107,7 +110,10 @@ export interface ProjectCommandState {
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
-/** Read state under the project's lock, then commit the planned event. */
+/**
+ * Decide one project command against the rows it touches. The caller reads
+ * `state` under the project's lock and commits the planned event.
+ */
 export function planProjectCommand(input: {
   readonly command: ProjectCommand;
   readonly state: ProjectCommandState;
@@ -160,7 +166,8 @@ export function planProjectCommand(input: {
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
-          // Only a metadata update records an explicit project model default.
+          // Project creation has no user model choice. Older clients sent an
+          // automatic seed, but only a metadata update records an explicit default.
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
@@ -181,7 +188,8 @@ export function planProjectCommand(input: {
         return invariant("Project monograms must contain at most two characters.");
       }
       if (command.scripts !== undefined) {
-        // Allow editing existing invalid script IDs without admitting new invalid IDs.
+        // Persisted IDs predate shortcut validation. Let users edit or remove them
+        // without allowing another invalid ID to enter the project.
         const existingIds = new Set(project.scripts.map((script) => script.id));
         for (const script of command.scripts) {
           if (!existingIds.has(script.id) && !isScriptRunCommand(`script.${script.id}.run`)) {

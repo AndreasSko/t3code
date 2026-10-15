@@ -149,8 +149,9 @@ const registerGrokAcpExtensions: NonNullable<AcpAdapterV2Flavor["registerExtensi
   );
 
 /**
- * Grok reverse-requests exit_plan_mode approval. Capture the plan in T3 and abandon
- * the native gate so the turn does not hang (#8358).
+ * Grok intercepts exit_plan_mode and reverse-requests client approval. Capture
+ * the plan into T3's proposed-plan card and abandon the native gate so the turn
+ * does not hang (#8358; mirrors the Claude ExitPlanMode pattern).
  */
 const registerGrokExitPlanModeExtensions = ({
   runtime,
@@ -232,11 +233,16 @@ export function makeGrokAcpAdapterFlavor(
     runtimeHarness: "Grok",
     capabilities: GrokProviderCapabilitiesV2,
     interruptPromptOnCancel: false,
-    // Stop hard-kills background work; soft interrupts preserve it for the replacement turn.
+    // User Stop (requestRuntimeRestart) still hard-kills the process group and
+    // respawns so existing background tasks stop too. Non-Stop interrupts
+    // (mid-prompt steering, restart_active) omit requestRuntimeRestart and stay
+    // soft: session/cancel carries cancelTrigger=ctrl_c, the session survives,
+    // and background work remains available to the replacement turn.
     restartRuntimeAfterInterrupt: true,
     terminateRuntimeProcessGroupOnInterrupt: true,
-    // Grok accepts concurrent session/prompt once settled; skip session/cancel on steering
-    // so fire-and-forget subagents survive.
+    // Steering restarts on a settled turn additionally skip session/cancel so
+    // fire-and-forget subagents survive the steer (E1 harness confirmed the
+    // Grok CLI accepts a concurrent session/prompt in that state).
     preserveRuntimeOnSettledInterrupt: true,
     // Grok ACP initialize reports promptCapabilities.image:false but the agent
     // still accepts image content blocks (verified with real screenshots).
@@ -281,8 +287,6 @@ export function makeGrokAcpAdapterFlavor(
         cause,
         ...(isAcpRequestError(cause)
           ? {
-              // Grok's own failure text rides on the cause; makeProviderFailure
-              // redacts and bounds it before it reaches the user.
               message:
                 cause.cause instanceof XAiPromptFailureText
                   ? cause.cause.message
@@ -296,7 +300,6 @@ export function makeGrokAcpAdapterFlavor(
     extractSubagentUpdate: extractXAiAcpSubagentUpdate,
     extractSubagentEndNotice: extractXAiAcpSubagentEndNotice,
     normalizeToolCall: normalizeXAiAcpToolCallState,
-    // Session plan.md writes surface before exit_plan_mode, while the plan is still being written.
     extractProposedPlanMarkdown: (toolCall) =>
       extractGrokPlanMarkdownFromToolCallData(toolCall.data, {
         platform: options.hostPlatform,

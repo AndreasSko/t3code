@@ -1,7 +1,6 @@
 import { PROVIDER_DISPLAY_NAMES, type ServerProvider } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 
-// Name the thing the user updates; "Claude" alone reads like the app or model.
 const RUNTIME_NAMES: Partial<Record<string, string>> = {
   claudeAgent: "Claude Code",
   codex: "the Codex CLI",
@@ -12,7 +11,6 @@ function formatModelList(names: ReadonlyArray<string>): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-/** Names matching manifest models gated by provider version, explaining why picker search results are missing. */
 export function formatProviderUpdateRequiredNotice(
   provider: Pick<ServerProvider, "driver" | "updateRequiredModels">,
   searchQuery = "",
@@ -25,7 +23,6 @@ export function formatProviderUpdateRequiredNotice(
       model.slug.toLocaleLowerCase().includes(query),
   );
   if (models.length === 0) return null;
-  // The highest bar unlocks every listed model.
   const minVersion = models
     .map((model) => model.minVersion)
     .reduce((highest, version) =>

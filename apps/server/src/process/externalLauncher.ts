@@ -50,7 +50,6 @@ interface EditorLaunch {
   readonly target: string;
   readonly command: string;
   readonly args: ReadonlyArray<string>;
-  /** Defaults to true. See WINDOWS_POWERSHELL_DETACHED. */
   readonly detached?: boolean;
 }
 
@@ -66,8 +65,12 @@ interface TargetPathAndPosition {
   readonly column: Option.Option<string>;
 }
 
-/** Windows shims forward already-escaped arguments through %* for another cmd.exe parse.
- * Quotes or line breaks can then expose shell operators. */
+/**
+ * Windows command shims (`code.cmd`) forward arguments through `%*`, which
+ * cmd.exe parses a second time after the first escaping layer is gone: a
+ * line break ends the command there, and a double quote closes the quoting
+ * that keeps `&` or `|` literal. Neither can occur in a Windows path.
+ */
 // oxlint-disable-next-line no-control-regex
 const WINDOWS_SHIM_UNSAFE_ARG_PATTERN = /[\u0000-\u001f\u007f"]/;
 const TARGET_WITH_POSITION_PATTERN = /^(.*?):(\d+)(?::(\d+))?$/;
@@ -80,8 +83,7 @@ const POWERSHELL_ARGUMENTS_PREFIX = [
 ] as const;
 
 // Windows PowerShell started with DETACHED_PROCESS exits 0 without running its
-// command, so native Windows launches through it stay attached. The child is
-// still unref'd with ignored stdio, so nothing waits on it. WSL interop
+// command, so native Windows launches through it stay attached. WSL interop
 // PowerShell starts from a Linux process and keeps the detached launch.
 const WINDOWS_POWERSHELL_DETACHED = false;
 
@@ -192,7 +194,10 @@ function resolveWslPowerShellPath(): string {
   return "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
 }
 
-// WSL's automount root is configurable, so resolve PowerShell through the interop PATH.
+// File reveals from WSL resolve PowerShell through the interop PATH rather
+// than the fixed /mnt/c mount: the automount root is configurable, and a
+// PATH-resolved command keeps the advertised capability aligned with the
+// availability check `launchEditor` performs before spawning.
 const WSL_POWERSHELL_COMMAND = "powershell.exe";
 
 function shouldUseWindowsHostFromWsl(
@@ -252,8 +257,14 @@ function fileManagerCommandForPlatform(
   }
 }
 
-// xdg-open can silently fail without an inode/directory handler.
-// Bound this probe below the config scan timeout so a hung xdg-mime only hides the file manager.
+// A graphical session variable plus an executable `xdg-open` does not prove
+// that opening a directory does anything: without an `inode/directory` MIME
+// handler, `xdg-open` exits nonzero after the launcher has already detached, so
+// the client would see a silent no-op. The probe carries its own timeout well
+// inside the scan timeout `server.getConfig` applies to editor discovery: that
+// outer timeout degrades to an empty editor list, so a hung `xdg-mime` (broken
+// D-Bus or desktop session) must cost only the file manager, not every
+// discovered editor.
 const LINUX_DIRECTORY_HANDLER_PROBE_TIMEOUT = "2 seconds";
 
 const hasUsableLinuxDirectoryHandler = Effect.fn("externalLauncher.hasUsableLinuxDirectoryHandler")(
@@ -306,7 +317,10 @@ const isUsableFileManagerCommand = Effect.fn("externalLauncher.isUsableFileManag
   },
 );
 
-// WSL interop may lack explorer.exe or a distro name while WSLg still supports xdg-open.
+// WSL hosts prefer the Windows Explorer bridge, but interop can exist without
+// `explorer.exe` on PATH (appendWindowsPath=false) or without a distro name
+// while WSLg still provides a working Linux file manager, so they keep the
+// `xdg-open` fallback instead of losing the editor entirely.
 const resolveUsableFileManagerCommand = Effect.fn(
   "externalLauncher.resolveUsableFileManagerCommand",
 )(function* (
@@ -331,8 +345,13 @@ const resolveUsableFileManagerCommand = Effect.fn(
   return undefined;
 });
 
-// Reveal uses PowerShell, so probe it separately from Explorer.
-// Linux relies on the file-manager availability gate; WSL must re-probe its Linux fallback.
+// Reveal on Windows and WSL runs through PowerShell (see
+// resolveFileManagerRevealLaunch), not the `explorer` command that gates the
+// file-manager editor itself, so the capability must probe the executables the
+// reveal actually spawns. Callers gate on file-manager availability first;
+// the Linux "files" kind relies on that gate for the directory-handler probe,
+// while the WSL fallback re-probes because its availability may have come
+// from the Explorer bridge instead.
 const fileManagerRevealKindForPlatform = Effect.fn(
   "externalLauncher.fileManagerRevealKindForPlatform",
 )(function* (
@@ -450,13 +469,18 @@ const resolveFileManagerRevealKind = Effect.fn("externalLauncher.resolveFileMana
   },
 );
 
-// Share a service-scoped scan so connecting clients cannot cancel work needed by other clients.
-// Cache expensive PATH discovery using monotonic expiry so wall-clock changes cannot prolong it.
+// Editor discovery walks PATH for every known editor and runs for every client
+// connect (the server config embeds the available editors). Callers apply a
+// timeout (`resolveAvailableEditorsForConfig`) and disconnect mid-connect;
+// neither may cancel a scan other connects are waiting on, or throw away work a
+// slow host (a busy server at startup, a long PATH) needs more than one connect
+// to finish. Expiry uses the monotonic clock (Clock.monotonicTimeNanos),
+// matching the command-resolution cache in @t3tools/shared/shell, so a backward
+// wall-clock adjustment cannot keep an expired entry alive.
 const EDITOR_DISCOVERY_CACHE_TTL_NANOS = 60_000_000_000n;
 
 interface EditorDiscoveryCacheEntry {
   readonly scan: Deferred.Deferred<ReadonlyArray<EditorId>>;
-  /** Undefined while the scan is still running. */
   readonly expiresAtNanos: bigint | undefined;
 }
 
@@ -464,11 +488,13 @@ export class ExternalLauncher extends Context.Service<
   ExternalLauncher,
   {
     readonly resolveAvailableEditors: () => Effect.Effect<ReadonlyArray<EditorId>>;
-    /** Requires `resolveAvailableEditors` to include "file-manager"; Linux relies on its handler probe. */
+    /**
+     * Only meaningful when `resolveAvailableEditors` includes "file-manager":
+     * on Linux that availability check also carries the directory-handler probe
+     * this capability relies on.
+     */
     readonly resolveFileManagerRevealKind: () => Effect.Effect<FileManagerRevealKind | undefined>;
-    /** Launch a URL target in the default browser. */
     readonly launchBrowser: (target: string) => Effect.Effect<void, ExternalLauncherError>;
-    /** Detaches the editor process so the caller does not wait for it to exit. */
     readonly launchEditor: (input: LaunchEditorInput) => Effect.Effect<void, ExternalLauncherError>;
   }
 >()("t3/process/externalLauncher") {}
@@ -533,12 +559,11 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
 });
 
 /**
- * PowerShell source that launches File Explorer with its raw selection
- * switch. Explorer's contract is the single argument `/select,"<path>"` with
- * only the path quoted; Node's default spawn quoting wraps the whole argument
- * when the path has spaces and Explorer misparses it, silently opening a
- * fallback folder. A single `-ArgumentList` string in Windows PowerShell 5.1
- * reaches the child's command line verbatim, preserving the raw switch.
+ * Explorer's contract is the single argument `/select,"<path>"` with only the
+ * path quoted; Node's default spawn quoting wraps the whole argument when the
+ * path has spaces and Explorer misparses it, silently opening a fallback
+ * folder. A single `-ArgumentList` string in Windows PowerShell 5.1 reaches the
+ * child's command line verbatim, preserving the raw switch.
  */
 function buildFileExplorerRevealPowerShellSource(explorerCommand: string, target: string): string {
   return `$ProgressPreference = 'SilentlyContinue'; Start-Process ${escapePowerShellStringLiteral(explorerCommand)} -ArgumentList ('/select,"' + ${escapePowerShellStringLiteral(target)} + '"')`;
@@ -568,8 +593,6 @@ const resolveFileManagerRevealLaunch = Effect.fn("resolveFileManagerRevealLaunch
   target: string,
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
-  // The command resolveUsableFileManagerCommand picked; a WSL host that fell
-  // back to the Linux file manager must reveal through it as well.
   command: string,
 ): Effect.fn.Return<
   EditorLaunch,
@@ -598,7 +621,10 @@ const resolveFileManagerRevealLaunch = Effect.fn("resolveFileManagerRevealLaunch
   ) {
     const explorerTarget = resolveWslFileManagerPath(target, env.WSL_DISTRO_NAME);
     if (yield* isCommandAvailable(WSL_POWERSHELL_COMMAND, { env })) {
-      // Explorer's raw switch cannot express quotes legal in WSL paths; reveal the parent instead.
+      // Explorer's raw switch cannot express a double quote, and unlike
+      // Windows paths a WSL path may legally contain one: open the containing
+      // directory in File Explorer instead, matching the advertised
+      // "file-explorer" kind.
       if (explorerTarget.includes('"')) {
         const path = yield* Path.Path;
         return {
@@ -610,12 +636,13 @@ const resolveFileManagerRevealLaunch = Effect.fn("resolveFileManagerRevealLaunch
       }
       return fileExplorerRevealLaunch(target, explorerTarget, WSL_POWERSHELL_COMMAND);
     }
-    // Keep the reveal consistent with the advertised Linux "files" capability.
+    // Without interop PowerShell the capability advertised the Linux "files"
+    // kind when it advertised anything at all, so the reveal must open the
+    // Linux file manager the label promised, not File Explorer.
     if (hasGraphicalLinuxSession(env) && (yield* isUsableFileManagerCommand("xdg-open", env))) {
       const path = yield* Path.Path;
       return { editor: "file-manager", target, command: "xdg-open", args: [path.dirname(target)] };
     }
-    // Fall back to the parent in Explorer for a stale client.
     const path = yield* Path.Path;
     return {
       editor: "file-manager",

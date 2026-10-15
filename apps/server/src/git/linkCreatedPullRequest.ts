@@ -22,7 +22,11 @@ export interface CreatedPullRequestKey {
   readonly url: string;
 }
 
-/** Prefer URL host/repository identity over checkout remotes; use project identity only as fallback. */
+/**
+ * Reading the host and repository from the URL keeps the link host-level even when the
+ * checkout's remote differs from where the PR was opened (a fork, say); the project is only
+ * consulted when the URL is one this cannot read.
+ */
 export function createdPullRequestKey(
   result: Pick<GitRunStackedActionResult, "pr">,
   project: OrchestrationProjectShell | undefined,
@@ -45,7 +49,10 @@ export function createdPullRequestKey(
   };
 }
 
-/** Link best-effort: failure cannot undo the successful Git action, and duplicates are already linked. */
+/**
+ * Never fails: the git action already succeeded and its result is on its way to the client, so
+ * a link that cannot be made is logged and dropped.
+ */
 export const linkCreatedPullRequest = <E>(input: {
   readonly threadId: ThreadId;
   readonly result: Pick<GitRunStackedActionResult, "pr">;

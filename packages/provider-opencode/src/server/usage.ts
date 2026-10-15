@@ -86,13 +86,11 @@ export interface OpenCodeUsageReadResult {
 const isNotFound = (cause: PlatformError.PlatformError) => cause.reason._tag === "NotFound";
 const MESSAGE_PAGE_SIZE = 64;
 
-/** Whether the path is itself a symlink, without following it. */
 const isSymbolicLink = Effect.fnUntraced(function* (path: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* Effect.isSuccess(fileSystem.readLink(path));
 });
 
-/** Stat of a regular file or directory; a symlink reports as itself and is never followed. */
 const entryInfo = Effect.fn("entryInfo")(function* (path: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   if (yield* isSymbolicLink(path))
@@ -109,7 +107,6 @@ const LEGACY_STAT_CONCURRENCY = 4;
 /** Entries stat'd before any is processed, so one huge directory is not held in memory at once. */
 const LEGACY_STAT_BATCH = 256;
 
-/** Reads current SQLite and pre-migration JSON stores without modifying either. */
 export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
   root: string,
   sinceMs: number,
@@ -254,7 +251,6 @@ export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
           (entry) =>
             fileSystem.stat(entry).pipe(
               Effect.catchTags({
-                // A symlink whose target cannot be stat'd is skipped, not an error.
                 PlatformError: (cause) =>
                   isNotFound(cause)
                     ? Effect.succeed(null)
@@ -311,10 +307,6 @@ export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
   return { files, missing: !found && !error, error };
 });
 
-/**
- * The data directories to read: `OPENCODE_DATA_DIR` (comma-separated) or the
- * XDG default, canonicalized so aliases count once.
- */
 const resolveOpenCodeDataDirs = Effect.fn("resolveOpenCodeDataDirs")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;

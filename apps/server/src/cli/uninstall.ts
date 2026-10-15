@@ -28,17 +28,18 @@ export class CliUninstallError extends Schema.TaggedError<CliUninstallError>()(
   }
 }
 
-/** Compute before removal so the user can review the full uninstall plan. */
 export interface UninstallPlan {
   readonly service: boolean;
-  /** The `t3` launcher (symlink or `.cmd` shim) that points into this home's runtime tree. */
   readonly launcher: string | undefined;
   readonly runtimeDir: string | undefined;
   /** `<home>/userdata`, which is never removed; shown so the user knows where it is. */
   readonly userdataDir: string;
 }
 
-/** Claim only launchers inside this home's runtime/versions; preserve copies and other homes. */
+/**
+ * Only a launcher that points into this home's `runtime/versions` is claimed: a plain copy of the
+ * executable, or a launcher for another home, is not ours to delete.
+ */
 export const findOwnedLauncher = Effect.fn("cli.uninstall.find_launcher")(function* (input: {
   readonly launchedAs: string | undefined;
   readonly versionsDir: string;
@@ -172,8 +173,9 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
     yield* Console.log(`Removed ${plan.launcher}.`);
   }
   if (plan.runtimeDir !== undefined) {
-    // Windows refuses to unlink a running executable; use a detached shell
-    // after this process exits. POSIX can remove it directly.
+    // This process runs from inside runtimeDir. POSIX unlinks a running
+    // executable fine; Windows refuses, so the tree is removed after this
+    // process exits by a detached shell, and the user is told either way.
     if (platform === "win32") {
       const runtimeDir = plan.runtimeDir;
       const comspec = environment["ComSpec"] ?? environment["COMSPEC"] ?? "cmd.exe";

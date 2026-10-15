@@ -26,7 +26,6 @@ export function resolveThreadDetailsCardLayout({
   lane: { padding: number; minChatWidth: number };
   frame: PreviewMiniPlayerFrame | null;
   overlapsDetailsCard?: boolean;
-  /** Space taken above the card, such as the open find bar. */
   topInset?: number;
 }) {
   const gap = THREAD_DETAILS_CARD_GAP;

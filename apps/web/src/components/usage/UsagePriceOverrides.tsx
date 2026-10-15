@@ -93,7 +93,6 @@ type SaveAttempt = {
   >;
 };
 
-/** Mappings attribute usage to the target model. initialModel starts a new row for that model. */
 export function UsagePriceOverrides({
   usage,
   initialSelectedEnvironmentIds,

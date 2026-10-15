@@ -1,4 +1,3 @@
-/** Runs homepage motion only while its content is visible. */
 export function startHomeMotion({
   hero,
   field,

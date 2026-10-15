@@ -1,7 +1,3 @@
-/**
- * Implicit defaults expose built-in providers on fresh installs without writing settings.
- * Reconcile failures must not terminate the settings watcher.
- */
 import {
   defaultInstanceIdForDriver,
   providerInstanceConfigEnabledFlag,
@@ -37,7 +33,6 @@ type ProviderInstanceRegistryHydrationEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig;
 
-/** Adds implicit built-in defaults only where their settings slot is empty. */
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
@@ -50,8 +45,9 @@ export const deriveProviderInstanceConfigMap = (
     merged[instanceId] = { driver: driver.driverKind };
   }
 
-  // Project overrides must keep machine-disabled instances alive and probed so their threads can route.
-  // Never recreate an absent instance for an override.
+  // A project that turns an instance on needs it alive and probed even when the machine itself
+  // has it off, or a thread in that project would route to an instance nobody ever checked in
+  // on.
   for (const overrides of Object.values(settings.projectSettingsOverrides)) {
     for (const [rawInstanceId, projectOverride] of Object.entries(
       overrides?.providerInstances ?? {},
@@ -73,7 +69,6 @@ export const deriveProviderInstanceConfigMap = (
   return merged as ProviderInstanceConfigMap;
 };
 
-/** Reconcile failures must not stop the settings watcher. */
 const layerSettingsWatcher = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
@@ -94,10 +89,6 @@ const layerSettingsWatcher = Layer.effectDiscard(
   }),
 );
 
-/**
- * Acquire the settings subscription before forking to avoid missed changes.
- * provideMerge supplies the mutator while retaining the public registry output.
- */
 export const layer: Layer.Layer<
   ProviderInstanceRegistry.ProviderInstanceRegistry,
   never,

@@ -52,7 +52,12 @@ export function readThemeHalves(): ThemeHalves | null {
   return readStoredThemeHalves();
 }
 
-/** Capture raw halves before setTheme clears them; unresolved published ids must not be treated as absent. */
+/**
+ * The stored mix as written, without resolvability pruning. Flows that
+ * rebuild the whole mix must capture this before a `setTheme` clears it: a
+ * published id resolves only once its set has streamed in, and treating "not
+ * resolvable yet" as "absent" silently rewrites that half.
+ */
 export function readThemeHalvesRaw(): { light?: string; dark?: string } {
   if (typeof window === "undefined") return {};
   return readStoredThemeHalvesRaw();
@@ -67,7 +72,12 @@ function readStoredThemeHalves(): ThemeHalves | null {
   }
 }
 
-/** Merge over raw stored halves so changing one cannot erase an unresolved published half. */
+/**
+ * The stored mix as written, without resolvability pruning. An environment
+ * published id resolves only once its set has streamed in, so a write that
+ * merged over the pruned parse would silently erase that half whenever the
+ * other one changed before the set arrived.
+ */
 function readStoredThemeHalvesRaw(): { light?: string; dark?: string } {
   try {
     const value: unknown = JSON.parse(
@@ -292,7 +302,8 @@ export function syncBrowserChromeTheme() {
 
   document.documentElement.style.backgroundColor = backgroundColor;
   document.body.style.backgroundColor = backgroundColor;
-  // Update all theme-color metas, including media-scoped elements added by other layers.
+  // Update every theme-color meta so any element another layer added (for
+  // example a media-scoped one) carries the resolved color too.
   const themeColorMetas = document.querySelectorAll<HTMLMetaElement>(
     `meta[name="${THEME_COLOR_META_NAME}"]`,
   );
@@ -472,7 +483,6 @@ function subscribe(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   listeners.push(listener);
 
-  // Share system and storage listeners so each event applies the theme only once.
   if (!removeWindowListeners) {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
@@ -514,9 +524,7 @@ export function useTheme() {
         if (previousHalvesRaw !== null) {
           try {
             window.localStorage.setItem(THEME_HALVES_STORAGE_KEY, previousHalvesRaw);
-          } catch {
-            // Storage is failing wholesale; the outer handler reports it.
-          }
+          } catch {}
         }
         throw cause;
       }

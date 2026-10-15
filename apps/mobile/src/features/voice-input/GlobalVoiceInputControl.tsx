@@ -40,7 +40,11 @@ const MORPH_TIMING = {
 } as const;
 const ENTERING = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
 
-/** Wrap content so outside touches collapse off-screen dictation without claiming the touch. */
+/**
+ * Keeps an off-screen dictation reachable as a pill on the screen's trailing
+ * edge. Wraps the app content so any touch that starts outside the pill,
+ * including a scroll, collapses it without claiming the touch.
+ */
 export function GlobalVoiceInputControl(props: { readonly children: ReactNode }) {
   const voice = useGlobalVoiceInput();
   const collapseRef = useRef<(() => void) | null>(null);

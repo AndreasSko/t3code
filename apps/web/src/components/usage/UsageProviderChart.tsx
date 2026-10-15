@@ -24,7 +24,6 @@ export type UsageChartMetric = "tokens" | "cost";
 
 interface UsageProviderChartProps {
   readonly providers: readonly UsageProviderKind[];
-  /** Providers whose figures are still coming in: their lines are muted. */
   readonly loadingProviders?: ReadonlySet<UsageProviderKind>;
   readonly days: readonly string[];
   readonly daily: readonly DailyTotals[];
@@ -156,7 +155,11 @@ function areaPath(line: string) {
   return line === "" ? "" : `${line} L${VIEW_WIDTH},${VIEW_HEIGHT} L0,${VIEW_HEIGHT} Z`;
 }
 
-/** Round the maximum up to a 1/2/5 x 10^n step so peaks cannot draw above the plot. */
+/**
+ * Rounding the maximum *up* is the point: stopping at the last step below the
+ * peak leaves the tallest day drawn past the top of the plot, where it is
+ * clipped.
+ */
 export function niceScale(peak: number, count: number): { max: number; ticks: readonly number[] } {
   if (peak <= 0) return { max: 0, ticks: [0] };
 
@@ -173,7 +176,10 @@ export function niceScale(peak: number, count: number): { max: number; ticks: re
 
 const PLACEHOLDER_TICKS = Array.from({ length: TICK_COUNT + 1 }, (_, index) => index);
 
-/** Use placeholder gridlines while providers load so their arrival does not shift the plot. */
+/**
+ * With nothing to show yet while providers load, unlabeled placeholder
+ * gridlines hold their usual spacing so nothing shifts on arrival.
+ */
 export function chartScale(
   columns: readonly DayColumn[],
   loadingProviders: ReadonlySet<UsageProviderKind>,
@@ -330,7 +336,6 @@ export function UsageProviderChart({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex gap-2">
-        {/* Axis labels sit outside the plot so they stay aligned to gridlines. */}
         <div className="relative h-56 w-14 shrink-0">
           {scale.labeled
             ? scale.ticks.map((tick) => (

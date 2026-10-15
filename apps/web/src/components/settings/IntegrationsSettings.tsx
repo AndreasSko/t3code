@@ -3,7 +3,6 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
-/** @module IntegrationsSettings */
 import {
   AuthSettingsWriteScope,
   BrowserImportFailureReason,
@@ -158,7 +157,6 @@ export function browserProfileRemovalAvailable(
   return (bridgeAvailable || serverBrowserCount > 0) && environmentsReady && environmentCount > 0;
 }
 
-/** Fill has no dimensions, so seed responsive inputs with a concrete size. */
 const RESPONSIVE_SEED_SIZE = { width: 1280, height: 800 } as const;
 
 const NO_GROUPING: Intl.NumberFormatOptions = { useGrouping: false };
@@ -171,8 +169,11 @@ const APPEARANCE_LABELS: Readonly<Record<PreviewAppearancePreference, string>> =
 
 const zoomLabel = (zoomFactor: number) => `${Math.round(zoomFactor * 100)}%`;
 
-/** IPC preserves only error messages, so encode import reasons as tokens without exposing raw errors. */
-/** Thrown from the post-import settings updater when the cap was hit meanwhile. */
+/**
+ * IPC flattens the failure to its message, so the reason token travels inside
+ * it. Anything unrecognised reads as a plain read failure rather than leaking
+ * the raw message into a toast.
+ */
 class ProfileLimitReachedError extends Error {
   constructor() {
     super("Browser profile limit reached.");
@@ -199,7 +200,11 @@ const viewportSelectValue = (viewport: PreviewViewportSetting): string => {
   return RESPONSIVE_VALUE;
 };
 
-/** Inline options give SelectValue no items map, so provide a label instead of raw fill. */
+/**
+ * The trigger renders this rather than a bare `SelectValue`, which would fall
+ * back to printing the raw stored value ("fill") because the options are built
+ * inline instead of from an `items` map.
+ */
 const viewportSelectLabel = (viewport: PreviewViewportSetting): string => {
   const value = viewportSelectValue(viewport);
   if (value === FILL_VALUE) return "Fill panel";
@@ -212,7 +217,6 @@ const isValidDimension = (value: number) =>
   value >= PREVIEW_VIEWPORT_MIN_DIMENSION &&
   value <= PREVIEW_VIEWPORT_MAX_DIMENSION;
 
-/** Preserve preset ids through rotation while swapping their dimensions. */
 const rotateViewport = (
   viewport: Exclude<PreviewViewportSetting, { readonly _tag: "fill" }>,
 ): PreviewViewportSetting => ({
@@ -258,8 +262,9 @@ function BrowserViewportSetting({ disabled }: { readonly disabled: boolean }) {
     });
   };
 
-  // Commit on blur so legal intermediate sizes like 256 while typing 2560
-  // cannot churn settings or resize the viewport per keystroke.
+  // Committed on blur rather than per keystroke: typing "2560" passes through
+  // "256", which is a legal dimension, so an onValueChange handler would
+  // persist that intermediate size and churn the settings file on every key.
   const commitDimension = (axis: "width" | "height", value: number | null) => {
     if (value === null || !isValidDimension(value)) return;
     const next = { ...presentedSize, [axis]: value };
@@ -320,7 +325,6 @@ function BrowserViewportSetting({ disabled }: { readonly disabled: boolean }) {
                 min={PREVIEW_VIEWPORT_MIN_DIMENSION}
                 max={PREVIEW_VIEWPORT_MAX_DIMENSION}
                 disabled={disabled}
-                // Pixel counts read as raw numbers; grouping would show "1,024".
                 format={NO_GROUPING}
                 size="sm"
                 className="w-20"
@@ -641,7 +645,6 @@ function DeviceIntegrationControls({
     (host) => host.kind === "local" && !host.platforms.some((platform) => platform.available),
   );
   const [platformsRevealed, setPlatformsRevealed] = useState(false);
-  // Keep diagnostics visible through subsequent agent setup and refresh phases.
   if (platformsRevealed && !enabled) setPlatformsRevealed(false);
   if (
     enabled &&
@@ -898,8 +901,15 @@ function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled
   );
 }
 
-/** Built-in profiles cannot be renamed or removed without stranding tabs.
- * Detect import sources on open because file access and browser-running state can change. */
+/**
+ * Built-ins render without a rename field: they are synthesized rather than
+ * stored, so there is nothing to rename and removing them would strand every
+ * tab that opened under them.
+ *
+ * Sources are listed lazily on open: detection touches the other browser's
+ * files, and the answer changes while the app is running (quitting the browser
+ * clears `browserRunning`), so a value cached at mount would go stale.
+ */
 function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const userProfiles = useClientSettings((settings) => settings.browserProfiles);
   const defaultProfileId = useClientSettings((settings) => settings.browserDefaultProfileId);
@@ -944,7 +954,10 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const profileWritesDisabled = disabled || !settingsHydrated;
 
   const profiles = resolveBrowserProfiles(userProfiles);
-  // Incognito has no managed row; resolve defaults against displayed profiles to keep a Default badge.
+  // Incognito is deliberately not a row — it holds nothing to manage — so the
+  // default has to resolve against the list that renders. A stored
+  // `browserDefaultProfileId` of "incognito" would otherwise leave the section
+  // with no Default badge at all.
   const listedProfiles = profiles.filter((profile) => profile.kind !== "incognito");
   const resolvedDefaultId =
     findBrowserProfile(listedProfiles, defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID;
@@ -952,7 +965,8 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const createProfile = (baseName: string) => {
     if (!settingsHydrated || importInFlightRef.current) return undefined;
     const currentProfiles = getClientSettings().browserProfiles;
-    // Read live settings so rapid clicks cannot both pass a stale profile-cap guard.
+    // Checked against the live settings, not the rendered list: two clicks
+    // before a re-render would otherwise both pass the disabled control.
     if (currentProfiles.length >= BROWSER_PROFILE_MAX_COUNT) return undefined;
     const resolvedProfiles = resolveBrowserProfiles(currentProfiles);
     const taken = new Set(resolvedProfiles.map((profile) => profile.name));
@@ -1007,7 +1021,8 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
     }
     setProfileRemovalError(null);
     setProfileRemovalInFlight(true);
-    // Clear removed partitions so profile cookies cannot remain stranded on disk.
+    // Drop the partition's data too, otherwise a removed profile's cookies
+    // stay on disk with nothing in the UI pointing at them.
     try {
       await clearBrowserProfileData(
         previewBridge,
@@ -1031,13 +1046,11 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
     setProfilePendingRemoval(null);
   };
 
-  // Omit missing or unsupported browsers; keep other failures that the wizard can help resolve.
   const importableSources = (sources ?? []).filter(
     (source) =>
       source.unavailable !== "notInstalled" && source.unavailable !== "unsupportedPlatform",
   );
 
-  // Retain cached source rows while refreshing so reopening the menu cannot reflow it.
   const loadSources = useCallback(() => {
     if (!previewBridge) return;
     void previewBridge
@@ -1046,7 +1059,6 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
       .catch(() => setSources((previous) => previous ?? []));
   }, []);
 
-  // Register new profiles only after cookies import successfully, not on blocked attempts.
   const runWizardImport = async (
     source: BrowserImportSource,
     environmentId: EnvironmentId,
@@ -1082,7 +1094,6 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
       }
       let targetName: string;
       if (input.target.kind === "new") {
-        // Empty imports must not register an empty profile.
         if (result.imported > 0) {
           try {
             const persisted = await persistClientSettingsUpdate((current) => {
@@ -1090,7 +1101,9 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                 (profile) => profile.id === input.target.profileId,
               );
               if (existing) return current;
-              // Recheck the cap in the settings updater because other writes may fill it during import.
+              // The wizard refuses a new target at the cap, but the cap can be
+              // reached while the import runs; the updater sees the newest
+              // settings, so this is the check that holds.
               if (current.browserProfiles.length >= BROWSER_PROFILE_MAX_COUNT) {
                 throw new ProfileLimitReachedError();
               }
@@ -1111,13 +1124,14 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
               persisted.browserProfiles.find((profile) => profile.id === input.target.profileId)
                 ?.name ?? source.name;
           } catch (cause) {
-            // Failed registration must clear the unique target partition or imported cookies become orphaned.
+            // This target id belongs only to the attempted new profile. Clear
+            // its partition so a failed registration cannot strand imported
+            // cookies behind a profile that disappears on restart.
             await clearBrowserProfileData(
               previewBridge,
               [environmentId],
               input.target.profileId,
             ).catch(() => undefined);
-            // Preserve the registration failure reason instead of misreporting successfully read cookies as unreadable.
             const reason =
               cause instanceof ProfileLimitReachedError ? "profileLimitReached" : "profileNotSaved";
             throw new Error(`Importing cookies from ${source.id} failed: ${reason}.`, { cause });
@@ -1225,7 +1239,6 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
         </Menu>
       }
     >
-      {}
       <div className="mt-2 mb-2 overflow-hidden rounded-lg border border-border/60">
         {listedProfiles.map((profile, index) => {
           const builtIn = isBuiltInBrowserProfileId(profile.id);
@@ -1240,7 +1253,10 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
             >
               <span className="flex min-w-0 flex-1 items-center gap-2">
                 {builtIn ? (
-                  // Dim text separately: wrapper opacity stacks with disabled controls and would lower them from 0.64 to 0.41.
+                  // Dimmed here rather than on the table: a wrapper-level dim
+                  // stacks with the rename field's and the row menu button's
+                  // own, landing them near 0.41 while every other disabled
+                  // control in the block sits at 0.64.
                   <span
                     className={cn(
                       "truncate text-sm text-foreground",
@@ -1261,7 +1277,6 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                     onCommit={(next) => renameProfile(profile.id, next)}
                   />
                 )}
-                {}
                 {isDefault ? (
                   <span className={cn("flex", profileWritesDisabled && "opacity-64")}>
                     <Badge>Default</Badge>
@@ -1442,7 +1457,6 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
 }
 
 export function IntegrationsSettingsPanel() {
-  // Client-local preview defaults are editable only where the preview exists.
   const previewDefaultsDisabled = !isElectron;
   const previewDefaults = (
     <>

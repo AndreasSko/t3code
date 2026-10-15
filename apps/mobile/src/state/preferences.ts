@@ -19,7 +19,10 @@ type PreferencesUpdate =
       ) => Partial<MobilePreferences.Preferences>;
     };
 
-/** Keep optimistic patches separate so the eventual persistence read cannot replace edits made during loading. */
+/**
+ * Optimistic patches are kept separately so writes made while persistence is still loading cannot
+ * be replaced by the eventual read result.
+ */
 export function createMobilePreferencesState(
   runtime: Atom.AtomRuntime<MobilePreferences.MobilePreferencesStore>,
 ) {
@@ -122,7 +125,9 @@ export function createMobilePreferencesState(
           ),
         );
       },
-      // Storage serializes writes; keep each invocation alive so updates to different fields cannot cancel each other.
+      // The storage layer serializes preference read-modify-write operations.
+      // Keep every invocation alive so one preference update cannot interrupt
+      // another update to a different field in the shared blob.
       { concurrent: true },
     )
     .pipe(Atom.keepAlive, Atom.withLabel("mobile:preferences:update"));

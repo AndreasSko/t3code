@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import type { TerminalGridSize } from "./terminalUiState";
 import { readEnvironmentScope } from "../../state/session";
 
+/** Replay the measured grid when a writable attachment becomes ready or reconnects. */
 export function useTerminalGridSync({
   environmentId,
   threadId,

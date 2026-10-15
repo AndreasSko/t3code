@@ -46,8 +46,9 @@ function isWhitespace(char: string): boolean {
 }
 
 /**
- * Override isWhitespaceChar when inline placeholders, such as web terminal chips,
- * should act as token boundaries.
+ * Accepts an optional `isWhitespaceChar` override so callers with inline
+ * placeholder characters (e.g. terminal context chips on web) can treat
+ * those as token boundaries.
  */
 export function detectComposerTrigger(
   text: string,

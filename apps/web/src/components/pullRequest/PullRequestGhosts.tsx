@@ -1,4 +1,3 @@
-/** Apply one container opacity pulse so many skeleton bars cost one animation. */
 import type { PullRequestListEntry, PullRequestSummary } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,
@@ -37,7 +36,6 @@ function GhostBar({ className }: { className?: string | undefined }) {
   return <span aria-hidden className={cn("block h-3 rounded bg-muted-foreground/15", className)} />;
 }
 
-/** Widths cycle rather than randomize, so the ghost renders the same on every pass. */
 const TITLE_WIDTHS = ["w-3/5", "w-2/5", "w-1/2", "w-2/3", "w-2/5", "w-3/5", "w-1/2"];
 const META_WIDTHS = ["w-2/5", "w-1/3", "w-2/5", "w-1/4", "w-1/3", "w-2/5", "w-1/3"];
 const DEFAULT_DETAIL_TABS = [
@@ -76,7 +74,6 @@ export function PullRequestListGhost({ rows = 7, caption }: { rows?: number; cap
   );
 }
 
-/** Match expanded detail geometry so arriving content cannot replace the layout. */
 export function PullRequestDetailGhost({
   seed: entry,
   summary,
@@ -94,7 +91,6 @@ export function PullRequestDetailGhost({
   actions?: ReactNode;
   checkoutCommand?: string | null;
   tabs?: ReadonlyArray<{ value: string; label: string }>;
-  /** The panel's current tab, so the highlight does not jump when the detail arrives. */
   activeTab?: string;
   number?: number;
   onBack?: (() => void) | undefined;

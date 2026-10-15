@@ -21,10 +21,6 @@ export interface NativeLayoutMetrics {
   readonly reservedRegions: ReadonlyArray<ReservedRegion>;
 }
 
-/**
- * Keep bottom controls on the larger side of a book fold or the lower display of a horizontal fold.
- * Scrollable content can still use the full canvas.
- */
 export function deriveBottomControlInsets(metrics: NativeLayoutMetrics | null) {
   if (!metrics) return { left: 0, right: 0, bottom: 0 };
   let left = metrics.safeArea.left;

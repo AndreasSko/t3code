@@ -20,7 +20,6 @@ export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
-/** A PR's relations include archived threads that normal palette search omits. */
 export function buildLinkedThreadActionItems(
   input: CommandPaletteLinkedThreads & {
     query: string;
@@ -52,7 +51,10 @@ export function browseInputEndPaddingClass(input: {
   return "*:data-[slot=autocomplete-input]:pe-24!";
 }
 
-/** One reducer owns every search mode so overlays cannot stack. */
+/**
+ * One reducer owns open/mode state so the surfaces can never stack and
+ * re-triggering a mode's shortcut toggles it closed.
+ */
 export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
@@ -134,10 +136,8 @@ export interface CommandPaletteItem {
   readonly icon: ReactNode;
   readonly disabled?: boolean;
   readonly titleLeadingContent?: ReactNode;
-  /** Before the timestamp. */
   readonly titleTrailingContent?: ReactNode;
   readonly shortcutCommand?: KeybindingCommand;
-  /** Sorts after every other match in its group; see `SettingsSearchItem.secondary`. */
   readonly secondary?: boolean;
 }
 
@@ -177,11 +177,13 @@ export type CommandPaletteRow =
       readonly kind: "item";
       readonly key: string;
       readonly item: CommandPaletteActionItem | CommandPaletteSubmenuItem;
-      /** Position among enabled items, or null for disabled rows the keyboard skips. */
       readonly itemIndex: number | null;
     };
 
-/** Maps Base UI's enabled-item order to virtualized rows for highlight scrolling. */
+/**
+ * `itemValues` is the highlightable item order Base UI navigates;
+ * `rowIndexByItemIndex` maps a highlight back to its row for scrolling.
+ */
 export function buildCommandPaletteRows(groups: ReadonlyArray<CommandPaletteGroup>) {
   const rows: CommandPaletteRow[] = [];
   const itemValues: string[] = [];
@@ -207,7 +209,6 @@ export function buildCommandPaletteRows(groups: ReadonlyArray<CommandPaletteGrou
   return { rows, itemValues, rowIndexByItemIndex };
 }
 
-/** The enabled item Enter should run for a highlight, whether or not its row is mounted. */
 export function findHighlightedCommandPaletteItem(
   groups: ReadonlyArray<CommandPaletteGroup>,
   highlightedItemValue: string | null,
@@ -235,7 +236,10 @@ export function enumerateCommandPaletteItems(
 
 export type CommandPaletteMode = "root" | "root-browse" | "submenu" | "submenu-browse";
 
-// Keep title as the real project title for consistent icons; displayName carries cross-machine grouping.
+// A project as the palette shows it. `displayName` is the grouped label (for
+// example "owner/repo" when projects are merged across machines). Keep `title`
+// as the real project title: the automatic project icon is derived from it, and
+// every other surface uses the real title, so overriding it desyncs the icon.
 export type CommandPaletteProject = Project & { readonly displayName: string };
 
 export function buildCommandPaletteProjectMetadata(input: {
@@ -308,7 +312,6 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   icon: ReactNode;
   renderLeadingContent?: (thread: TThread) => ReactNode;
   renderTrailingContent?: (thread: TThread) => ReactNode;
-  /** Optional rich description (e.g. favicon + workspace icons). Falls back to text. */
   renderDescription?: (thread: TThread, meta: { projectTitle: string | undefined }) => ReactNode;
   getContentMatch?: (thread: TThread) => CommandPaletteThreadContentMatch | undefined;
   runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
@@ -413,7 +416,6 @@ function rankCommandPaletteItemMatch(
     const fieldRank = rankSearchFieldMatch(field, normalizedQuery, queryTokens);
     if (fieldRank !== Number.NEGATIVE_INFINITY) {
       if (index === 0 && item.searchRecency !== undefined) {
-        // All non-exact thread title matches share a tier so recency breaks the tie.
         return 1_000 + Number(fieldRank === 3);
       }
       return 1_000 - index * 100 + fieldRank;

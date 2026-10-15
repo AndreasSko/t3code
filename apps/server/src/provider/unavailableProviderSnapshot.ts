@@ -14,7 +14,6 @@ export interface UnavailableProviderSnapshotInput {
   readonly displayName?: string | undefined;
   readonly accentColor?: string | undefined;
   readonly reason: string;
-  /** Defaults to the current Effect DateTime. */
   readonly checkedAt?: string;
 }
 

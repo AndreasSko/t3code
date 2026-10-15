@@ -1,5 +1,3 @@
-/** Client definitions must stay browser/React Native-safe: plain data and pure functions,
- * with no server or platform UI imports. */
 import {
   type PullRequestAction,
   pullRequestHostOf,
@@ -22,7 +20,6 @@ export interface ChangeRequestUrlInput {
   readonly number: number;
   /** The checkout's remote URL, whose origin some hosts serve their web pages from. */
   readonly remoteUrl?: string | undefined;
-  /** The repository's browser URL, when the server resolved one from a hosting account. */
   readonly webUrl?: string | undefined;
 }
 
@@ -42,7 +39,6 @@ export interface ChangeRequestCheckoutInput {
 export interface SourceControlClientDefinition {
   readonly kind: SourceControlProviderKind;
   readonly label: string;
-  /** How the clone and publish pickers name the host; Forgejo's covers Gitea too. */
   readonly pickerLabel: string;
   /** Glyph key each client maps to its own icon; a key a client lacks draws the generic glyph. */
   readonly icon: string;
@@ -55,11 +51,18 @@ export interface SourceControlClientDefinition {
   readonly publicHost: string | null;
   readonly publishDescription: string;
   readonly publishHost: (signedInHost: string | null) => string;
-  /** Return {owner: null} to let the CLI choose, or null when the host needs another selection. */
+  /**
+   * Who a new project's repository is published under, given the signed-in account: an owner to
+   * name, `null` owner to let the host's CLI pick the signed-in user, or null when the host needs
+   * a choice an account cannot make, such as Azure DevOps' project.
+   */
   readonly newRepositoryOwner: (account: string | null) => { readonly owner: string | null } | null;
   readonly defaultCloneTransport: "https" | "ssh";
   readonly changeRequestUrl: (input: ChangeRequestUrlInput) => string | null;
-  /** Fallback actions for surfaces without a server response; must match server capabilities.actions. */
+  /**
+   * The actions this host can take on a change request, the same list its server provider
+   * declares in `capabilities.actions`.
+   */
   readonly changeRequestActions: ReadonlySet<PullRequestAction>;
   readonly checkoutCommand: (changeRequest: ChangeRequestCheckoutInput) => string | null;
   readonly authorProfileUrl: (login: string, repositoryUrl: string) => string | null;
@@ -69,9 +72,16 @@ export interface SourceControlClientDefinition {
    */
   readonly referenceAutolinkRepositoryUrl: (repositoryUrl: string) => string | null;
   readonly reviewSummaryRequired: (verdict: PullRequestReviewVerdict) => boolean;
-  /** Extract a number/URL from this host's checkout command, or null for unrelated input. */
+  /**
+   * The change request a pasted command names, such as `gh pr checkout 42`: its argument, which
+   * is a number or a URL. Null for anything that is not this host's checkout command.
+   */
   readonly checkoutCommandArgument: (input: string) => string | null;
-  /** Stricter than isChangeRequestUrl because this decides what reference fields accept. */
+  /**
+   * Whether a pasted URL is one of this host's change request URLs. Stricter than
+   * `isChangeRequestUrl`, which only tells hosts apart, because this decides what a reference
+   * field accepts.
+   */
   readonly isChangeRequestReference: (url: string) => boolean;
   /**
    * Whether a change request link names this project's own repository. The link's host is where
@@ -100,8 +110,11 @@ export interface SourceControlClientDefinition {
    */
   readonly checkoutChangeRequestHost: (identity: ChangeRequestProjectIdentity) => string | null;
   readonly isChangeRequestUrl: (url: string) => boolean;
-  /** Host settings rendered from providerSettingsForm annotations; secretSetting values
-   * belong in the server secret store. Omit when the host has no settings. */
+  /**
+   * Fields carry `providerSettingsForm` annotations, as agent provider settings do; a
+   * `secretSetting` is kept in the server's secret store. Omitted for a host with nothing
+   * to configure.
+   */
   readonly settings?: SourceControlHostSettingsSchema;
 }
 
@@ -110,7 +123,9 @@ export type SourceControlHostSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
 } & Schema.Decoder<object>;
 
-/** Match the parsed path so a query/fragment mentioning another host's route cannot claim the URL. */
+/**
+ * Matching the parsed path keeps a query or fragment that mentions another host's route out.
+ */
 export function isChangeRequestPath(url: string, route: string): boolean {
   try {
     const path = new URL(url).pathname;
@@ -127,7 +142,11 @@ export function defineSourceControlClient<const Definition extends SourceControl
   return definition;
 }
 
-/** Match a link's web authority, including ports; SSH remotes leave web ports unknown. */
+/**
+ * A link carries one only where the host and port differ from where the repository is addressed,
+ * as on a Forgejo server with a port; an SSH remote says nothing about ports, so it does not
+ * rule the link out.
+ */
 export function isChangeRequestAuthorityOfProject(
   identity: ChangeRequestProjectIdentity,
   link: ChangeRequestLink,
@@ -178,7 +197,6 @@ export function isChangeRequestInProjectRepository(
   );
 }
 
-/** What clients show for a host they ship no definition for, including `unknown`. */
 export const UNKNOWN_SOURCE_CONTROL_CLIENT: SourceControlClientDefinition = {
   kind: SourceControlProviderKind.make("unknown"),
   label: "source control",
@@ -210,7 +228,11 @@ export const UNKNOWN_SOURCE_CONTROL_CLIENT: SourceControlClientDefinition = {
 
 export interface SourceControlClientRegistry {
   readonly definitions: ReadonlyArray<SourceControlClientDefinition>;
-  /** Missing kind selects the first definition; unsupported kinds use UNKNOWN_SOURCE_CONTROL_CLIENT. */
+  /**
+   * No kind at all, before a repository reports its host, reads as the first
+   * definition; a kind this client lacks, `unknown` included, reads as
+   * `UNKNOWN_SOURCE_CONTROL_CLIENT`.
+   */
   readonly get: (kind: string | null | undefined) => SourceControlClientDefinition;
   readonly find: (kind: string) => SourceControlClientDefinition | undefined;
   readonly findByPublicHost: (hostname: string) => SourceControlClientDefinition | undefined;
@@ -244,7 +266,10 @@ export function makeSourceControlClientRegistry(
   };
 }
 
-/** Invalid saved settings fall back to schema defaults so a newer client cannot disable the host. */
+/**
+ * A blob that no longer decodes, such as one a newer build wrote, reads as the
+ * schema's defaults rather than failing the host.
+ */
 export function readSourceControlHostSettings<S extends SourceControlHostSettingsSchema>(
   schema: S,
   saved: unknown,

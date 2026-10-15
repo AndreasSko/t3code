@@ -6,8 +6,9 @@ import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 const repoEnv = loadRepoEnv();
 
-// Bundle JS dependencies; install only runtime externals so the desktop and
-// bundled server do not ship duplicate dependency trees.
+// The packaged app then installs just those externals, instead of a full
+// production install of apps/desktop's dependency tree next to a server bundle
+// that already carries its own copy of the same libraries.
 const isMainProcessExternal = (id: string) =>
   id === "electron" || id.startsWith("electron/") || isDesktopRuntimeExternalDependency(id);
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
@@ -104,8 +105,9 @@ export default defineConfig({
       define: publicConfigDefine,
       entry: ["src/preload.ts"],
       deps: {
-        // Sandboxed ASAR preloads cannot reliably resolve package imports, so inline
-        // Clerk's bridge instead of leaving a runtime require().
+        // Sandboxed Electron preloads cannot reliably resolve package imports
+        // from inside the packaged ASAR. Bundle Clerk's preload bridge into the
+        // preload artifact instead of leaving a runtime require() behind.
         alwaysBundle: (id) => id === "@clerk/electron" || id.startsWith("@clerk/electron/"),
       },
     },

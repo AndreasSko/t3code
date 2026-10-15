@@ -46,10 +46,8 @@ interface UpdateEverythingDialogProps {
 }
 
 /**
- * Confirms an "update everything" run. It counts the running threads that the
- * restarts stop, and how many can resume afterwards because "Continue threads
- * after restarts" is on for their server. Recovery still skips some, such as a
- * thread waiting on the user, so the text says "can resume", not "will".
+ * Recovery still skips some, such as a thread waiting on the user, so the text says "can
+ * resume", not "will".
  */
 export function UpdateEverythingDialog({
   open,

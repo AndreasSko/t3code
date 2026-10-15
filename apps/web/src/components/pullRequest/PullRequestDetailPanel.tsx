@@ -216,7 +216,6 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have write access, and that the branch still exists.",
   "update-branch":
     "The host refused it. Check that you have write access to the branch — one from a fork also needs its author to allow edits from maintainers — and that it does not conflict with the base.",
-  // GitHub requires auto-merge enabled in repository settings before arming it.
   "enable-auto-merge":
     "The host refused it. Check that this repository allows auto-merge, that you have write access, and that there is something left for it to wait on.",
   "disable-auto-merge":
@@ -237,18 +236,20 @@ const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "code", label: "Code" },
 ];
 
-// Lazy-load the diff worker pool; preload on Code hover or focus to avoid click latency.
+// The diff viewer pulls in its worker pool, so load it only when the reader approaches Code.
 const loadCodeTab = () => import("./PullRequestCodeTab");
 const PullRequestCodeTab = lazy(loadCodeTab);
 
-/** Preserve handoff provenance across panel unmounts; replace only prompts
- * still identical to the handoff so user edits survive. */
+/**
+ * What the last hand-off wrote into each draft, kept outside React because the panel that wrote it
+ * is closed by the time the next one opens. It is how a prompt the reader has since edited is told
+ * apart from the one they were handed: only the sentence still exactly as written may be replaced.
+ */
 const lastHandoffPromptByDraft = new Map<string, string>();
 
 const composerTargetKey = (target: ScopedThreadRef | DraftId): string =>
   typeof target === "string" ? target : scopedThreadKey(target);
 
-/** Choose the server for checkout and handoffs independently of the server used to read the PR. */
 function ActOnEnvironmentPicker({
   environments,
   value,
@@ -289,7 +290,8 @@ function ActOnEnvironmentPicker({
   );
 }
 
-/** Handle number context menus before the platform cut/paste menu opens. */
+/** The number is a link in every place the host writes it, so the right-click that copies one
+    has to answer here too — otherwise the platform's own cut/paste menu opens over it. */
 const openNumberContextMenu = (
   event: ReactMouseEvent,
   detail: { readonly url: string; readonly provider: string },
@@ -303,8 +305,10 @@ const openNumberContextMenu = (
   });
 };
 
-/** Use a popover because branch-update controls need pointer interaction
- * that tooltip layers cannot receive. */
+/**
+ * A popover rather than a tooltip because what it holds can be pressed: a tooltip's layer takes
+ * no pointer, and a control nobody can reach is worse than no control.
+ */
 function PullRequestBaseFreshnessWarning({
   baseBranch,
   freshness,
@@ -355,7 +359,6 @@ function PullRequestBaseFreshnessWarning({
       <PopoverPopup align="start" side="bottom" className="max-w-80" padding="compact">
         <p className="text-xs text-foreground">{summary}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">Changes can be cleanly merged.</p>
-        {/* Separate buttons avoid nesting a strategy menu inside the warning popover. */}
         {freshness.methods.length > 0 ? (
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             {freshness.methods.map((method) => (
@@ -397,22 +400,25 @@ export function PullRequestDetailPanel({
   shortcutsEnabled: boolean;
   getShortcutContext: () => ShortcutMatchContext;
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
-  /** Links use this thread browser; absent threads route to the system browser. */
   threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
-  /** Row fields already loaded by the pull-request list, used while richer detail arrives. */
   listEntry?: PullRequestListEntry | null;
-  /** Increment to refresh panel-owned reads. */
   refreshToken?: number;
-  /** Report sent immediately, then done/failed; unnamed actions report done only. */
+  /**
+   * Each host action as it goes: "sent" the moment it leaves, so a list can answer before the
+   * host does; "done" or "failed" when the host has spoken. Undefined for one the caller cannot
+   * name, which is only ever "done".
+   */
   onActed?: (action?: PullRequestAction, phase?: "sent" | "done" | "failed") => void;
   onClose?: () => void;
-  /** Thread context hides checkout because the thread already owns its branch. */
+  /**
+   * Beside a thread, the checkout affordance disappears: the panel is showing that thread's
+   * own pull request, so the branch is already under the reader's feet — and checking it out
+   * again is at best a no-op and at worst git refusing a branch two checkouts.
+   */
   context?: "page" | "thread";
   composerDraftTarget?: ScopedThreadRef | DraftId;
-  /** Thread context returns to the PR list while keeping this PR open behind it. */
   onBack?: (() => void) | undefined;
-  /** Told when a written guide comes on screen. The page maximizes its panel for the guide. */
   onGuideShown?: (() => void) | undefined;
 }) {
   const environmentConfigs = useServerConfigs();
@@ -461,7 +467,6 @@ export function PullRequestDetailPanel({
     selectCodeCommit(oid);
     setTab("code");
   };
-  // The guide names files; following one shows it in the whole diff, not a single commit's.
   const [codeRevealRequest, setCodeRevealRequest] = useState<{
     readonly path: string;
     readonly nonce: number;
@@ -479,8 +484,8 @@ export function PullRequestDetailPanel({
   useEffect(() => {
     if (guideOpenRequested) useGuideRunStore.getState().requestOpen(null);
   }, [guideOpenRequested]);
-  // Keep visited tabs mounted: virtual scroll and Markdown parsing are expensive
-  // to restore. Visibility preserves geometry while hiding focus and accessibility.
+  // `visibility` keeps boxes, sizes and scroll offsets, and takes hidden content out of the tab
+  // order and the accessibility tree.
   const tabScopeKey = `${environmentId}:${pullRequestKey}`;
   const [tabMountState, setTabMountState] = useState(() => ({
     key: tabScopeKey,
@@ -559,7 +564,7 @@ export function PullRequestDetailPanel({
     setMergeMethodSelection({ pullRequestKey, method });
   };
   const inlineConfirm = useInlineActionConfirm(pullRequestKey);
-  // Serialize handoffs because they all check out the same PR; key each pending indicator.
+  // One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const detailQuery = useEnvironmentQuery(
@@ -627,7 +632,8 @@ export function PullRequestDetailPanel({
     detailSummary,
     detailQuery.dataUpdatedAt,
   );
-  // List rows reach shared cache after layout effects, so compare the row directly too.
+  // The list row is also published to the shared cache, but only after this commit's layout
+  // effects run, so it is compared directly rather than trusted to be there already.
   const sharedSummary = useMemo(
     () =>
       newestPullRequestSummary(
@@ -660,7 +666,8 @@ export function PullRequestDetailPanel({
               sharedSummary.mergedAt === undefined
                 ? resolvedCoreDetail.mergedAt
                 : sharedSummary.mergedAt,
-            // Older servers may omit draft state; preserve the detail value.
+            // A summary may come from an older server that does not report draft state. Keep the
+            // detail's required value instead of making the complete detail shape partial.
             isDraft: sharedSummary.isDraft ?? resolvedCoreDetail.isDraft,
           },
     [resolvedCoreDetail, sharedSummary],
@@ -770,6 +777,7 @@ export function PullRequestDetailPanel({
           input: {
             cwd: detail.workspaceRoot,
             includeMatchingRemoteRefs: true,
+            // listRefs keeps the current ref first and a known default second.
             limit: 2,
           },
         }),
@@ -777,7 +785,6 @@ export function PullRequestDetailPanel({
   const isStackedPullRequest =
     detail !== null &&
     isStackedPullRequestBase(detail.baseBranch, branchRefsQuery.data?.refs ?? []);
-  // Request stacks only after readable detail to avoid a second request for inaccessible PRs.
   const stackReference = useMemo(
     () =>
       detail === null || detail.capabilities.stacks !== true || !supportsThreadPullRequests
@@ -823,14 +830,14 @@ export function PullRequestDetailPanel({
     }
     activityRevision.current = next;
   }, [activityQuery.isPending, activityQuery.refresh, coreDetail, tabScopeKey]);
-  // Scope revision-based activity/diff reuse by PR because this panel survives PR switches.
   useLiveRefresh(
     () => {
       detailQuery.refresh();
     },
     { key: `pull-request:${environmentId}:${pullRequestKey}` },
   );
-  // Invalidate before rereading so requests miss host cache; still read if invalidation fails.
+  // The invalidation goes first so the re-reads miss that cache; if it fails, the reads still
+  // run and at worst answer from it.
   const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
   const [isInvalidating, setIsInvalidating] = useState(false);
   const refreshing = isInvalidating || detailQuery.isPending;
@@ -856,11 +863,9 @@ export function PullRequestDetailPanel({
   const postComment = useAtomCommand(pullRequestEnvironment.comment, {
     reportFailure: false,
   });
-  // Disable all actions in flight but show pending status only on the pressed button.
   const [pendingAction, setPendingAction] = useState<PullRequestAction | null>(null);
   const actionPending = pendingAction !== null;
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
-  // Half-written titles must remain scoped to the PR where they started.
   const [titleScope, setTitleScope] = useState<{
     readonly pullRequestKey: string;
     readonly text: string;
@@ -875,7 +880,6 @@ export function PullRequestDetailPanel({
     )?.repositoryIdentity;
     return gitHubPullRequestBrowserUrl(identity, reference.repository, reference.number);
   }, [environmentId, projects, reference.number, reference.projectId, reference.repository]);
-  // Thread handoffs already target its server and composer, so there is no server choice.
   const pickableEnvironments = useMemo(
     () =>
       context === "page"
@@ -891,7 +895,6 @@ export function PullRequestDetailPanel({
         : [],
     [context, environmentId, environments, projects, reference.projectId],
   );
-  // Server choices must remain scoped to the selected PR.
   const [actingScope, setActingScope] = useState<{
     readonly pullRequestKey: string;
     readonly environmentId: EnvironmentId;
@@ -926,8 +929,9 @@ export function PullRequestDetailPanel({
     });
     setPendingAction(null);
     if (result._tag === "Failure") {
-      // Azure DevOps exposes no per-strategy availability; report host errors
-      // when branch policy refuses a merge at execution.
+      // A merge strategy a branch policy forbids is refused at completion and nowhere earlier —
+      // Azure DevOps publishes no per-strategy availability to hide the control with — so
+      // "action failed" would leave the reader pressing the same button again.
       const failure = squashAtomCommandFailure(result);
       const hint =
         updateMethod === "rebase"
@@ -945,7 +949,9 @@ export function PullRequestDetailPanel({
     if (action === "revert") {
       toastManager.add({ type: "success", title: "Revert pull request opened" });
     }
-    // Branch updates invalidate the diff comparison; use the host-refresh path.
+    // A branch update moves the head commit, which leaves the diff atom pointed at a comparison
+    // that no longer exists — the same staleness the manual refresh button fixes, so it goes
+    // through that path rather than a second one.
     if (pullRequestActionNeedsHostRefresh(action)) {
       void refreshFromHost();
     } else {
@@ -978,7 +984,8 @@ export function PullRequestDetailPanel({
       return { commentPosted: false };
     }
     const actionSucceeded = await finishAction(action);
-    // Comments persist even when the accompanying state change fails.
+    // The comment is durable even if the state change was refused, so make it visible while the
+    // shared action failure explains why the pull request stayed where it was.
     if (!actionSucceeded) refreshDetail();
     return { commentPosted: true };
   };
@@ -1064,8 +1071,6 @@ export function PullRequestDetailPanel({
     }
   };
 
-  /** Questions need a thread without changing its checkout; code handoffs
-   * call this only after preparing their requested checkout. */
   const openThreadWithTask = async (
     projectRef: ReturnType<typeof scopeProjectRef>,
     task: ThreadTask | null,
@@ -1079,12 +1084,10 @@ export function PullRequestDetailPanel({
       ));
     if (session === null) return null;
     if (task === null) return session;
-    // Replace previous handoff prompt and chips, but preserve prompt text the user edited.
     writeTaskToComposer(session.draftId, task);
     return session;
   };
 
-  /** keepGuide opens the new question thread beside the current guide stop. */
   const startAsk = async (
     kind: string,
     task: ThreadTask,
@@ -1134,7 +1137,6 @@ export function PullRequestDetailPanel({
     toastManager.add({
       type: "success",
       title: "Asked in a thread",
-      // Empty Ask prompts must not claim that question text landed in the composer.
       description:
         task.prompt.length > 0
           ? "The question is in the composer — read it over, then send."
@@ -1145,7 +1147,9 @@ export function PullRequestDetailPanel({
   const startHandoff = async (
     kind: string,
     task: { prompt: string; reviewComments?: ReadonlyArray<ReviewCommentContext> } | null,
-    // Worktrees preserve open work; local checkout moves the branch under other open threads.
+    // A worktree leaves whatever is open alone, which is why it is the default. Checking out in
+    // the repository itself is what you want when the point is to run the thing where you
+    // already work — and it moves the branch under everything else that is open there.
     mode: "worktree" | "local" = "worktree",
   ) => {
     if (!handoffSummary || handoff !== null) return;
@@ -1172,7 +1176,8 @@ export function PullRequestDetailPanel({
       return;
     }
     setHandoff(kind);
-    // Menu closure hides its progress label; loading toasts need explicit completion, not timeouts.
+    // It carries no timeout of its own: a loading toast never expires, and an explicit one
+    // would survive the update and pin the result on screen.
     const toastId = toastManager.add({
       type: "loading",
       title: "Preparing the pull request checkout...",
@@ -1181,14 +1186,15 @@ export function PullRequestDetailPanel({
       actingEnvironmentId,
       acting?.projectId ?? handoffSummary.projectId,
     );
-    // Setup scripts require a destination thread, so open it before preparing checkout.
+    // The thread is opened before the checkout rather than after it, because the project's setup
+    // script only runs for a checkout that knows which thread it is for — and a worktree with no
+    // dependencies installed is not something anyone can test.
     const opened = await newThread(projectRef).then(
       (session) => session,
       () => null,
     );
     if (opened === null) {
       setHandoff(null);
-      // Without a thread, checkout setup and task delivery cannot run.
       toastManager.update(toastId, {
         type: "error",
         title: "Could not open a thread for the checkout",
@@ -1222,7 +1228,9 @@ export function PullRequestDetailPanel({
     );
     if (!pointed) {
       setHandoff(null);
-      // Stop if thread retargeting fails or the task would run in the wrong checkout.
+      // The checkout is on disk; only the thread failed to move onto it. Writing the task now
+      // would send the agent at whatever the thread was already open on — which is the one
+      // outcome worth stopping for, since it reads as success and is not.
       toastManager.update(toastId, {
         type: "error",
         title: "Checked out, but the thread stayed where it was",
@@ -1230,9 +1238,9 @@ export function PullRequestDetailPanel({
       });
       return;
     }
-    // Release every handoff path: loading toasts never expire and would lock future handoffs.
     setHandoff(null);
-    // Existing worked-in worktrees preserve their contents and may lag the PR head.
+    // A worktree that was already there and had been worked in keeps whatever it holds, so the
+    // thread opens on older code than the pull request carries.
     const staleCheckoutToast = {
       type: "warning",
       title: "Checked out, but not on the latest commits",
@@ -1409,7 +1417,6 @@ export function PullRequestDetailPanel({
   const selectedMergeMethodLabel = PULL_REQUEST_MERGE_METHOD_LABELS[selectedMergeMethod];
   const pendingAutoMergeLabel = `Auto-merge (${selectedMergeMethodLabel.toLowerCase()})`;
   const conflicting = detail?.state === "open" && detail.mergeability === "conflicting";
-  // Unknown auto-merge state must not offer a misleading disable action.
   const autoMergeArmed = detail?.state === "open" && detail.autoMergeEnabled === true;
   const armedMergeMethod = detail?.autoMergeMethod;
   const armedAutoMergeLabel = armedMergeMethod
@@ -1418,7 +1425,6 @@ export function PullRequestDetailPanel({
   const workflowApprovalsRequired =
     detail?.state === "open" ? (detail.workflowApprovalsRequired ?? 0) : 0;
   const freshness = detail === null ? null : resolveBaseFreshness(detail);
-  // Reserve tabs while loading; remove Code if the host has no patch support.
   const reviewGuidesEnabled = useEnvironmentSettings(
     environmentId,
     (settings) => settings.reviewGuidesEnabled,
@@ -1428,7 +1434,6 @@ export function PullRequestDetailPanel({
       (item.value !== "code" || detail === null || detail.capabilities.diff) &&
       (item.value !== "guide" || reviewGuidesEnabled),
   );
-  // If arriving capabilities remove the active tab, return to Summary.
   useEffect(() => {
     if (!visibleTabs.some((item) => item.value === tab)) setTab("summary");
   }, [tab, visibleTabs]);
@@ -1459,7 +1464,6 @@ export function PullRequestDetailPanel({
         canEnableAutoMerge: canMergeSinglePullRequest && can("enable-auto-merge"),
       })
     : null;
-  // Use the same action-availability result for menu contents and separators.
   const showsDraftToggle =
     detail?.state === "open" &&
     can(detail.isDraft ? "ready" : "draft") &&
@@ -1500,8 +1504,9 @@ export function PullRequestDetailPanel({
     : detail
       ? summarizePullRequestChecks(detail.checks)
       : null;
-  // Count only current approvals from a complete conversation; a truncated
-  // window cannot supply an authoritative total.
+  // Not counted at all from a conversation this page only holds the recent end of: an approval
+  // older than the window would be missing, and "1" beside a tick is read as the whole answer.
+  // The Summary tab's row can say it may be short; a bare number cannot, so it stays away.
   const approvalCount =
     detail && !detail.commentsTruncated
       ? latestPullRequestReviewOutcomes(detail.comments, detail.commits).filter(
@@ -1824,7 +1829,6 @@ export function PullRequestDetailPanel({
                   threadRef={null}
                 />
               ) : null}
-              {}
               {autoMergeArmed && primaryAction !== "auto-merge-armed" ? (
                 <Tooltip>
                   <TooltipTrigger
@@ -2019,7 +2023,6 @@ export function PullRequestDetailPanel({
                           />
                         }
                       >
-                        {}
                         {refreshing ? (
                           <RefreshIcon refreshing size="md" />
                         ) : (
@@ -2096,7 +2099,6 @@ export function PullRequestDetailPanel({
                   <MenuSeparator />
                   {detail.state === "open" ? (
                     <>
-                      {}
                       {showsDraftToggle ? (
                         <MenuItem
                           disabled={actionPending}
@@ -2126,7 +2128,6 @@ export function PullRequestDetailPanel({
                           {inlineConfirm.isArmed("merge") ? "Confirm merge?" : "Merge now"}
                         </MenuItem>
                       ) : null}
-                      {/* Conflicts cannot clear through requirements, so do not arm auto-merge while conflicting. */}
                       {autoMergeArmed && can("disable-auto-merge") ? (
                         <MenuItem
                           disabled={actionPending}
@@ -2155,11 +2156,8 @@ export function PullRequestDetailPanel({
                             : "Enable auto-merge"}
                         </MenuItem>
                       ) : null}
-                      {/* Merge strategy is a preference; conflicting branches cannot use any method. */}
-                      {}
                       {showsMergeMethods ? (
                         <>
-                          {}
                           {showsDraftToggle || showsMergeNow || showsAutoMerge ? (
                             <MenuSeparator />
                           ) : null}
@@ -2178,8 +2176,6 @@ export function PullRequestDetailPanel({
                                 disabled={actionPending}
                                 closeOnClick
                               >
-                                {/* The radio item lays its children out as one block, so the
-                                    icon and the label need their own row to share a line. */}
                                 <span className="flex min-w-0 items-center gap-2">
                                   <PullRequestGlyph.merged className="size-3.5" />
                                   <span>{PULL_REQUEST_MERGE_METHOD_LABELS[method]}</span>
@@ -2305,7 +2301,6 @@ export function PullRequestDetailPanel({
                   </span>
                   <span aria-hidden className="h-3 w-px shrink-0 bg-border/70" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-muted-foreground/65">
-                    {}
                     {freshness ? (
                       <PullRequestBaseFreshnessWarning
                         baseBranch={detail.baseBranch}
@@ -2724,7 +2719,9 @@ export function PullRequestDetailPanel({
             // The condensed row remains mounted, so refund only the height that actually leaves.
             const chromeDelta = foldHeight - (condensedRowRef.current?.scrollHeight ?? 0);
             if (previous) {
-              // At the hard top, reopening chrome must not refund height and pull the reader down.
+              // The hard top reopens the chrome with no refund: the reader asked for the top,
+              // and moving them a fold's height back down would snatch it away — the fold
+              // slides in above while the content stays where they left it.
               if (top < 4 && foldHeight > 0) {
                 next = false;
               }
@@ -2847,7 +2844,6 @@ export function PullRequestDetailPanel({
         ) : null}
       </div>
 
-      {}
       {detail ? (
         <div className="absolute right-4 bottom-3 z-20">
           <PullRequestComposer

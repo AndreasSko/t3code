@@ -6,13 +6,12 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 
-// Consider each thread once per page load; server max(stored,supplied) makes repeats across loads harmless.
+// Module-level so each thread is considered once per page load. The visit
+// command is idempotent server-side (the server keeps max(stored, supplied)),
+// so repeats across page loads are harmless — this only avoids re-dispatching
+// within a session.
 const migratedThreadKeys = new Set<string>();
 
-/**
- * Seed server visit watermarks from local ones for cross-device read state; never rewind a newer server
- * visit.
- */
 export function useThreadVisitedMigration(): void {
   const threads = useThreadShells();
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });

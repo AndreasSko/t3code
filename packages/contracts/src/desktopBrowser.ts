@@ -2,8 +2,15 @@ import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-/** Desktop tabs use newline-delimited JSON over private bootstrap descriptors, with no listening port.
- * CDP frames pass unchanged through one connection per tabId. */
+/**
+ * The desktop app renders browser tabs for the server it launched, and the
+ * server drives them with the same engine as its headless tabs. Messages
+ * travel as newline-delimited JSON over two bootstrap file descriptors, so
+ * only that one server can reach the desktop's pages; nothing listens on a port.
+ *
+ * Each tab carries one CDP connection, multiplexed by `tabId`. CDP frames pass
+ * through untouched; the desktop answers them with `CdpRelay`.
+ */
 
 const TabKey = {
   threadId: TrimmedNonEmptyString,
@@ -12,7 +19,6 @@ const TabKey = {
 
 /** Desktop -> server. */
 export const DesktopBrowserEvent = Schema.Union([
-  /** A desktop `<webview>` for this server tab is attached and can be driven. */
   Schema.Struct({ type: Schema.Literal("attached"), ...TabKey }),
   /** Its `<webview>` went away: closed, crashed, swapped, or devtools took the debugger. */
   Schema.Struct({ type: Schema.Literal("detached"), ...TabKey }),
@@ -25,7 +31,6 @@ export const DesktopBrowserCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("cdp"), ...TabKey, message: Schema.String }),
   /** The server stopped driving this tab, so the relay can drop its sessions. */
   Schema.Struct({ type: Schema.Literal("release"), ...TabKey }),
-  /** Where an agent action is about to land, so the desktop draws its cursor there. */
   Schema.Struct({
     type: Schema.Literal("pointer"),
     ...TabKey,

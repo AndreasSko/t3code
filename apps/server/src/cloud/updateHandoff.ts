@@ -1,4 +1,7 @@
-// Preserve managed tunnels when shutdown hands off to a replacement server.
+/**
+ * Shutdown keeps the managed tunnel across those restarts instead of releasing
+ * it.
+ */
 import { DESKTOP_UPDATE_RESTART_MARKER_FILE } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -30,8 +33,11 @@ export const pendingServiceUpdateExists = Effect.gen(function* () {
   return Option.isSome(stateText) && serviceStateHasPendingUpdate(stateText.value);
 });
 
-// Pending update state alone also covers explicit stops; the launcher stop
-// marker distinguishes those from update handoffs.
+// A pending update alone is not proof a replacement server is coming: an
+// explicit launcher stop (`t3 service uninstall`, `systemctl stop`,
+// `launchctl bootout`) during
+// the pending window also tears this server down. The launcher marks that case
+// just before it signals the child, so pending + no marker is the handoff.
 export const pendingUpdateHandoffExists = Effect.gen(function* () {
   if (!(yield* pendingServiceUpdateExists)) {
     return false;
@@ -46,8 +52,11 @@ export const pendingUpdateHandoffExists = Effect.gen(function* () {
   return !stopping;
 });
 
-// Consume the desktop update marker first during shutdown; only fresh
-// markers count so a hard-killed server cannot preserve a tunnel on later quit.
+// The desktop app writes its marker right before it stops this server to
+// install an update, whether a remote client or the local app started it.
+// Reading consumes it, so shutdown checks it first. Only a fresh marker counts,
+// so a marker the server never read (a hard kill) cannot keep the tunnel on a
+// later quit.
 export const desktopUpdateRestartPending = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;

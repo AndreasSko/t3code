@@ -13,7 +13,6 @@ export interface NormalizedGitHubPullRequestRecord {
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
-  /** The head commit, when the read asked for `headRefOid`. */
   readonly headSha?: string;
   readonly state: "open" | "closed" | "merged";
   readonly isDraft?: boolean;
@@ -38,7 +37,9 @@ const GitHubPullRequestSchema = Schema.Struct({
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   isCrossRepository: Schema.optional(Schema.Boolean),
-  // gh <2.47 omits nameWithOwner; optional fields prevent version drift from dropping the PR.
+  // gh < 2.47 exports headRepository as {id, name} only; nameWithOwner was
+  // added later. Both fields stay optional so a version-drifted gh CLI can
+  // never fail the decode and silently drop the PR from the list.
   headRepository: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -116,7 +117,10 @@ function normalizeGitHubPullRequestRecord(
 const decodeGitHubPullRequestList = decodeJsonResult(Schema.Array(Schema.Unknown));
 const decodeGitHubPullRequestEntry = Schema.decodeUnknownExit(GitHubPullRequestSchema);
 
-/** Skip malformed CLI/GraphQL rows so one pull request cannot hide the rest. */
+/**
+ * Pull request rows in `gh --json` or GraphQL node shape. A row that does not decode is
+ * skipped, so one malformed pull request cannot hide the rest.
+ */
 export function decodeGitHubPullRequestEntries(
   entries: ReadonlyArray<unknown>,
 ): ReadonlyArray<NormalizedGitHubPullRequestRecord> {

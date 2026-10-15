@@ -20,8 +20,6 @@ import {
 
 import * as ProcessRunner from "../processRunner.ts";
 
-// Pin a self-contained release archive so services and self-updates need
-// no host Node or npm, even when the CLI was installed through npm.
 const PINNED_RUNTIME_DIR = "runtime";
 const PINNED_RUNTIME_INSTALL_TIMEOUT = Duration.minutes(10);
 const PINNED_RUNTIME_ARCHIVE_FILE = "t3-runtime-archive";
@@ -93,8 +91,11 @@ export type PinnedRuntimeProgress =
   | { readonly stage: "download"; readonly received: number; readonly total: number | undefined }
   | { readonly stage: "verify" | "extract" | "validate" | "cached" };
 
-// Require a sentinel written after validation; tar writes the executable
-// before native packages, so its presence alone does not prove completion.
+/**
+ * The sentinel is written only after extraction and validation succeed; checking the entry file
+ * alone is not enough, since tar writes the executable before the last native package and a
+ * killed install leaves a plausible-looking but broken tree behind.
+ */
 
 interface PinnedRuntimeInstallInput {
   readonly baseDir: string;
@@ -138,7 +139,6 @@ const fetchReleaseAsset = Effect.fn("cloud.pinned_runtime.fetch_release_asset")(
           ),
           Stream.runCollect,
         );
-        // A completed chunked response finally gives us its total size.
         if (total === undefined && received > 0) {
           onProgress({ stage: "download", received, total: received });
         }
@@ -159,8 +159,9 @@ const fetchReleaseAsset = Effect.fn("cloud.pinned_runtime.fetch_release_asset")(
   );
 });
 
-// Verify the release checksum before extraction; use host tar so archive
-// installs require no Node or npm.
+/**
+ * Only `tar` is required on the host; every supported OS ships one that reads gzip and zip.
+ */
 const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(function* (
   input: PinnedRuntimeInstallInput,
   stagingDir: string,

@@ -48,7 +48,8 @@ function toProviderUpdateOutcome(input: {
 }): PromiseSettledResult<LocalProviderUpdateOutcome> {
   if (input.result._tag === "Failure") {
     if (isAtomCommandInterrupted(input.result)) {
-      // Interrupted dispatches must contribute neither success nor rejection.
+      // An interrupted dispatch (e.g. superseded) is neither a success nor a
+      // hard failure — surface it as a non-contributing, non-rejecting outcome.
       return {
         status: "fulfilled",
         value: {
@@ -83,7 +84,9 @@ function toProviderUpdateOutcome(input: {
   };
 }
 
-// Expire transport hangs after the server's 5-minute timeout so slow legitimate updates keep their spinner.
+// Keep it well beyond the server's own update timeout (5 min) so a legitimately
+// slow update (npm installs routinely run tens of seconds) is never cut off and
+// left showing a dead, unresponsive Update button.
 const PENDING_EXPIRY_MS = 6 * 60_000;
 
 function rowToneClass(kind: ProviderUpdateRowStatusKind): string {
@@ -165,13 +168,20 @@ export function ProviderUpdateEnvironmentRows({
     [groups],
   );
 
-  // Only surface results that land after this popover opened.
   const visibleAfterIsoRef = useRef<string>(new Date().toISOString());
 
-  // State updates lag and expiry clears the spinner mid-request; a synchronous guard prevents duplicate dispatches.
+  // setPendingEnvironments is an async state update, and PENDING_EXPIRY_MS can
+  // clear the spinner while a request is still in flight, so a rapid
+  // double-click (or a click after the expiry fires mid- request) would
+  // otherwise dispatch a second full round of updates. A ref updates
+  // synchronously, so we can bail before doing any work.
   const inFlightEnvironmentsRef = useRef<Set<EnvironmentId>>(new Set());
 
-  // Ignore late writes from superseded attempts so they cannot clear newer results or guards.
+  // Bumped on each dispatch and captured locally, so an attempt that was
+  // superseded -- e.g. one that already tripped the expiry safety net and was
+  // retried -- detects it is no longer current and skips every state write when
+  // it finally resolves, instead of clobbering the newer attempt's
+  // spinner/result/error or its in-flight guard.
   const requestVersionRef = useRef<Map<EnvironmentId, number>>(new Map());
 
   const [pendingEnvironments, setPendingEnvironments] = useState<ReadonlySet<EnvironmentId>>(
@@ -239,7 +249,6 @@ export function ProviderUpdateEnvironmentRows({
         if (!isCurrentRequest()) {
           return;
         }
-        // Expire the guard with the spinner so a hung request cannot leave a dead Update button.
         inFlightEnvironmentsRef.current.delete(environmentId);
         clearPending(environmentId);
         setErrorByEnvironment((previous) =>
@@ -271,7 +280,9 @@ export function ProviderUpdateEnvironmentRows({
         if (!isCurrentRequest()) {
           return;
         }
-        // Late success must clear expiry errors, which otherwise outrank its row result.
+        // The request resolved (not a transport hang), so clear any stale
+        // timeout error the expiry may have set -- otherwise a late success
+        // would be masked, since an error takes priority in the row status.
         setErrorByEnvironment((previous) => {
           if (!previous.has(environmentId)) {
             return previous;
@@ -300,7 +311,10 @@ export function ProviderUpdateEnvironmentRows({
           providers: collectProviderUpdateOutcomeSnapshots(results),
           providerCount,
         });
-        // Stored results never re-poll; persist only terminal views so interrupted/missing-instance snapshots cannot pin spinners.
+        // A stored view never re-polls, so persisting it would pin the row's
+        // spinner forever once the pending flag expires. Drop it and let the
+        // live per-environment provider state (pill) plus the pending expiry
+        // drive the row, so it self-heals to whatever the backend actually did.
         if (isTerminalProviderUpdatePhase(view.phase)) {
           setResultByEnvironment((previous) => new Map(previous).set(environmentId, view));
         }
@@ -333,7 +347,11 @@ export function ProviderUpdateEnvironmentRows({
         group,
         error: errorByEnvironment.get(group.environmentId),
         result: resultByEnvironment.get(group.environmentId),
-        // Track only this row's candidates so unrelated successes cannot hide still-outdated instances.
+        // Derive the live pill from the candidates this row is actually
+        // tracking, not every provider in the environment. Otherwise an
+        // unrelated provider's recent success (or one candidate succeeding while
+        // another was interrupted) makes the pill report success and hides the
+        // Update action for candidates that are still outdated.
         pill: getProviderUpdateSidebarPillView(group.candidates, {
           visibleAfterIso: visibleAfterIsoRef.current,
         }),

@@ -83,7 +83,6 @@ export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProj
 export function createProjectEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Crypto.Crypto | R, E>,
   options: {
-    /** The client store's project; openScratch waits here for the created project. */
     readonly projectAtom: (ref: ScopedProjectRef) => Atom.Atom<EnvironmentProject | null>;
   },
 ) {
@@ -168,7 +167,8 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
-    // Wait for Scratch in the client store because drafts need its stored path.
+    // Finds or creates the environment's Scratch project and resolves once the
+    // project is in the client store, since drafts key off its stored path.
     openScratch: createEnvironmentCommand(runtime, {
       label: "environment-data:projects:open-scratch",
       execute: (

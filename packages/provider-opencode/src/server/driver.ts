@@ -216,7 +216,10 @@ export const OpenCodeDriver: ProviderDriver<
           Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
         ),
       );
-      // An unknown version must offer no update: guessing could move the install between incompatible 1.x and 2.x packages.
+      // Updates follow the installed package, which the version probe names. An
+      // unknown version offers no package update, since a guess could move a
+      // 2.x install onto 1.x's package or the reverse. A disabled instance never
+      // runs its binary, so it has no version and offers no update.
       const noUpdate = makeManualOnlyProviderMaintenanceCapabilities({
         provider: DRIVER_KIND,
         packageName: null,
@@ -375,8 +378,11 @@ export const OpenCodeDriver: ProviderDriver<
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       );
-      // The Bun CLI truncates piped skill JSON beyond one 64KB buffer.
-      // The SDK endpoint returns complete results and honors the request directory.
+      // The CLI writes its full JSON inventory to stdout, but the Bun-compiled binary does not
+      // flush more than one 64KB pipe buffer to a non-TTY stdout, so the piped output arrives
+      // truncated and unparseable — which degrades to an empty skill list and poisons the workspace
+      // snapshot the `$` picker reads. The SDK `app.skills` endpoint honors the per-request
+      // directory and returns complete results regardless of size.
       const loadWorkspaceInventory = (
         client: Parameters<typeof OpenCodeRuntime.loadOpenCodeCommands>[0],
       ) =>

@@ -23,8 +23,6 @@ function pullRequestLinkContextMenuItems(
   ];
 }
 
-/** The caller supplies host wording and URL; intercept number right-clicks
- * before the platform offers an irrelevant edit menu. */
 export async function showPullRequestLinkContextMenu({
   url,
   openLabel,
@@ -40,6 +38,8 @@ export async function showPullRequestLinkContextMenu({
   try {
     action = await api.contextMenu.show(pullRequestLinkContextMenuItems(openLabel), position);
   } catch {
+    // A menu that could not be shown has already cost the reader their right-click; there is
+    // nothing to say about it that a second popup would not make worse.
     return;
   }
   try {

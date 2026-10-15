@@ -8,8 +8,10 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { ProviderSettingsForm } from "./ProviderSettingsForm";
 
-/** Save host schema fields under sourceControlHosts[kind]; secrets are
- * write-only and the server reports only whether they are configured. */
+/**
+ * Secret fields are write-only: the server keeps them in its secret store and
+ * only reports whether each one is set.
+ */
 export function SourceControlHostSettings({
   environmentId,
   definition,

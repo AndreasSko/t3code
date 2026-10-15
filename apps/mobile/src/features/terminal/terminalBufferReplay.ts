@@ -14,7 +14,6 @@ export function getTerminalSurfaceReplayBuffer(input: {
   readonly replayKey: string;
   readonly readyReplayKey: string | null;
 }): string {
-  // Hide stale replay data during transitions such as a font-size change.
   if (input.readyReplayKey !== null && input.readyReplayKey !== input.replayKey) {
     terminalDebugLog("replay:stale-key-hiding-buffer", {
       replayKey: input.replayKey,

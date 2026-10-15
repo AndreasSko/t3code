@@ -5,8 +5,6 @@ import type * as React from "react";
 
 import { cn } from "~/lib/utils";
 
-/** em units follow prompt font size. Render as a button/link for interactive tint;
- * override --context-chip-accent via style for colors derived from content. */
 const contextChipVariants = cva(
   "inline-flex h-[1.41em] max-w-full items-center gap-[0.33em] rounded-[0.5em] border px-[0.5em] align-middle font-medium text-[0.86em] leading-none [&_svg]:block [&_svg]:size-[1.17em] [&_svg]:shrink-0 [&_svg]:self-center [button&,a&,[data-popup-open]&]:cursor-pointer [button&,a&]:transition-colors [button&,a&]:motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-foreground disabled:cursor-default",
   {

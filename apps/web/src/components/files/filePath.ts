@@ -11,7 +11,10 @@ export interface FileBreadcrumbChild extends ProjectEntry {
   label: string;
 }
 
-/** Workspace crumbs start at the project; absolute host paths start at the filesystem root. */
+/**
+ * Crumbs for a workspace-relative path start at the project. An absolute host
+ * path is outside the workspace, so its crumbs start at the filesystem root.
+ */
 export function fileBreadcrumbs(projectName: string, relativePath: string): FileBreadcrumb[] {
   const hostPath = isAbsolutePath(relativePath);
   const separator = isWindowsAbsolutePath(relativePath) ? "\\" : "/";

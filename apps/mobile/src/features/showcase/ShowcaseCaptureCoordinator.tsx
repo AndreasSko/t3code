@@ -56,7 +56,8 @@ function sceneFromPathname(pathname: string): ShowcaseScene | null {
   return null;
 }
 
-// Gate the mount so normal builds never subscribe to showcase entity state.
+// Showcase capture only runs in showcase builds. Gate the mount so normal builds
+// never subscribe to workspace, project, or thread shell state.
 export function ShowcaseCaptureCoordinator(props: { readonly pathname: string }) {
   if (!SHOWCASE_ENABLED) return null;
   return <EnabledShowcaseCaptureCoordinator pathname={props.pathname} />;
@@ -103,7 +104,9 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
     const readLaunchRequest = () => {
       const values = getNativeShowcasePairingUrls();
       if (values.length === 0) return;
-      // Theme and pairing URLs share a launch request; wait for it instead of timing out early.
+      // The palette rides the same launch request as the pairing URLs, so
+      // reading it here settles it without a timeout that could expire while
+      // the request is still on its way.
       setRequestedTheme(getNativeShowcaseTheme());
       setThemeRequestSettled(true);
       setPairingUrls(values);
@@ -138,7 +141,8 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
       const value = getNativeShowcaseScene();
       if (!value || requestedSceneRef.current === value) return;
       requestedSceneRef.current = value;
-      // Revisiting a scene must wait for its newly mounted native surface to draw.
+      // A native draw belongs only to the scene request that produced it. In
+      // particular, revisiting review must wait for its newly mounted surface.
       clearShowcaseRenderSignal();
       setAgentActivityStaged(false);
       setRequestedScene(value);
@@ -188,8 +192,6 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
   }, [connectPairingUrl, pairingUrls]);
 
   const routeScene = sceneFromPathname(props.pathname);
-  // Agent activity is captured over the thread list: the runner locks the
-  // simulator or opens the notification shade on top of it.
   const scene =
     requestedScene === "agent-activity" && routeScene === "threads" ? "agent-activity" : routeScene;
   const hasServerFixture =
@@ -322,6 +324,8 @@ function EnabledShowcaseCaptureCoordinator(props: { readonly pathname: string })
       requestedScene === null ||
       scene !== requestedScene ||
       !hasFixture ||
+      // Never report a scene ready while the capture orientation is still
+      // being applied — a screenshot taken early has the wrong dimensions.
       !orientationSettled ||
       !themeApplied ||
       (scene === "agent-activity" && !agentActivityStaged) ||

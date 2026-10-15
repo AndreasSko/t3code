@@ -14,7 +14,6 @@ export interface CommitMessageGenerationInput {
   branch: string | null;
   stagedSummary: string;
   stagedPatch: string;
-  /** When true, the model also returns a semantic branch name for the change. */
   includeBranch?: boolean;
   policy?: TextGenerationPolicy | undefined;
   modelSelection: ModelSelection;
@@ -60,7 +59,6 @@ export interface ThreadTitleGenerationInput {
   linkedContext?: string | undefined;
   cwd: string;
   message: string;
-  /** Present when replacing an existing title from the current thread history. */
   previousTitle?: string | undefined;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
   modelSelection: ModelSelection;
@@ -88,16 +86,19 @@ export interface ReviewGuideGenerationInput {
   baseBranch: string;
   /** The commit the change is measured from, present in `cwd`. */
   baseCommit: string;
-  /** Resolved review conversations the guide must not raise again. */
+  /**
+   * The guide leaves these alone rather than raising them again.
+   */
   settledReview: string;
-  /** The maintainer's preferences for guides (tone, emphasis, ordering). Empty for none. */
   instructions?: string | undefined;
-  /** Bottom-first stack; fetched sibling heads are present in cwd for cross-layer reading. */
+  /**
+   * The stack the change is a layer of, bottom first, when it is in one. Another layer's head is
+   * fetched into `cwd` where the host served it, so the model can read across a seam.
+   */
   stack?: ReadonlyArray<ReviewGuideStackLayer> | undefined;
   modelSelection: ModelSelection;
 }
 
-/** Unvalidated model output; the server adds metadata and enforces change coverage. */
 export type ReviewGuideGenerationResult = Omit<
   PullRequestReviewGuide,
   "headSha" | "generatedAt" | "modelSelection"

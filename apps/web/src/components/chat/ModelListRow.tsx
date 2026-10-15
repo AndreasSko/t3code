@@ -21,9 +21,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   model: ModelEsque;
   /** Instance the model belongs to — the routing key used in combobox values. */
   instanceId: ProviderInstanceId;
-  /** Driver kind of the instance — used for the provider icon glyph. */
   driverKind: ProviderDriverKind;
-  /** Secondary provider label, usually the configured instance display name. */
   providerDisplayName: string;
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;

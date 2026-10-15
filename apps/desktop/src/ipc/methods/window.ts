@@ -102,11 +102,16 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
       const isPrimary = instance.id === PRIMARY_LOCAL_ENVIRONMENT_ID;
       const config = yield* instance.currentConfig;
       const snapshot = yield* instance.snapshot;
-      // Pending bootstraps omit endpoints and tokens so the renderer can show
-      // Connecting without retrying authentication against a port that is not listening.
+      // We surface it as a *pending* bootstrap (null endpoints, no token) so the renderer can
+      // show a "Connecting…" indicator while it retries — null endpoints keep the renderer from
+      // dialing the dead port, avoiding the needless /api/auth/bootstrap/bearer error cycles a
+      // real endpoint would trigger.
       if (Option.isNone(config) || Option.isSome(config.value.preflightFailure)) {
-        // The primary uses its own path; fatal or stopped secondaries must not show
-        // an indefinite Connecting state. WSL-state UI surfaces their errors.
+        // Skip the primary (same-origin, no "connecting" affordance) and skip a
+        // secondary whose preflight failed *fatally* (no node, wrong version,
+        // missing build tools): it has stopped retrying, so an indefinite
+        // "Connecting…" would be misleading — its error is surfaced by the
+        // WSL-state UI instead.
         const fatalPreflight =
           Option.isSome(config) &&
           Option.isSome(config.value.preflightFailure) &&
@@ -133,8 +138,9 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
         runningDistro,
         httpBaseUrl: httpBaseUrl.href,
         wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
-        // Use the current time-window token derived from the secret; the launch-config
-        // token may have expired since this bundled backend started.
+        // A backend launched with the desktop secret accepts whichever token the secret derives
+        // for the current window, so hand out that one rather than the token frozen into its
+        // launch config.
         ...(bootstrap.desktopBootstrapSecret
           ? { bootstrapToken: yield* configuration.currentBootstrapToken }
           : bootstrap.desktopBootstrapToken
@@ -146,7 +152,8 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
   }),
 });
 
-// "wsl:default" returns null so the picker can resolve the configured/default distro.
+// Returns null for "wsl:default", which is the sentinel for "track the user's WSL default
+// distro" and maps to the wslEnv-derived default at picker time.
 function extractWslDistroFromEnvironmentId(envId: string): string | null {
   if (!envId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)) {
     return null;
@@ -189,7 +196,9 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
       targetId !== undefined &&
       targetId !== PRIMARY_LOCAL_ENVIRONMENT_ID &&
       targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
-    // The wsl:default sentinel uses the same persisted-distro fallback as the backend.
+    // Fall back to the persisted wslDistro when the id is the
+    // "wsl:default" sentinel; the orchestrator uses the same fallback
+    // for the actual backend.
     const wslDistro = useWsl ? (wslDistroFromTarget ?? settings.wslDistro) : null;
     const defaultPath = useWsl
       ? Option.fromNullishOr(
@@ -390,10 +399,7 @@ export const pickThemeFiles = DesktopIpc.makeIpcMethod({
         }
         const text = yield* fileSystem.readFileString(filePath);
         return { name, size, text } satisfies PickedThemeFile;
-      }).pipe(
-        // An unreadable file degrades to an entry the renderer reports.
-        Effect.orElseSucceed((): PickedThemeFile => ({ name, size: 0, text: "" })),
-      );
+      }).pipe(Effect.orElseSucceed((): PickedThemeFile => ({ name, size: 0, text: "" })));
     });
   }),
 });

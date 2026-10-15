@@ -81,7 +81,10 @@ export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTa
 
 const MAX_NOTE_ENTRIES = 10;
 
-/** Bound provider-facing notes by count and label length so they cannot crowd out turn context. */
+/**
+ * Provider-facing text for work the model still expects to hear back from.
+ * Bounded (entries and label length) so it cannot crowd out the turn's context.
+ */
 export function restartCancelledBackgroundWorkNote(work: ReadonlyArray<Work>): string {
   const omitted = work.length - MAX_NOTE_ENTRIES;
   return [
@@ -96,7 +99,11 @@ type ProviderTurnState = Pick<
   "runAttemptId" | "providerThreadId" | "status"
 >;
 
-/** Settled source turns use the note as a prompt; cut turns resume natively without one. */
+/**
+ * A run whose turn had settled before the restart cancelled its background
+ * work. Continuing it prompts the provider with the note. A run cut mid-turn
+ * instead resumes that turn, which Codex does natively without a prompt.
+ */
 export function isRestartNoteSource(
   source: Pick<OrchestrationV2Run, "status" | "activeAttemptId" | "restartCancelledBackgroundWork">,
   providerTurns: ReadonlyArray<Pick<ProviderTurnState, "runAttemptId" | "status">>,
@@ -115,17 +122,20 @@ export function isRestartNoteSource(
 }
 
 /**
- * Restart-cancelled monitors, subagents, and tasks must wake settled turns because
- * nothing else will. Shells are usually dev servers nobody waits on; leave their
- * note for the next user message.
+ * Work an agent ends its turn to wait for: a monitor, a subagent, or a
+ * background task. A restart that cancels it wakes the settled turn, because
+ * nothing else will. A shell does not wake it: most are dev servers that
+ * nobody waits on, so their note waits for the next user message.
  */
 export function isAwaitedWork(work: Pick<Work, "kind">): boolean {
   return work.kind !== "shell";
 }
 
 /**
- * Delegating parents, `task_status`, and `t3_thread_wait` must see restart-cancelled
- * awaited work as interrupted so an ended turn's last message cannot be a final result.
+ * A run's status as its waiter should read it: a delegating parent,
+ * `task_status`, or `t3_thread_wait`. A turn that ended to wait on work the
+ * restart then cancelled did not finish, so it is "interrupted", not
+ * "completed", and its last message is not a final result.
  */
 export function runOutcome(
   run: Pick<OrchestrationV2Run, "status" | "restartCancelledBackgroundWork">,
@@ -136,10 +146,6 @@ export function runOutcome(
     : run.status;
 }
 
-/**
- * Whether a restart continuation may prompt from `source`: a turn the restart
- * cut mid-way, or a settled turn that lost awaited work in the restart.
- */
 export function isRestartContinuationSource(
   source: Pick<OrchestrationV2Run, "status" | "activeAttemptId" | "restartCancelledBackgroundWork">,
   providerTurns: ReadonlyArray<Pick<ProviderTurnState, "runAttemptId" | "status">>,
@@ -150,11 +156,9 @@ export function isRestartContinuationSource(
 }
 
 /**
- * The note a restart continuation of `source` carries, and whether the turn it
- * continues had settled (the note is then the whole prompt). A continuation cut
- * before its provider turn completed may not have delivered its own note:
- * adapters can announce a running turn before accepting the prompt. Carry the
- * note forward until a completed turn proves delivery.
+ * A continuation cut before its provider turn completed may not have delivered
+ * its own note: adapters can announce a running turn before accepting the
+ * prompt. Carry the note forward until a completed turn proves delivery.
  */
 export function restartContinuationNote(
   source: OrchestrationV2Run,
@@ -185,7 +189,11 @@ export function restartContinuationNote(
   return { work, settled: isRestartNoteSource(current, providerTurns) };
 }
 
-/** Continuations with notes are prompted; only those without notes resume natively. */
+/**
+ * A restart continuation prompted with the note rather than a native resume.
+ * A turn cut mid-way that lost background work is prompted too, so the note
+ * is delivered with it; only a continuation without a note resumes natively.
+ */
 export function isRestartNoteContinuation(
   run: Pick<OrchestrationV2Run, "restartContinuationOfRunId">,
   runs: ReadonlyArray<OrchestrationV2Run>,
@@ -203,8 +211,12 @@ export function isRestartNoteContinuation(
 }
 
 /**
- * Notes belong to the provider thread that lost work; only its later completed prompted turns deliver them.
- * Compactions, native resumes, and rolled-back turns do not; note continuations use their own prompt.
+ * The note belongs to the provider thread that lost the work: turns on another
+ * provider (after a switch) neither owe it nor deliver it. A later completed
+ * turn on the same provider thread proves delivery, so the pending set is
+ * derived rather than cleared. Compactions and resumed turns carry no note, and
+ * a rolled-back run left native history, so none of them counts as delivery. A
+ * note continuation's own prompt is the note.
  */
 export function pendingRestartCancelledBackgroundWork(input: {
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
@@ -277,7 +289,7 @@ export function mergeRestartCancelledBackgroundWork(
   current: ReadonlyArray<Work>,
   added: ReadonlyArray<Work>,
 ): ReadonlyArray<Work> {
-  // Records without IDs fall back to kind + label.
+  // Rows recorded before ids existed fall back to kind + label.
   const identity = (entry: Work) => entry.id ?? `${entry.kind}\u0000${entry.label}`;
   const seen = new Set(current.map(identity));
   const merged = [...current];

@@ -80,8 +80,12 @@ function formatValue(key: keyof ServerSettings, value: unknown): string {
   return "Custom";
 }
 
-/** Resolve project, environment, t3.json, then built-in layers in the same
- * precedence as resolveProjectSettings; the first set layer wins. */
+/**
+ * The layers a setting resolves through for one target, top-down: the
+ * project override when the target is a project, the environment's value,
+ * the checkout's t3.json for file-backed keys, and the built-in default. The
+ * first layer that is set wins. Same order as `resolveProjectSettings`.
+ */
 export function settingInheritanceLayers(
   target: ScopedSettingsTarget,
   environmentSettings: ServerSettings,
@@ -147,7 +151,6 @@ export type SettingInheritanceState =
 
 export interface SettingOverridingProject extends ProjectOverrideEntry {
   readonly label: string;
-  /** Jumps the breadcrumb to this project so its override can be edited. */
   readonly open: () => void;
 }
 
@@ -165,7 +168,6 @@ export function SettingInheritance({
   targets: readonly ScopedSettingsTarget[];
   environments: readonly Pick<EnvironmentPresentation, "environmentId" | "serverConfig">[];
   keys: readonly (keyof ServerSettings)[];
-  /** At environment scope: projects whose own value hides the environment's. */
   overridingProjects?: readonly SettingOverridingProject[];
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }) {

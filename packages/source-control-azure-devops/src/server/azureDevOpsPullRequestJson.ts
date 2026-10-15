@@ -14,10 +14,14 @@ import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 import { azureDevOpsPullRequestWebUrl } from "./azureDevOpsPullRequests.ts";
 
-/** az commands return different shapes; tolerate new enum strings and optional metadata. */
+/**
+ * Azure's enums are decoded as plain strings and normalized here, in the same tolerant style as
+ * the other hosts: a new merge status must not fail a whole payload. Every field beyond the
+ * identity is optional, because `az repos pr` returns rather more or less of the REST object
+ * depending on the command.
+ */
 const RawIdentitySchema = Schema.Struct({
   displayName: Schema.optional(Schema.NullOr(Schema.String)),
-  /** An email or UPN, which is what `az account show` reports for the signed-in user. */
   uniqueName: Schema.optional(Schema.NullOr(Schema.String)),
   imageUrl: Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -28,7 +32,11 @@ const RawPullRequestSchema = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: Schema.optional(Schema.NullOr(Schema.String)),
   isDraft: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  /** Azure reports auto-complete by presence of the identity that armed it. */
+  /**
+   * Who armed auto-complete, which is the only thing Azure says about it: the field carries an
+   * identity while the pull request is set to complete on its own, and Azure leaves it out
+   * entirely once nobody has. So its presence is the answer, and there is no third state.
+   */
   autoCompleteSetBy: Schema.optional(Schema.NullOr(RawIdentitySchema)),
   completionOptions: Schema.optional(
     Schema.NullOr(
@@ -41,7 +49,9 @@ const RawPullRequestSchema = Schema.Struct({
   mergeStatus: Schema.optional(Schema.NullOr(Schema.String)),
   createdBy: Schema.optional(Schema.NullOr(RawIdentitySchema)),
   reviewers: Schema.optional(Schema.NullOr(Schema.Array(RawIdentitySchema))),
-  // Skip rows missing contract-required branch or creation time instead of failing the whole response.
+  // Required, and required to be non-empty: the wire contract will not carry a change request
+  // without a branch or a created time, so a row missing one is skipped rather than breaking the
+  // response it travels in.
   sourceRefName: TrimmedNonEmptyString,
   targetRefName: TrimmedNonEmptyString,
   creationDate: TrimmedNonEmptyString,
@@ -118,7 +128,10 @@ export interface AzureDevOpsPullRequest {
   readonly isDraft: boolean;
   readonly mergeability: PullRequestMergeability;
   readonly createdAt: string;
-  /** Azure has no last-touched time; use closing time, otherwise creation time. */
+  /**
+   * Azure records no last-touched time on a pull request, so the closing time stands in where
+   * there is one and the creation time otherwise.
+   */
   readonly updatedAt: string;
   readonly closedAt: string | null;
   readonly body: string;
@@ -166,12 +179,14 @@ function toMergeability(value: string | null | undefined): PullRequestMergeabili
     case "rejectedbypolicy":
       return "conflicting";
     default:
-      // `queued` and `notSet` mean Azure has not finished checking.
       return "unknown";
   }
 }
 
-/** Use returned repository metadata; modern, legacy, and SSH remotes have different shapes. */
+/**
+ * Taken from what Azure returned rather than from the local remote, whose shape
+ * differs between the modern, legacy and SSH forms.
+ */
 function toLocation(
   raw: Schema.Schema.Type<typeof RawPullRequestSchema>,
 ): AzureDevOpsRepositoryLocation | null {
@@ -198,7 +213,6 @@ function toAutoMergeMethod(
   }
 }
 
-/** Null if Azure omits the browser URL or branch required to render and open the row. */
 function toPullRequest(
   raw: Schema.Schema.Type<typeof RawPullRequestSchema>,
 ): AzureDevOpsPullRequest | null {
@@ -259,7 +273,6 @@ export interface AzureDevOpsPullRequestBatch {
   readonly rawCount: number;
 }
 
-/** Malformed entries are skipped rather than failing the batch, as on the other hosts. */
 export function decodePullRequestListJson(
   raw: string,
 ): Result.Result<AzureDevOpsPullRequestBatch, DecodeFailure> {
@@ -298,7 +311,10 @@ export function decodeViewerJson(raw: string): Result.Result<string | null, Deco
     : Result.fail(decoded.failure);
 }
 
-/** Combines all thread remarks, including replies; Azure returns the collection without pagination. */
+/**
+ * Azure answers the whole thread collection in one response, with no cursor and no page to
+ * follow, so what this returns is everything the host has.
+ */
 export function decodeThreadsJson(
   raw: string,
 ): Result.Result<ReadonlyArray<PullRequestComment>, DecodeFailure> {
@@ -340,7 +356,11 @@ export function decodeThreadsJson(
   );
 }
 
-/** Each push is an iteration; changed files and viewed marks are iteration-scoped. */
+/**
+ * Azure records every push as an iteration and keys the whole review off them: the changed
+ * files, and the marks a reader leaves on those files, both hang from an iteration rather
+ * than from the pull request.
+ */
 const RawIterationSchema = Schema.Struct({
   id: Schema.Int,
   sourceRefCommit: Schema.optional(
@@ -372,7 +392,6 @@ const RawChangeEntrySchema = Schema.Struct({
 
 const RawChangePageSchema = Schema.Struct({
   changeEntries: Schema.Array(Schema.Unknown),
-  /** Where the page after this one starts. Azure leaves it out on the last page. */
   nextSkip: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 
@@ -389,7 +408,6 @@ export interface AzureDevOpsIteration {
   readonly mergeBaseCommit: string;
 }
 
-/** oldPath differs only on renames; Azure does not report them as separate delete/add entries. */
 export interface AzureDevOpsChangeEntry {
   readonly path: string;
   readonly oldPath: string;
@@ -414,14 +432,22 @@ const decodeChangePage = decodeJsonResult(RawChangePageSchema);
 const decodeChangeEntry = Schema.decodeUnknownExit(RawChangeEntrySchema);
 const decodeItemContent = decodeJsonResult(RawItemContentSchema);
 
-/** Strip Azure's leading slash, preserving spaces because paths key patches and viewed marks. */
+/**
+ * Azure leads a path with a slash that every other host and every patch omits. Not trimmed like
+ * the rest of this payload, since a leading/trailing space is a legal part of a file's name and
+ * the patch and viewed mark are keyed by the untrimmed path.
+ */
 function toRepositoryPath(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const path = value.replace(/^\/+/, "");
   return path.length === 0 ? null : path;
 }
 
-/** Rename may appear alone or with edit; unknown change kinds stay visible as ordinary changes. */
+/**
+ * Azure names a change with one word or two, and a rename arrives either alone or alongside the
+ * edit that came with it. Anything it has added since reads as a plain change, which shows the
+ * file rather than dropping it from the review.
+ */
 function toChangeKind(
   raw: string | null | undefined,
   renamed: boolean,
@@ -490,7 +516,10 @@ export function decodeIterationChangesJson(
   });
 }
 
-/** Absent content reads as empty; binary status comes from Azure's metadata. */
+/**
+ * Azure answers an absent file with an empty body rather than an error, which reads as empty.
+ * Whether the bytes are text is Azure's own call, not this decoder's to guess from content.
+ */
 export function decodeItemContentJson(
   raw: string,
 ): Result.Result<AzureDevOpsItemContent, DecodeFailure> {

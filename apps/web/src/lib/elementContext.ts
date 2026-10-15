@@ -7,15 +7,16 @@ import type {
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
 
-/** Keep picks JSON-serializable for draft persistence, restoration, and transcript snapshots. */
+/**
+ * We deliberately keep the shape JSON-serializable so it can ride through
+ * `localStorage` persistence, draft restoration, and transcript snapshots
+ * without bespoke marshalling.
+ */
 export interface ElementContextSelection {
   pageUrl: string;
   pageTitle: string | null;
-  /** Lowercase tag, e.g. `"button"`. */
   tagName: string;
-  /** CSS selector — may be null when react-grab can't compute one. */
   selector: string | null;
-  /** Truncated outer-HTML preview. */
   htmlPreview: string;
   componentName: string | null;
   source: PickedElementStackFrame | null;
@@ -32,7 +33,10 @@ function normalizeText(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
 }
 
-/** Clamp bridge payload strings before persistence so oversized outerHTML cannot exhaust localStorage. */
+/**
+ * Trims/clamps every string field so we never persist a 5MB outerHTML blob and
+ * silently break `localStorage`.
+ */
 export function normalizeElementContextSelection(
   raw: PickedElementPayload,
 ): ElementContextSelection | null {

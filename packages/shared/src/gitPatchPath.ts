@@ -1,11 +1,7 @@
 /**
- * Patch headers use spaces/tabs as delimiters, so control characters in names can split
- * or forge headers. Share Git-style quoting and decoding to preserve the filename.
- */
-
-/**
- * Leave non-ASCII characters readable: core.quotePath escapes them for terminals,
- * but the diff viewer does not need that presentation setting.
+ * Not every byte git would escape: `core.quotePath` also escapes anything outside ASCII, which
+ * is a setting for what a terminal can show rather than anything the format needs, and a patch
+ * here is read by a diff viewer.
  */
 const ESCAPE_BY_CHARACTER = new Map([
   ['"', '\\"'],
@@ -40,8 +36,8 @@ const utf8 = new TextEncoder();
 const fromUtf8 = new TextDecoder();
 
 /**
- * Pass the a/ or b/ prefix with the path: Git quotes the entire header token,
- * including that prefix, when quotes, backslashes, or control characters require it.
+ * A header side's `a/` or `b/` belongs inside the quoting, so pass it in along with the name:
+ * what git quotes is the whole token a reader takes off the line, side letter and all.
  */
 export function quoteGitPatchPath(path: string): string {
   let body = "";
@@ -67,8 +63,9 @@ export function quoteGitPatchPath(path: string): string {
 }
 
 /**
- * Git escapes bytes, so octal runs must be rejoined before UTF-8 decoding.
- * Unknown escapes follow C semantics.
+ * A name holding no backslash is already itself, and an escape git would never write reads the
+ * way C reads it. The escapes are per byte, so a name in another alphabet arrives as a run of
+ * octal and only reads back as itself once those bytes are rejoined and decoded together.
  */
 function unescapeBody(body: string): string {
   if (!body.includes("\\")) return body;
@@ -117,8 +114,9 @@ function unescapeBody(body: string): string {
 }
 
 /**
- * Accept quoted and unquoted tokens: the client diff parser strips quotes from
- * diff --git paths but retains them on rename paths.
+ * The escapes are undone whether the quotes are still there or not, because patch parsers disagree
+ * about how much of the quoting they hand back: the one the clients read diffs with takes the
+ * quotes off the `diff --git` line's names and leaves them on a rename's.
  */
 export function unquoteGitPatchPath(token: string): string {
   if (token.length >= 2 && token.startsWith(QUOTE) && token.endsWith(QUOTE)) {

@@ -59,8 +59,10 @@ import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
-// Cache only successful discovery to avoid spawning on health refresh;
-// failures and unauthenticated results must retry to detect completed sign-in.
+// How long a successful discovery probe stays valid. Periodic health
+// refreshes reuse it instead of spawning a fresh disposable ACP session;
+// failed or unauthenticated probes are never cached so a completed sign-in
+// is detected on the next refresh.
 const PROBE_SUCCESS_TTL_MS = 15 * 60 * 1_000;
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
@@ -207,7 +209,9 @@ function baseSnapshot(
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     ...(iconUrl ? { iconUrl } : {}),
     continuation: { groupKey: input.continuationKey },
-    // Rejects application text generation, so exclude these instances from its selectors.
+    // The registry driver rejects every application text-generation operation,
+    // so selectors must not offer these instances for commit, PR, branch, or
+    // title generation.
     supportsTextGeneration: false,
     enabled: input.settings.enabled,
     installed: input.installed,
@@ -332,7 +336,9 @@ export function buildCheckedAcpRegistrySnapshot(
       : {}),
     installed: readiness.installed,
     version: readiness.version,
-    // A failed probe is a warning when the binary is ready: real turns may work after sign-in.
+    // A failed discovery probe on a ready installation is a warning, not an
+    // outage: the agent binary is present and a real turn may still work
+    // (for example after the user completes authentication).
     status: probeFailed ? "warning" : readiness.status,
     auth: input.probe
       ? {
@@ -724,7 +730,8 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         ),
       );
 
-      // Provide the optional coordinator only when this driver instance has one.
+      // The management probes read the coordinator via serviceOption, so it is
+      // provided only when this driver instance actually has one.
       const provideAcpManagementServices = <A, E>(
         effect: Effect.Effect<
           A,

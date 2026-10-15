@@ -50,7 +50,11 @@ export interface ExecuteGitInput {
   readonly timeoutMs?: number | null;
   readonly maxOutputBytes?: number;
   readonly appendTruncationMarker?: boolean;
-  /** With appendTruncationMarker, progress callbacks continue after buffered output fills. */
+  /**
+   * With `appendTruncationMarker`, keep invoking the line callbacks after the
+   * buffered copy is full. For long-running commands whose output is only
+   * consumed through `progress`.
+   */
   readonly keepLineCallbacksAfterTruncation?: boolean;
   readonly progress?: ExecuteGitProgress;
 }
@@ -82,7 +86,6 @@ export interface GitStatusDetails {
 export interface GitLocalStatusOptions {
   /** Skip revision walks and return zero divergence counts for local-only consumers. */
   readonly includeDivergence?: boolean;
-  /** Also read the diff panel's Changes totals. Failures leave them out. */
   readonly includeBranchChanges?: boolean;
 }
 
@@ -114,14 +117,10 @@ export interface ExecuteGitProgress {
   }) => Effect.Effect<void, never>;
 }
 
-/**
- * Git reports checkout progress as `Updating files: 78% (2104/2700)` on stderr.
- * Submodule progress uses `Submodule path 'x': checked out` lines.
- */
 export interface CreateWorktreeProgress {
   /**
-   * After worktree registration and before submodule setup.
-   * Git refuses existing paths, so this path belongs to the call and is safe to remove on cancel.
+   * Git refuses an existing path, so a path reported here belongs to this call and is safe to
+   * remove on cancel.
    */
   readonly onWorktreeClaimed?: (path: string) => Effect.Effect<void, never>;
   readonly onCheckoutProgress?: (input: {
@@ -143,9 +142,12 @@ export interface CreateWorktreeProgress {
 
 export interface CreateWorktreeOptions {
   readonly progress?: CreateWorktreeProgress;
-  /** Null or omitted defers to checkout t3.json; otherwise project settings override environment. */
+  /**
+   * The project-over-environment `worktreeSubmodules` setting. Null (or
+   * omitted, for callers without settings access) defers to the checkout's
+   * own t3.json.
+   */
   readonly submodules?: WorktreeSubmodules | null;
-  /** The `worktreesDirectory` setting, used when the input has no explicit path. */
   readonly worktreesDirectory?: string;
 }
 
@@ -165,7 +167,6 @@ export interface GitCommitProgress {
 export interface GitCommitOptions {
   readonly timeoutMs?: number;
   readonly progress?: GitCommitProgress;
-  /** Stage the current working tree immediately before committing. */
   readonly stage?: { readonly filePaths?: readonly string[] };
 }
 
@@ -335,7 +336,6 @@ export class GitVcsDriver extends Context.Service<
       cwd: string,
       key: string,
     ) => Effect.Effect<string | null, GitCommandError>;
-    /** Returns the branch name of a local or remote-tracking ref, excluding tags and commits. */
     readonly resolveBranchName: (
       cwd: string,
       refName: string,
@@ -358,7 +358,6 @@ export class GitVcsDriver extends Context.Service<
     readonly resolveCommit: (
       input: GitResolveCommitInput,
     ) => Effect.Effect<GitResolveCommitResult, GitCommandError>;
-    /** Moves the branch checked out in `cwd` onto `targetCommit`, from inside that worktree. */
     readonly refreshCheckedOutBranch: (
       input: GitRefreshCheckedOutBranchInput,
     ) => Effect.Effect<GitRefreshCheckedOutBranchResult, GitCommandError>;
@@ -388,11 +387,13 @@ export class GitVcsDriver extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
-    /** Drops worktree admin entries whose directory is already gone (`git worktree prune`). */
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
-    /** Absolute paths of live worktrees, including the main checkout; absent directories are excluded. */
+    /**
+     * Absolute paths of every live worktree of the repository at `cwd`, the
+     * main checkout included. Worktrees whose directory is gone are left out.
+     */
     readonly listWorktreePaths: (cwd: string) => Effect.Effect<string[], GitCommandError>;
     readonly deleteLocalBranch: (
       input: GitDeleteLocalBranchInput,
@@ -787,8 +788,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       return path.isAbsolute(gitCommonDir) ? gitCommonDir : path.resolve(cwd, gitCommonDir);
     });
 
-  // Flush checkpoint objects and refs to prevent zero-byte refs after an unclean restart.
-  // Force fsync because macOS writeout-only does not reach the disk.
+  // Git renames loose objects and refs into place without fsync by default, so
+  // an unclean restart can leave 0-byte files under refs/t3/** that break every
+  // later fetch and push. Checkpoint writes flush before they are published;
+  // macOS defaults to writeout-only, which does not reach the disk either.
   const durableWrite = [
     "-c",
     "core.fsync=objects,reference",
@@ -877,7 +880,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               env: commitEnv,
               maxOutputBytes: 4_096,
               outputMode: "truncate",
-              // Inspect every tag; retain only skipped file paths for checking sparse rules.
               onStdoutChunk: (chunk) => {
                 for (const byte of chunk) {
                   if (recordStart) skipped = byte === 83;
@@ -984,7 +986,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                 const candidates = splitNullSeparatedGitStdoutPaths(untracked).filter((entry) =>
                   entry.endsWith("/"),
                 );
-                // Refuse excessive recovery work before probing any nested repositories.
                 if (candidates.length > CHECKPOINT_RECOVERY_MAX_CANDIDATES) return yield* error;
                 // Discover each child's repository instead of inheriting the server's Git bindings.
                 const nestedRepoEnv: NodeJS.ProcessEnv = {
@@ -1011,7 +1012,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                 if (exclusions.length === 0) return yield* error;
                 return yield* stageFiles(exclusions);
               }).pipe(
-                // One budget covers discovery, queued Git admission, probes, and the staging retry.
                 Effect.timeoutOrElse({
                   duration: CHECKPOINT_RECOVERY_TIMEOUT,
                   orElse: () => Effect.fail(error),

@@ -1,4 +1,3 @@
-// These server-owned preferences must agree across machines even when no client is attached.
 import type {
   EnvironmentId,
   ExecutionEnvironmentCapabilities,
@@ -11,7 +10,6 @@ import * as Struct from "effect/Struct";
 
 import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 
-/** Server keys that hold a user preference rather than machine config. */
 const SHARED_SERVER_SETTING_KEYS = [
   "continueThreadsAfterServerUpdate",
   "sidebarAutoSettleAfterDays",
@@ -27,7 +25,6 @@ export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number]
 
 const SHARED_KEY_SET = new Set<string>(SHARED_SERVER_SETTING_KEYS);
 
-/** Split a server patch into the keys every environment should receive and the primary-only rest. */
 export function splitSharedServerPatch(patch: ServerSettingsPatch): {
   sharedPatch: ServerSettingsPatch;
   localPatch: ServerSettingsPatch;
@@ -88,7 +85,10 @@ export function pickSharedServerSettings(
   );
 }
 
-/** Auto-settlement establishes baseline sync support; newer preferences are filtered separately. */
+/**
+ * Whether an environment can participate in shared-settings sync right now.
+ * Auto-settlement establishes baseline support; newer preferences are filtered separately.
+ */
 export function supportsSharedSettingsSync(environment: {
   readonly connection: { readonly phase: EnvironmentConnectionPhase };
   readonly serverConfig: {
@@ -113,8 +113,10 @@ export interface SharedSettingsEnvironment {
     | undefined;
 }
 
-/** Pass real loaded settings, never defaults, so apply-to-all cannot overwrite preferences.
- * Skip environments that cannot read/write or lack baseline support. */
+/**
+ * Callers must pass the real loaded settings, never a default fallback, or
+ * "apply to all" would push defaults over real values.
+ */
 export function findSharedSettingsMismatches(input: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly primarySettings: ServerSettings | null;

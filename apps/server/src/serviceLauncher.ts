@@ -1,7 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // @effect-diagnostics globalTimers:off
-// The launcher must work across server versions even when the rest of the executable
-// cannot load, so it uses only Node built-ins without an Effect runtime.
+// The launcher supervises the server child for the boot service and must keep
+// working across server versions, so it stays on Node built-ins with no Effect
+// runtime: it is the one part of the executable that cannot depend on the
+// rest of it being loadable.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
@@ -30,9 +32,10 @@ import {
 
 const HANDOFF_DELAY_MS = 2_000;
 /**
- * On a cold cache, migrations and `PRAGMA optimize` can take minutes for tens
- * of GB and block the child's main thread. Timing out rolls the database
- * back, so the next trial repeats that work; crashes are caught at exit.
+ * Migrations and the open-time `PRAGMA optimize` count toward it and scale with the database:
+ * tens of GB on a cold page cache take minutes. They run synchronously on the child's main
+ * thread, so it cannot report progress meanwhile. A missed window rolls back the database, so
+ * the next attempt pays the same cost.
  */
 export const PREPARED_TIMEOUT_MS = 30 * 60_000;
 const TERMINATE_GRACE_MS = 5_000;
@@ -49,7 +52,9 @@ interface ManagedChild {
   readonly process: NodeChildProcess.ChildProcess;
 }
 
-// Kept inline to avoid loading anything beyond Node built-ins.
+// Mirrors pinnedRuntimePaths: a runtime is an unpacked release archive whose
+// executable runs on its own. Kept inline so this file stays on Node
+// built-ins only.
 const runtimePaths = (baseDir: string, version: string) => {
   const versionDir = NodePath.join(baseDir, "runtime", "versions", version);
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
@@ -117,9 +122,7 @@ function runCp(args: ReadonlyArray<string>): Promise<boolean> {
 }
 
 /**
- * Clones avoid copying tens of GB: APFS uses `cp -c`, btrfs/XFS use
- * `cp --reflink=auto`. On macOS, Node's `fs.copyFile` clone flag falls back
- * to a full copy. Without clone support, or when `cp` fails, this copies.
+ * Node's own clone flag is not used: on macOS `fs.copyFile` falls back to a full copy.
  */
 async function copyDatabaseFile(source: string, destination: string): Promise<void> {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
@@ -217,9 +220,8 @@ const filesystemBackupSpaceProbe: BackupSpaceProbe = {
 };
 
 /**
- * Returns a client-visible backup-space blocker, or undefined if it fits.
- * Call before stopping the server to avoid an outage and a cold restart.
- * Throws if the database or filesystem cannot be inspected.
+ * Runs before the server is stopped so a full disk refuses the update instead of causing an
+ * outage and a cold restart. Throws when the database or the filesystem cannot be inspected.
  */
 export async function databaseBackupBlocker(
   baseDir: string,
@@ -244,8 +246,7 @@ export async function databaseBackupBlocker(
 }
 
 /**
- * Snapshots the database once per update before the first trial. A completed
- * backup is never overwritten because a restarted launcher may be looking at
+ * A completed backup is never overwritten because a restarted launcher may be looking at
  * database writes from an earlier attempt by the same trial.
  */
 async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate): Promise<void> {
@@ -292,8 +293,9 @@ async function markDatabaseRestorePending(backupDir: string): Promise<void> {
 }
 
 /**
- * Follows symlinks even if a crash between `cp -c` removal and cloning
- * left the final target missing.
+ * The file a restore writes for `path`: where its symlinks lead, even when the
+ * last target is missing, as after a crash between `cp -c` removing a file
+ * and cloning over it.
  */
 async function restoreTarget(path: string): Promise<string> {
   let current = path;
@@ -504,8 +506,12 @@ export class Launcher {
   }
 
   async stop(signal: NodeJS.Signals): Promise<void> {
-    // Mark synchronously before a concurrent update terminates the child; its finalizer needs the marker.
-    // systemd KillMode=mixed and launchd signal this launcher before the child.
+    // This must happen synchronously at signal receipt. A queued update
+    // transition may already be terminating the active child, and that child
+    // needs to see the marker in its shutdown finalizer. KillMode=mixed also
+    // ensures systemd signals the launcher before the rest of the cgroup, and
+    // launchd signals only the job's main process (this launcher), so the
+    // marker lands before the child sees any signal on both platforms.
     try {
       NodeFS.writeFileSync(stopMarkerPath(this.#baseDir), "", { mode: 0o600 });
     } catch {
@@ -518,7 +524,9 @@ export class Launcher {
     this.#stopRequested = true;
     this.#clearTimer();
     this.#enqueue(async () => {
-      // Let an in-progress update start its replacement first; that child owns pre-activation tunnel cleanup.
+      // Let an update transition already in progress start its replacement
+      // before this queued stop tears it down. That replacement owns the
+      // pre-activation tunnel cleanup path and observes the marker above.
       this.#stopping = true;
       const child = this.#child?.process;
       this.#child = null;
@@ -535,8 +543,13 @@ export class Launcher {
   }
 
   async #recover(): Promise<void> {
-    // A restart makes the stop marker stale. Clear the update restart marker only when
-    // the awaited version is running; a launcher racing the state write may still be old.
+    // A fresh launcher means servers are running again: any stop marker from
+    // a previous explicit stop is stale and must not make a future update
+    // handoff release its tunnel. A restart deferred by `t3 update` is done
+    // no matter who restarted the service, but only once this launcher is
+    // the version the marker waits for: a launcher that came up between the
+    // CLI writing the marker and writing the new state still runs the old
+    // version, and the marker has to outlive it.
     await NodeFSP.rm(stopMarkerPath(this.#baseDir), { force: true }).catch(() => undefined);
     const restartPending = restartPendingPath(this.#baseDir);
     const awaitedVersion = await NodeFSP.readFile(restartPending, "utf8").catch(() => undefined);
@@ -788,8 +801,9 @@ export class Launcher {
   }
 
   /**
-   * Stay idle so systemd or launchd does not keep restarting a refused server.
-   * Do not restore a pending update's backup: the other T3 home owner may
+   * Another server owns the T3 home. Exiting would make systemd or launchd
+   * start another refused server, so stay idle until stopped or restarted.
+   * A pending update fails without restoring its backup: the other owner may
    * have written to the database since.
    */
   async #idleWhileStateDirOwned(): Promise<void> {

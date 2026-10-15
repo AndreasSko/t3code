@@ -51,7 +51,6 @@ export const CommandReceiptV2 = Schema.Struct({
 });
 export type CommandReceiptV2 = typeof CommandReceiptV2.Type;
 
-/** Receipt for a project command; shares the receipt table with thread commands. */
 export const ProjectCommandReceiptV2 = Schema.Struct({
   commandId: CommandId,
   projectId: ProjectId,

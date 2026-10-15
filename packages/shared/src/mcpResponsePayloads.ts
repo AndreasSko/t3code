@@ -1,6 +1,5 @@
 // MCP responses carry opaque JSON-RPC that callers relay verbatim.
 // @effect-diagnostics preferSchemaOverJson:off
-// The ACP bridge fast path imports only Effect core.
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 

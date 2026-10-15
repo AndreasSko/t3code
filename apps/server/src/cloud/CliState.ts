@@ -16,8 +16,11 @@ import {
 
 export const CLOUD_CLI_DESIRED_LINK_SECRET = "cloud-cli-desired-link";
 
-// Managed links provision tunnels; publish-only links send activity without
-// advertising an endpoint, supporting clients paired out of band.
+// "managed" provisions a Cloudflare tunnel (default, legacy value "true").
+// "publish_only" links the environment to the relay purely to publish agent
+// activity — no tunnel, no relay-advertised endpoint — so activity can flow to
+// mobile clients even when they reach the environment out of band (Tailscale,
+// direct pairing) without T3 Connect.
 export type CliDesiredLinkMode = "managed" | "publish_only";
 
 const MANAGED_BYTES = new TextEncoder().encode("managed");
@@ -58,7 +61,7 @@ export const setCliDesiredCloudLink = Effect.fn("cloud.cli_state.set_desired")(f
 /**
  * Drops a link the relay rejected, keeping the sign-in and preferences, so the
  * next start links this environment again. `t3 connect link` calls it: the
- * server never relinks a revoked link on its own. Returns whether it dropped one.
+ * server never relinks a revoked link on its own.
  */
 export const dropRevokedCloudLink = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;

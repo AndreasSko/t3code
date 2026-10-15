@@ -19,7 +19,8 @@ export function videoMimeType(attachment: {
 }): string | null {
   const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   if (mimeType.startsWith("video/")) return mimeType;
-  // A definite MIME type outranks the filename; a PDF named .mp4 must stay a PDF.
+  // The name is only evidence when nothing recorded what this is. A definite type already
+  // answers the question, and a `.mp4` on a PDF must not override it.
   if (mimeType !== "" && !GENERIC_MIME_TYPES.has(mimeType)) return null;
   const dotIndex = attachment.name.lastIndexOf(".");
   return dotIndex < 0

@@ -37,20 +37,14 @@ export class PreviewPasskeysConfigureError extends Schema.TaggedError<PreviewPas
   }
 }
 
-/**
- * macOS passkey paths require signed-build entitlements: Touch ID credentials stay in T3's local keychain group.
- * The managed browser entitlement enables the system sheet; Windows uses Chromium's native Hello support.
- */
 export class PreviewPasskeys extends Context.Service<
   PreviewPasskeys,
   {
-    /** Whether preview pages route WebAuthn through the system passkey sheet. */
     readonly bridgeEnabled: boolean;
-    /** Turns on Touch ID passkeys when this build is entitled to them. Runs after app ready. */
+    /** Runs after app ready. */
     readonly configure: Effect.Effect<void>;
-    /** Lets the user choose between several passkeys for one site. Idempotent. */
+    /** Idempotent. */
     readonly installSessionHandlers: (session: Session) => void;
-    /** Serves a preview guest's passkey ceremonies. Returns the detach function. */
     readonly attachGuest: (guest: WebContents) => () => void;
   }
 >()("@t3tools/desktop/preview/Passkeys/PreviewPasskeys") {}
@@ -120,8 +114,7 @@ const isTrustworthyOrigin = (origin: string) => {
 };
 
 /**
- * The platform that serves preview pages' passkey ceremonies, or none. Windows
- * needs none: Chromium already hands WebAuthn to Windows Hello there.
+ * Windows needs none: Chromium already hands WebAuthn to Windows Hello there.
  */
 const backendFor = (platform: NodeJS.Platform): PasskeyBackend | undefined =>
   platform === "darwin" ? macPasskeyBackend : undefined;

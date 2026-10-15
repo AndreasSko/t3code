@@ -28,7 +28,10 @@ function stashEntrySnippet(entry: PromptStashEntry): string {
   return `(${attachmentCount} ${label}${attachmentCount === 1 ? "" : "s"})`;
 }
 
-/** Capture window keys before the composer while the stash menu is open. */
+/**
+ * The listener runs capture-phase on window so it wins over the composer's handlers while the
+ * menu is open.
+ */
 export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
   entries: ReadonlyArray<PromptStashEntry>;
   stashShortcutLabel: string | null;

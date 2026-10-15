@@ -9,8 +9,8 @@ import {
 } from "unbash";
 
 /**
- * starts[i]/ends[i] map each decoded script character to its original command span, including escaped
- * quotes.
+ * `starts[i]` and `ends[i]` are the span of the original command that spells
+ * `text[i]`, so a quoted `\"` maps back to both of its characters.
  */
 export interface EmbeddedScript {
   readonly language: string;
@@ -27,10 +27,10 @@ interface MappedText {
 
 interface Interpreter {
   readonly language: string;
-  /** Flags whose next argument is the script. */
   readonly inline: (flag: string) => boolean;
   /** Options that consume the next argument. */
   readonly valueOptions?: ReadonlySet<string>;
+  /** Options after which the script comes from a file or module instead. */
   readonly scriptFileOptions?: ReadonlySet<string>;
   /** "always" for SQL shells, which read statements from stdin next to their database argument. */
   readonly stdin: "always" | "without-script-file" | "never";
@@ -184,8 +184,10 @@ const DELIMITER_LANGUAGES: Record<string, string> = {
 };
 
 /**
- * Return scripts outermost first so nested highlighting overrides parents; broken syntax has no trusted
- * spans.
+ * The scripts embedded in a shell command, outermost first, so a highlighter
+ * painting them in order lets a nested script override the one containing it.
+ * Returns nothing for a command that does not parse cleanly; where a broken
+ * quote ends cannot be trusted.
  */
 export function embeddedScripts(command: string): EmbeddedScript[] {
   const identity = Array.from({ length: command.length }, (_, index) => index);
@@ -265,7 +267,6 @@ function interpreterFor(name: string): Interpreter | undefined {
   return Object.hasOwn(INTERPRETERS, name) ? INTERPRETERS[name] : undefined;
 }
 
-/** Skips `env FOO=1`, `sudo -u bob` and similar to the word naming the real program. */
 function programIndex(words: ReadonlyArray<Word>): number {
   let index = 0;
   while (index < words.length) {
@@ -448,8 +449,9 @@ function hereDocText(hereDoc: HereDoc, source: string): MappedText {
 }
 
 /**
- * Map decoded word characters to original spans; keep expansions literal and return undefined for
- * unmappable spellings.
+ * A word's value with the source span of each character: quotes removed and
+ * escapes resolved, the way the program receives it. Expansions such as
+ * `$HOME` stay as written. Returns undefined for spellings it cannot map.
  */
 function wordText(word: Word, source: string): MappedText | undefined {
   const builder = new MappedTextBuilder();
@@ -497,7 +499,6 @@ class MappedTextBuilder {
     return true;
   }
 
-  /** Adds a literal, resolving backslash escapes; false when the result disagrees with the parser. */
   addEscaped(literal: { pos: number; text: string; value: string }, doubleQuoted: boolean) {
     const before = this.text.length;
     const { text, pos } = literal;

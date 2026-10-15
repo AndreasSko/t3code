@@ -118,7 +118,6 @@ const targetLocator = (
   return page.locator(selector);
 };
 
-/** Shows the agent's pointer to viewers before an action lands at that point. */
 export type PointerReporter = (
   point: { readonly x: number; readonly y: number },
   phase: "move" | "click",
@@ -269,7 +268,9 @@ export const type = async (page: Page, input: PreviewAutomationTypeInput) => {
     (locator !== null || (await target.count()) > 0) &&
     (await target.evaluate(
       (element) => {
-        // Require a text control that takes focus, or typing could land in the previously focused field.
+        // Like the desktop host: an enabled text control or contenteditable
+        // that actually takes focus. Anything else would swallow the text or
+        // send it to whichever field had focus before.
         const control = element as unknown as {
           readonly type?: string;
           readonly disabled?: boolean;
@@ -316,7 +317,6 @@ export const type = async (page: Page, input: PreviewAutomationTypeInput) => {
   await page.keyboard.insertText(input.text);
 };
 
-/** Hovering by locator moves the real mouse, so CSS :hover and pointer events both apply. */
 export const hover = async (
   page: Page,
   input: PreviewAutomationHoverInput,
@@ -376,7 +376,8 @@ export const drag = async (
   const source = targetLocator(page, { locator: input.source })!;
   const target = targetLocator(page, { locator: input.target })!;
   await pointer(await targetPoint(page, source, {}, timeout), "move");
-  // Observe rejection immediately so cursor movement cannot leave an unhandled rejection.
+  // Observe the drag's outcome as it starts: a rejection nobody handles while the cursor
+  // moves exits the server.
   const dragFailure = source.dragTo(target, { timeout }).then(
     () => null,
     (error: unknown) => ({ error }),
@@ -387,7 +388,6 @@ export const drag = async (
   if (failure) throw failure.error;
 };
 
-/** Returns false when no target locator or selector is provided. */
 export const setInputFiles = async (page: Page, input: PreviewAutomationUploadInput) => {
   const locator = targetLocator(page, input);
   if (locator === null) return false;
@@ -410,7 +410,11 @@ export const scroll = async (page: Page, input: PreviewAutomationScrollInput) =>
   await locator.evaluate((element, [x, y]) => element.scrollBy(x, y), delta);
 };
 
-/** Terminates timed-out scripts so they cannot block the tab's control queue. */
+/**
+ * Runs an agent's expression, bounded by its request's deadline. Past it, the
+ * page's script is terminated and the call fails, so the tab's control queue
+ * frees for the next request instead of waiting on the script.
+ */
 export const evaluate = async (
   cdp: CDPSession,
   input: PreviewAutomationEvaluateInput,
@@ -461,7 +465,6 @@ export const waitFor = async (page: Page, input: PreviewAutomationWaitForInput) 
   const locator = targetLocator(page, input);
   const { text, urlIncludes } = input;
   const checks: Array<() => Promise<boolean>> = [];
-  // The selector must match an element, visible or not.
   if (locator !== null) checks.push(async () => (await locator.count()) > 0);
   if (text !== undefined) {
     // A navigation can destroy the context mid-check; that counts as not yet.
@@ -504,8 +507,8 @@ export const parseNetError = (errorText: string) => {
   return { description, code: NET_ERROR_CODES[description] ?? -2 };
 };
 
-// Browser-side encoding avoids ffmpeg. Resizes are letterboxed into the first frame;
-// the agent cursor is drawn here so it never changes the page under test.
+// Resizes are letterboxed into the first frame; the agent cursor is drawn here
+// so it never changes the page under test.
 export const RECORDING_ENCODER_SCRIPT = `(() => {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");

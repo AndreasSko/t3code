@@ -107,7 +107,10 @@ function shouldDropMissingPartialTurnItem(
   if (item.runId === null) {
     return isBelowPartialWindow(projection, item, latestLocalTurnOrdinal);
   }
-  // Steers can overtake queued ordinals, so unfinished-run items remain new below the watermark.
+  // A queued run keeps the ordinal it got when queued, so a steer sent later
+  // can raise the watermark past it. Items of a run that has not finished are
+  // new, not unloaded history: the first lands while the run is still queued,
+  // and a bounded window can start after the ones before it.
   if (
     projection.runs.some((run) => run.id === item.runId && UNFINISHED_RUN_STATUSES.has(run.status))
   ) {

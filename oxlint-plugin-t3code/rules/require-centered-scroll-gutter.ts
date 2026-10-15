@@ -24,7 +24,6 @@ interface ClassNames {
   readonly always: Set<string>;
 }
 
-/** Collects renderable class names, skipping condition expressions themselves. */
 function collectClassNames(node: unknown, classNames: ClassNames, always: boolean) {
   const expression = unwrapExpression(node);
   if (Option.isNone(expression)) return;
@@ -89,7 +88,10 @@ function classNamesOf(element: ESTree.JSXElement): ClassNames {
 const hasClass = (classNames: ReadonlySet<string>, pattern: RegExp) =>
   [...classNames].some((className) => pattern.test(className));
 
-/** Reserving the scrollbar lane prevents centered content from jumping by half its width. */
+/**
+ * A classic scrollbar narrows the scroller when it appears, so centered content jumps by half its
+ * width whenever the content grows past the fold.
+ */
 export default defineRule({
   meta: {
     type: "problem",

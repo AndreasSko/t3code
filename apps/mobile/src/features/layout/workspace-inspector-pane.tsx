@@ -13,15 +13,19 @@ import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspacePaneDivider } from "./workspace-pane-divider";
 
 /**
- * Render beside the navigator so its native header spans only the content pane.
- * Pass layout through props to avoid an import cycle with AdaptiveWorkspaceLayout.
+ * Rendered by AdaptiveWorkspaceLayout as a SIBLING of the navigator so the native stack header
+ * (and its trailing toolbar items) spans only the content pane — the inspector owns its own
+ * full-height column, mirroring how each column of a UISplitViewController has its own chrome.
+ * Receives the pane layout via props (not the workspace context hook) so this module stays
+ * import-cycle-free with AdaptiveWorkspaceLayout.
  */
 export function WorkspaceInspectorPane(props: {
   readonly pathname: string;
   readonly renderedInspectorWidth: SharedValue<number>;
   /**
-   * False keeps content mounted during the close animation; onClosed lets the
-   * owner release it after the animation settles.
+   * When false the pane animates closed but keeps its content mounted for the
+   * exit transition (a route that lost focus). `onClosed` fires once the
+   * close animation settles so the owner can drop the stale content.
    */
   readonly active?: boolean;
   readonly onClosed?: () => void;
@@ -37,12 +41,15 @@ export function WorkspaceInspectorPane(props: {
   const resizeStartWidth = useRef(0);
   const [resizing, setResizing] = useState(false);
 
-  // Start an already-visible inspector at its final position so file-to-file
-  // route replacement does not replay its entering transition.
+  // A file-to-file replace remounts the route. Initialize an already-visible
+  // inspector at its final position so route replacement never replays an
+  // entering transition. Only visibility and explicit resizing change it.
   const inspectorProgress = useSharedValue(inspectorVisible ? 1 : 0);
   const { renderedInspectorWidth } = props;
-  // Keep content laid out while the outer width clips it, avoiding text reflow.
-  // Animate visible content-width changes with the reveal to avoid snapping.
+  // The content keeps its own width so the reveal (outer width) clips a
+  // fully-laid-out pane instead of reflowing text every frame. When the OPEN
+  // pane's target width changes (e.g. the sidebar toggles and reserves
+  // space), animate the content width in lockstep rather than snapping.
   const renderedContentWidth = useSharedValue(inspectorWidth ?? 0);
 
   const onClosed = props.onClosed;

@@ -9,14 +9,20 @@ export const DesktopBackendBootstrap = Schema.Struct({
   mode: Schema.Literal("desktop"),
   noBrowser: Schema.Boolean,
   port: PortSchema,
-  // WSL uses its Linux home, not the Windows baseDir mapped under /mnt/c.
+  // Omitted when the desktop launches the backend inside WSL, since the
+  // Windows-side baseDir maps to /mnt/c/... and the Linux side should use its
+  // own home directory instead.
   t3Home: Schema.optional(Schema.String),
   host: Schema.String,
   desktopBootstrapToken: Schema.String,
-  // This secret derives rotating bootstrap tokens instead of trusting the startup token forever;
-  // see @t3tools/shared/desktopBootstrapToken.
+  // Present when the desktop rotates the renderer's bootstrap token: the
+  // backend derives the accepted tokens from this secret instead of trusting
+  // `desktopBootstrapToken` for its whole run. See
+  // `@t3tools/shared/desktopBootstrapToken`.
   desktopBootstrapSecret: Schema.optionalKey(Schema.String),
-  // Absent means the backend hydrates PATH; WSL and older desktops depend on this.
+  // Set only when the desktop already merged the user's shell environment into
+  // the environment it hands this backend. Absent means the backend hydrates
+  // PATH itself, which WSL and older desktops rely on.
   shellEnvironmentPrepared: Schema.optionalKey(Schema.Boolean),
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: PortSchema,
@@ -34,5 +40,8 @@ export const DesktopBackendBootstrap = Schema.Struct({
 
 export type DesktopBackendBootstrap = typeof DesktopBackendBootstrap.Type;
 
-/** A fresh shutdown marker in t3Home/runtime preserves managed tunnels through a desktop update restart. */
+/** Written to `<t3Home>/runtime` just before the desktop app stops its
+    backend to install an update. The updated app starts a new backend right
+    away, so a backend that sees a fresh marker at shutdown keeps its managed
+    tunnel. */
 export const DESKTOP_UPDATE_RESTART_MARKER_FILE = "desktop-update-restart";

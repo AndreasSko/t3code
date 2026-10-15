@@ -48,7 +48,6 @@ export function WorkLogPressable({
   );
 }
 
-/** Headers stay one line; only the separate detail content can wrap. */
 export function WorkLogLabel({
   children,
   tone = "default",

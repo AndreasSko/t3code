@@ -28,7 +28,6 @@ function LanguageIcon(props: { language: string; theme: "light" | "dark" }) {
   );
 }
 
-/** Include unknown authored languages as an entry so the current choice stays visible and checked. */
 export function ComposerCodeBlockLanguagePicker(props: {
   language: string;
   theme: "light" | "dark";

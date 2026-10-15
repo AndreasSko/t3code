@@ -4,7 +4,13 @@ import { useMemo } from "react";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { useUniwindTheme } from "./useUniwindTheme";
 
-/** Share Uniwind's palette and theme commit without subscribing the app root to CSS variables. */
+/**
+ * Derive it from the same palette source as Uniwind instead of subscribing the
+ * app root to CSS variables.
+ *
+ * The preferences provider applies the registered Uniwind theme first, then
+ * publishes this matching navigation palette through React.
+ */
 export function useMobileNavigationTheme(surface: "screen" | "sidebar" = "screen"): Theme {
   const { themeAppearance: appearance } = useAppearancePreferences();
   const variables = useUniwindTheme();

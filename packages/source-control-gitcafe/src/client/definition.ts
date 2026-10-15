@@ -40,7 +40,8 @@ export const definition = defineSourceControlClient({
   icon: "gitcafe",
   changeRequest: { shortLabel: "PR", singular: "pull request" },
   repositoryPathHint: "owner/repo",
-  // A hostname alone cannot supply the repository needed for a checkout command.
+  // Left unattributed so a reference with no repository identity behind it gets no checkout
+  // command guessed from its hostname alone.
   publicHost: null,
   publishDescription: "git.cafe",
   publishHost: () => "git.cafe",
@@ -60,7 +61,7 @@ export const definition = defineSourceControlClient({
   authorProfileUrl: () => null,
   referenceAutolinkRepositoryUrl: () => null,
   reviewSummaryRequired: () => false,
-  // /pulls/ also matches Forgejo; only GitCafe hosts claim it. Reference fields accept neither CLI nor URL.
+  // `/pulls/` is Forgejo's shape too, so only GitCafe's own hosts claim it.
   checkoutCommandArgument: () => null,
   isChangeRequestReference: () => false,
   changeRequestUrlHost: (url) => url.hostname,

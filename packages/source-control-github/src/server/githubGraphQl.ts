@@ -7,8 +7,16 @@ export interface GraphQlDocument {
   readonly variables: Readonly<Record<string, unknown>>;
 }
 
-/** Batch fields with aliases; values use renamed variables, never interpolation into the document.
- * shared declares common variables, within nests selections, and no items returns null. */
+/**
+ * GitHub has no bulk form of most lookups, so aliases are how a batch travels in one request.
+ *
+ * Every value travels as a variable renamed per alias (`$s0_owner`), and `field` is handed those
+ * placeholders rather than the values: nothing an item holds is written into the document.
+ * `shared` variables are declared once and referenced by their own name; `within` nests the aliased
+ * fields inside one parent selection, such as a single repository.
+ *
+ * Null for no items, since a document with no selection is not a document.
+ */
 export function aliasedGraphQlDocument<Item, Variables extends GraphQlVariables>(input: {
   readonly operation: "query" | "mutation";
   readonly name?: string;
@@ -49,8 +57,13 @@ export function aliasedGraphQlDocument<Item, Variables extends GraphQlVariables>
   };
 }
 
-/** read receives prior pages; until/maxPages bound the walk.
- * Repeated cursors stop as truncated, as do other bounds before exhaustion. */
+/**
+ * `read` is handed the pages so far, for reads that size or check the next page by what has
+ * already arrived.
+ *
+ * `truncated` says pages remained when reading stopped. A cursor GitHub hands back a second time
+ * would page forever, so it stops the read as truncated too.
+ */
 export const readGraphQlPages = <Page, E, R>(
   read: (after: string | null, pages: ReadonlyArray<Page>) => Effect.Effect<Page, E, R>,
   options: {

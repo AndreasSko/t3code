@@ -14,8 +14,8 @@ export interface ComposerContextReference {
 const CONTEXT_ID_PATTERN = /^[a-z0-9_-]{1,128}$/i;
 
 /**
- * Use two FNV-1a passes for a 64-bit digest; truncated 48-character slugs rely on it to distinguish long
- * ids.
+ * 64 bits of digest, because the slug in front of it is truncated: two long producer
+ * ids that agree on their first 48 characters are told apart by this alone.
  */
 function fnv1a64(value: string): string {
   let forward = 0x811c9dc5;
@@ -30,8 +30,10 @@ function fnv1a64(value: string): string {
 }
 
 /**
- * Fold producer ids to [a-z0-9_-] slugs plus deterministic hashes so they survive Markdown and wire
- * schemas.
+ * Producers mint ids in their own grammars (`pull-request-finding:42`,
+ * `file-comment-<ms>-<n>`). A context id must survive a Markdown link and the wire
+ * schema, so anything outside `[a-z0-9_-]` is folded into a readable slug plus a hash of
+ * the original. Deterministic, so the same producer id always maps to the same context id.
  */
 export function toComposerContextId(producerId: string): ComposerContextId {
   if (CONTEXT_ID_PATTERN.test(producerId)) return producerId as ComposerContextId;
@@ -99,7 +101,6 @@ export function inlineContextReferenceReplacement(
   };
 }
 
-/** Inserts a link at the cursor, padding with spaces only where words would otherwise join. */
 export function insertInlineContextReference(
   prompt: string,
   cursorInput: number,

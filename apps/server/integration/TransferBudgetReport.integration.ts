@@ -41,8 +41,10 @@ interface ProviderTransferBudget {
   readonly measuredTurnWebSocketMessages: number;
 }
 
-// Caps leave at least 30% headroom above the 9 MB fixture's client projection;
-// accidentally shipping retained MCP results would exceed them by orders of magnitude.
+// These caps leave at least 30% headroom above the client projection of the
+// deterministic 9 MB retained-result fixture. Full MCP results stay in
+// persistence, so accidentally shipping them again exceeds these caps by orders
+// of magnitude.
 const TRANSFER_BUDGET = {
   totalWireBytes: 7_000,
   threadSnapshotWireBytes: 5_000,
@@ -79,7 +81,6 @@ function observedTransfer(run: TransferBudgetRun) {
   };
 }
 
-/** Machine-readable input for the trusted PR comment publisher. */
 export function formatTransferBudgetResult(runs: ReadonlyArray<TransferBudgetRun>): string {
   const providers = Object.fromEntries(
     runs.flatMap((run) => {
@@ -126,8 +127,9 @@ function row(
   return `| ${provider} | ${phase} | ${metric} | ${format(observed)} | ${format(maximum)} | ${status} |`;
 }
 
-// Uncapped rows follow shell delivery's 50 ms coalescing window, so their
-// message counts, bytes, and SQL figures vary with scheduler timing.
+// Shell delivery coalesces on a 50 ms window, so message counts and bytes move
+// with scheduler timing between runs, and the reconnect and SQL figures follow
+// the same batches.
 function infoRow(
   provider: ProviderDriverKind,
   phase: string,

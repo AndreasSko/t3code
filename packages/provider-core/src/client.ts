@@ -1,16 +1,14 @@
-/**
- * Provider client definitions must stay browser- and React Native-safe:
- * plain data and schemas, without platform UI imports.
- */
 import type { ProviderDriverKind } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
 
-/** Fields carry providerSettingsForm annotations for generic settings forms. */
+/**
+ * Fields carry `providerSettingsForm` annotations, which the settings form
+ * renders generically.
+ */
 export type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
 } & Schema.Top;
 
-/** An environment variable the settings UI offers for every instance of a driver. */
 export interface ProviderEnvironmentField {
   readonly name: string;
   readonly label: string;
@@ -20,8 +18,8 @@ export interface ProviderEnvironmentField {
 }
 
 /**
- * Plain SVG data lets web and mobile use their own renderers; a path without
- * a fill or gradient uses icon.fill.
+ * Colors are per theme; a path without a fill or gradient uses the icon's
+ * `fill`.
  */
 export interface ProviderIcon {
   readonly viewBox: string;
@@ -49,9 +47,8 @@ export interface ProviderClientDefinition {
   readonly icon?: ProviderIcon;
   readonly settingsSchema: ProviderSettingsSchema;
   readonly environmentFields?: ReadonlyArray<ProviderEnvironmentField>;
-  /** Defaults from legacy providers.<kind> settings when the driver supports a default instance. */
+  /** Whether the driver has a default instance backed by legacy `providers.<kind>` settings. */
   readonly hasDefaultInstance?: boolean;
-  /** Applies to built-in and custom instances of the driver alike. */
   readonly badgeLabel?: string;
 }
 

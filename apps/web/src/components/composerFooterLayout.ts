@@ -31,8 +31,13 @@ export function shouldUseRestingComposerLayout(input: {
   hasMultilinePrompt: boolean;
   timelineOverflows: boolean;
 }): boolean {
-  // Only a timeline scroll rests the composer; focus loss must not collapse it.
-  // Multiline drafts and fitting timelines need no reading space reclaimed.
+  // Only a timeline scroll rests the composer: the user asked for it with the
+  // gesture, and it lifts on the next composer interaction. Losing focus never
+  // rests it, so clicking a message, copying output, or selecting text for a
+  // citation leaves the composer where it was.
+  // Resting exists to give reading space back to the timeline. A thread that
+  // fits above the composer has nothing to reclaim, so it stays expanded and
+  // never shows the collapsed row that a fresh thread would otherwise open on.
   return (
     input.isExistingThread &&
     !input.isMobileViewport &&
@@ -43,11 +48,22 @@ export function shouldUseRestingComposerLayout(input: {
   );
 }
 
-/** ChatComposer loses 8px top padding, 38px prompt height (70 -> 32), and a 48px footer. */
+/**
+ * How much taller the empty expanded composer is than its resting row on
+ * desktop widths, from the layout classes in ChatComposer: the body loses
+ * 8px of top padding, the prompt clamps from min-h-17.5 (70px) to 32px, and
+ * the 48px footer leaves flow.
+ */
 export const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;
 
-/** Reserve the measured expanded height so expansion cannot cover the last rows.
- * Estimate only before that measurement exists to avoid shifting the timeline mid-transition. */
+/**
+ * Reserving only the resting height lets a scroll to the end land flush against the short
+ * composer, and the expansion that follows then covers the last rows because the timeline never
+ * moves for footer growth. While resting, keep the measured expanded height. Estimate the empty
+ * expansion only before that measurement exists: strip mounting can otherwise inflate the
+ * estimate mid-transition and move the timeline. An expanded measurement is authoritative and
+ * may shrink the reservation.
+ */
 export function resolveComposerTimelineInset(input: {
   currentInset: number;
   overlayHeight: number;
@@ -65,7 +81,11 @@ export function resolveComposerTimelineInset(input: {
     : input.overlayHeight;
 }
 
-/** Status bars replacing an unmounted composer must not inherit its resting state. */
+/**
+ * Whether the overlay's composer is resting. Only a mounted composer can be:
+ * a status bar in its place (a native subagent thread) never is, even if the
+ * composer it replaced last reported resting.
+ */
 export function overlayComposerIsResting(input: {
   composerMounted: boolean;
   composerReportedResting: boolean;
@@ -125,16 +145,18 @@ function restingComposerControlsWidth(
   );
 }
 
-/** Use natural widths to prevent context labels and composer overflow
- * from repeatedly reclaiming space from each other. */
+/**
+ * The context strip reserves this much for the composer before deciding whether its own labels
+ * may expand. Judging against the currently visible controls instead lets the strip expand into
+ * space the composer just gave up, which shrinks the host, hides the controls again, and
+ * repeats.
+ */
 export function resolveRestingComposerControlsNaturalWidth(
   input: RestingComposerControlsMeasurement,
 ): number {
   return restingComposerControlsWidth(input, 0);
 }
 
-/** Compact labels before overflowing blocks, then shrink the picker to its
- * readable minimum; hide the cluster below that width. */
 const RESTING_CONTROLS_SLACK_PX = 1;
 
 export function resolveRestingComposerControlsLayout(

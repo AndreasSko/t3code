@@ -6,8 +6,10 @@ import type {
   ThreadPullRequestWatch,
 } from "@t3tools/contracts";
 
-// Cap comment-only wakes to stop reply loops with chatty bots; check, conflict,
-// and push updates reset the count.
+/**
+ * Wakes in a row that bring only comments. Check, conflict, or push news resets the count, so
+ * this only stops a chatty bot looping an agent that is replying to it.
+ */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
 const LISTED_ITEMS = 10;
 const SNIPPET_LENGTH = 200;
@@ -19,7 +21,6 @@ export type PullRequestWatchChange =
   | { readonly kind: "conflicting" };
 
 export interface PullRequestWatchReport {
-  /** What the agent has not been told yet. Empty means no wake. */
   readonly changes: ReadonlyArray<PullRequestWatchChange>;
   /** The watch to record, whether or not anything is reported. */
   readonly next: ThreadPullRequestWatch;
@@ -32,8 +33,12 @@ const isFailedCheck = (check: PullRequestCheck) =>
   check.status === "failure" || check.status === "cancelled" || check.status === "action-required";
 
 /**
- * Report failures immediately; passed waits for required checks, or all checks if none are required.
- * Own replies never wake; null remarks defer comment reporting until a readable pass.
+ * Each check is reported as soon as it fails, so a check that never finishes (an advisory
+ * review bot) cannot hold the news back. "Passed" is reported once the checks the base branch
+ * requires all passed, or all checks where the host marks none required. Remarks count when
+ * someone other than the agent's own account wrote them, so its own replies never wake it.
+ * `remarks` is null when the conversation could not be read; remarks then wait for a later
+ * pass.
  */
 export function evaluatePullRequestWatch(
   watch: ThreadPullRequestWatch,
@@ -59,7 +64,7 @@ export function evaluatePullRequestWatch(
     const gate = required.length > 0 ? required : detail.checks;
     const passedNow = gate.every((check) => check.status !== "pending" && !isFailedCheck(check));
     const gateNames = gate.map((check) => check.name);
-    // Missing passedChecks uses the current names to avoid a compatibility wake.
+    // A watch saved before passedChecks existed takes the current names, so it does not wake.
     const told = passed && passedChecks.length === 0 ? gateNames : passedChecks;
     // A required job created and finished between two passes is never seen pending. Without
     // required checks, any check counts, and advisory bots keep adding passed ones: no wake.
@@ -173,7 +178,6 @@ const SUMMARY: Record<PullRequestWatchChange["kind"], string> = {
   conflicting: "merge conflict",
 };
 
-/** The wake the agent reads and the timeline notification the user sees. */
 export function pullRequestWatchMessage(input: {
   readonly number: number;
   readonly url: string;

@@ -60,7 +60,6 @@ export function canCommitPendingModel(
   );
 }
 
-/** Disclosure taps invert the provider default until dismissal; narrowed catalogs always expand. */
 export function providerSectionIsCollapsed(input: {
   readonly defaultExpanded: boolean;
   readonly hasExpansionOverride: boolean;

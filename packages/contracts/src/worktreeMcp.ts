@@ -3,8 +3,9 @@ import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
- * Repoints the calling thread at a new worktree, detaching its provider session.
- * The current turn ends; the conversation continues there on its next run.
+ * Changing the thread's workspace detaches the live provider session, so the
+ * current turn ends shortly after the handoff is recorded; the conversation
+ * continues inside the worktree on the thread's next run.
  */
 export const WorktreeMcpHandoffInput = Schema.Struct({
   branch: TrimmedNonEmptyString.annotate({
@@ -23,10 +24,7 @@ export const WorktreeMcpHandoffInput = Schema.Struct({
     }),
   ),
   path: Schema.optional(
-    TrimmedNonEmptyString.check(
-      // Absolute POSIX (/...), Windows drive (C:\ or C:/), or UNC (\\host).
-      Schema.isPattern(/^(?:[A-Za-z]:[\\/]|[\\/])/),
-    ).annotate({
+    TrimmedNonEmptyString.check(Schema.isPattern(/^(?:[A-Za-z]:[\\/]|[\\/])/)).annotate({
       description:
         "Absolute filesystem path for the new worktree. Relative paths are rejected. Defaults to the server-managed worktrees directory.",
     }),

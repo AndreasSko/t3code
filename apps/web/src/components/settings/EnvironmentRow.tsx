@@ -18,7 +18,6 @@ export function formatDesktopSshTarget(target: DesktopSshEnvironmentTarget): str
   return target.port ? `${authority}:${target.port}` : authority;
 }
 
-/** Multi-route machines name their active transport or route count. */
 export function environmentTransportLabel(
   environment: EnvironmentPresentation,
   activeTarget: ConnectionTarget | null = null,

@@ -85,20 +85,16 @@ export interface HtmlPreview {
   /** Base64 PNG of the top `capturedHeight` pixels. */
   readonly png: string;
   readonly width: number;
-  /** Height the page needs to show without scrolling. */
   readonly contentHeight: number;
   readonly capturedHeight: number;
   readonly consoleMessages: ReadonlyArray<HeadlessChrome.ConsoleMessage>;
-  /** Local image paths that could not be read; they show as broken images. */
   readonly missingImages?: ReadonlyArray<string>;
 }
 
 export class HtmlRender extends Context.Service<
   HtmlRender,
   {
-    /** The self-contained page that gets stored: local images inlined, theme bootstrap injected. */
     readonly prepare: (html: string) => Effect.Effect<string, HtmlRenderPrepareError>;
-    /** Store a prepared page; measure client-width heights only if the preview browser is installed. */
     readonly publish: (input: {
       readonly threadId: ThreadId;
       readonly html: string;
@@ -160,7 +156,10 @@ const dataUriPrefix = (path: string) =>
 const latin1 = (bytes: Uint8Array, start: number, end: number) =>
   String.fromCharCode(...bytes.subarray(start, end));
 
-// Validate image bytes so renamed files and symlinks cannot embed secrets in a page.
+/**
+ * Whether file bytes are an image, whatever the file is named, so a symlink or
+ * renamed file cannot carry other data, such as a secret, into a page.
+ */
 const isImageBytes = (bytes: Uint8Array) => {
   const head = latin1(bytes, 0, 12);
   if (
@@ -182,7 +181,10 @@ const after = (text: string, token: string, from: number) => {
   return at === -1 ? -1 : at + token.length;
 };
 
-// Find the SVG root in one pass without treating quoted text as markup.
+/**
+ * One forward pass, so no input can make it slow, and quoted text never counts
+ * as markup.
+ */
 const hasSvgRoot = (text: string) => {
   let at = 0;
   while (at !== -1) {
@@ -215,7 +217,6 @@ const afterDoctype = (text: string, from: number) => {
   return -1;
 };
 
-/** Replaces every local image reference with a data URI; unreadable paths stay as written. */
 const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (html: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const references = findLocalImages(html);
@@ -251,7 +252,8 @@ const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (h
   if (pageBytes > MAX_PAGE_BYTES) {
     return yield* new HtmlRenderPageTooLargeError({ sizeBytes: pageBytes });
   }
-  // Files can grow after stat; bound reads by both the image and remaining page limits.
+  // Files can grow after `stat`. Each read stops one byte past the image
+  // limit, and reading stops once the images read so far cannot fit the page.
   let readBytes = 0;
   const images = yield* Effect.forEach(
     files.filter((file) => file.size !== undefined),
@@ -330,7 +332,6 @@ const make = Effect.gen(function* () {
   const noSandbox = PreviewBrowserHost.sandboxDisabled(yield* HostProcess.Environment);
   const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND);
 
-  /** Runs one browser launch; a host that cannot start it gets setup steps instead. */
   const launching = <A>(
     executable: string,
     run: (noSandbox: boolean) => Effect.Effect<A, HeadlessChrome.HtmlRenderBrowserError>,

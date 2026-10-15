@@ -2,8 +2,9 @@
 import * as NodePath from "node:path";
 
 /**
- * Spawned processes do not expand ~ in environment paths. Expand leading ~/ or ~\
- * against the supplied home; ~user is unsupported.
+ * Spawned processes don't get shell expansion, so env vars like
+ * `CODEX_HOME=~/.codex-work` would be passed verbatim and treated as relative
+ * paths by the receiver.
  */
 export function expandHomePath(value: string, home: string): string {
   if (!value) return value;

@@ -51,7 +51,6 @@ export function usePullRequestDefaultMergeMethodResolver(
       (candidate) => candidate.environmentId === environmentId && candidate.id === projectId,
     );
     if (!project) return undefined;
-    // Duplicate sidebar rows borrow their logical group key from their siblings.
     const key =
       buildPhysicalToLogicalProjectKeyMap({
         projects,
@@ -116,7 +115,6 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
 
-/** onSuccess lets each surface refresh its own displayed data. */
 export function usePullRequestActionRunner({
   environmentId,
   reference,
@@ -166,7 +164,6 @@ export function usePullRequestActionRunner({
   return { actionPending, perform };
 }
 
-/** Queue a close sweep through the same environment lanes as individual actions. */
 export function usePullRequestCloseBatch(onClosed: (entry: EnvironmentPullRequestEntry) => void) {
   const runAction = useAtomCommand(pullRequestEnvironment.runAction, { reportFailure: false });
   const pending = useRef(new Set<string>());
@@ -175,6 +172,7 @@ export function usePullRequestCloseBatch(onClosed: (entry: EnvironmentPullReques
     async (entries: readonly EnvironmentPullRequestEntry[]) => {
       const batch = entries.filter((entry) => {
         const key = pullRequestEntryKey(entry);
+        // The sweep only gathers rows whose host can close them, so state is all that is left.
         if (entry.state !== "open" || pending.current.has(key)) return false;
         pending.current.add(key);
         return true;
@@ -233,12 +231,14 @@ export type PullRequestHandoffDetail = Pick<
   "projectId" | "workspaceRoot" | "url"
 >;
 
-/** Preserve handoff provenance across panel unmounts; replace only prompts
- * still identical to the handoff so user edits survive. */
+/**
+ * What the last hand-off wrote into each draft, kept outside React because the panel that wrote
+ * it is closed by the time the next one opens. It is how a prompt the reader has since edited
+ * is told apart from the one they were handed: only the sentence still exactly as written may
+ * be replaced.
+ */
 const lastHandoffPromptByDraft = new Map<DraftId, string>();
 
-/** Serialize handoffs within the hook; questions need no checkout while
- * code tasks prepare their branch before delivery. */
 export function usePullRequestHandoffs({
   environmentId,
   detail,
@@ -251,11 +251,13 @@ export function usePullRequestHandoffs({
     environmentId,
     cwd: detail?.workspaceRoot ?? null,
   });
-  // Serialize checkouts and key pending indicators to their initiating action.
+  // One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
 
-  /** Questions need a thread without changing its checkout; code tasks
-   * call this after preparing their requested checkout. */
+  /**
+   * Nothing is checked out: asking a question is not a reason to move somebody's working tree
+   * or to make a worktree they did not ask for.
+   */
   const openThreadWithTask = async (
     projectRef: ReturnType<typeof scopeProjectRef>,
     task: PullRequestThreadTask | null,
@@ -270,7 +272,6 @@ export function usePullRequestHandoffs({
     if (session === null) return null;
     const store = useComposerDraftStore.getState();
     if (task === null) return session;
-    // Replace previous handoff prompt and chips while preserving user-edited prompt text.
     const draft = store.getComposerDraft(session.draftId);
     const existingComments = draft?.reviewComments ?? [];
     const prompt = handoffPrompt(
@@ -280,7 +281,8 @@ export function usePullRequestHandoffs({
       },
       task.prompt,
     );
-    // Remember only the handoff contribution so later replacement cannot erase surrounding user text.
+    // Remember the hand-off's own contribution, not the merged prompt: only that sentence is
+    // this session's to take back next time, and the reader's text around it is not.
     lastHandoffPromptByDraft.set(session.draftId, task.prompt);
     store.setPrompt(session.draftId, prompt);
     store.setReviewComments(
@@ -307,7 +309,8 @@ export function usePullRequestHandoffs({
     toastManager.add({
       type: "success",
       title: "Asked in a thread",
-      // Empty Ask prompts must not claim question text landed in the composer.
+      // "Ask" leaves the composer empty on purpose, so saying the question is in it would send
+      // the reader looking for something that is not there. The chips are what landed.
       description:
         task.prompt.length > 0
           ? "The question is in the composer — read it over, then send."
@@ -318,25 +321,27 @@ export function usePullRequestHandoffs({
   const startHandoff = async (
     kind: string,
     task: PullRequestThreadTask | null,
-    // Worktrees preserve open work; local checkout moves the branch under other open threads.
+    // A worktree leaves whatever is open alone, which is why it is the default.
     mode: "worktree" | "local" = "worktree",
   ) => {
     if (!detail || handoff !== null) return;
     setHandoff(kind);
-    // Menu closure hides progress; loading toasts need explicit completion, not timeouts.
+    // It carries no timeout of its own: a loading toast never expires, and an explicit one
+    // would survive the update and pin the result on screen.
     const toastId = toastManager.add({
       type: "loading",
       title: "Preparing the pull request checkout...",
     });
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
-    // Setup scripts require a destination thread, so open it before checkout preparation.
+    // The thread is opened before the checkout rather than after it, because the project's setup
+    // script only runs for a checkout that knows which thread it is for — and a worktree with no
+    // dependencies installed is not something anyone can test.
     const opened = await newThread(projectRef).then(
       (session) => session,
       () => null,
     );
     if (opened === null) {
       setHandoff(null);
-      // Without a thread, checkout setup and task delivery cannot run.
       toastManager.update(toastId, {
         type: "error",
         title: "Could not open a thread for the checkout",
@@ -370,7 +375,9 @@ export function usePullRequestHandoffs({
     );
     if (!pointed) {
       setHandoff(null);
-      // Stop if thread retargeting fails or the task would run in the wrong checkout.
+      // The checkout is on disk; only the thread failed to move onto it. Writing the task now
+      // would send the agent at whatever the thread was already open on — which is the one
+      // outcome worth stopping for, since it reads as success and is not.
       toastManager.update(toastId, {
         type: "error",
         title: "Checked out, but the thread stayed where it was",
@@ -378,9 +385,9 @@ export function usePullRequestHandoffs({
       });
       return;
     }
-    // Release every handoff path: loading toasts never expire and would lock future handoffs.
     setHandoff(null);
-    // Existing worked-in worktrees preserve contents and may lag the PR head.
+    // A worktree that was already there and had been worked in keeps whatever it holds, so the
+    // thread opens on older code than the pull request carries.
     const staleCheckoutToast = {
       type: "warning",
       title: "Checked out, but not on the latest commits",

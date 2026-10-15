@@ -1,7 +1,12 @@
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import type { MobileThemeVariables } from "./mobileTheme";
 
-/** Use for APIs without className support; shares the root theme commit to avoid CSS-variable subscriptions. */
+/**
+ * Ordinary React Native rendering must use className.
+ *
+ * This bridge follows the same single React theme commit as the root
+ * ScopedTheme instead of subscribing every consumer to CSS-variable updates.
+ */
 export function useUniwindTheme(): MobileThemeVariables {
   return useAppearancePreferences().themeVariables;
 }

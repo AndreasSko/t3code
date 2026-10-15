@@ -19,7 +19,6 @@ export interface SidebarProjectSnapshot extends Project {
   displayName: string;
   groupedProjectCount: number;
   environmentPresence: EnvironmentPresence;
-  // Distinguish desktop-local sandbox members from remote machines for the project header's device treatment.
   allRemoteMembersAreDesktopLocal: boolean;
   allRemoteMembersAreWsl: boolean;
   memberProjects: readonly SidebarProjectGroupMember[];
@@ -112,7 +111,6 @@ export function buildSidebarProjectSnapshots(input: {
   groupScratchProjects?: boolean;
   primaryEnvironmentId: EnvironmentId | null;
   resolveEnvironmentLabel: (environmentId: EnvironmentId) => string | null;
-  // Defaults false for callers that do not distinguish desktop-local environments.
   isDesktopLocalEnvironment?: (environmentId: EnvironmentId) => boolean;
   isWslEnvironment?: (environmentId: EnvironmentId) => boolean;
 }): SidebarProjectSnapshot[] {

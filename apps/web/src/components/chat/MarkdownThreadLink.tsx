@@ -7,7 +7,9 @@ import { MessageSquareTextIcon } from "lucide-react";
 import { useProject, useThreadShell } from "../../state/entities";
 import { ProjectFavicon } from "../ProjectFavicon";
 
-/** Use live titles; label is the authored fallback when this client cannot see the thread. */
+/**
+ * `label` is what the message wrote, shown only when this client cannot see the thread.
+ */
 export function MarkdownThreadLink(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;

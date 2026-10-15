@@ -1,6 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off globalFetch:off globalConsole:off preferSchemaOverJson:off - Host-side process verifier retains raw wire evidence and owns deadline timers.
-/** From the repo root: node apps/server/scripts/verify-background-live.ts --model claude-sonnet-4-6
- * Uses CLI auth and disposable state; retains printed evidence on failure. */
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -155,7 +153,6 @@ NodeFS.writeFileSync(
   ),
 );
 
-// This is a real external dependency of the child command, not a provider stub.
 const secret = `RESULT_${NodeCrypto.randomUUID()}`;
 const gatePath = `/${NodeCrypto.randomUUID()}`;
 let response: NodeHttp.ServerResponse | undefined;

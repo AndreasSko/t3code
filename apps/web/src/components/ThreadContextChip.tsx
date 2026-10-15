@@ -6,7 +6,6 @@ import { useThreadShell } from "~/state/entities";
 import { ContextChip, ContextChipLabel } from "./ContextChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-/** Uses the live title so thread renames reach attached chips. */
 export function ThreadContextChip(props: {
   record: Pick<ThreadContextRecord, "environmentId" | "threadId" | "title">;
   copyMarkdown?: string;

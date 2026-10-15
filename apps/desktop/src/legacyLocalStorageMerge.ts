@@ -1,5 +1,7 @@
 /**
- * Merge before app storage is read; preserve V2 values, combining stashes and drafts entry by entry.
+ * Runs in the preload before the app reads storage, and never overwrites what V2 already holds: a
+ * key V2 has written keeps V2's value, except that stashed prompts and unsent drafts are merged
+ * entry by entry so neither side's are lost.
  */
 
 interface MergeStorage {
@@ -37,7 +39,6 @@ function parseObject(raw: string): JsonObject | null {
   }
 }
 
-/** V2 entries first, then V1 entries V2 does not already have, up to the stash cap. */
 function mergePromptStash(current: JsonObject, legacy: JsonObject): JsonObject | null {
   const currentEntries = isObject(current.state) ? current.state.entries : null;
   const legacyEntries = isObject(legacy.state) ? legacy.state.entries : null;
@@ -52,7 +53,9 @@ function mergePromptStash(current: JsonObject, legacy: JsonObject): JsonObject |
   };
 }
 
-/** Adds V1 drafts for threads V2 has no draft for. Shapes must share a version. */
+/**
+ * Shapes must share a version.
+ */
 function mergeComposerDrafts(current: JsonObject, legacy: JsonObject): JsonObject | null {
   if (current.version !== legacy.version) return null;
   if (!isObject(current.state) || !isObject(legacy.state)) return null;

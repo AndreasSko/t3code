@@ -28,7 +28,10 @@ export class T3ProjectFileLoadError extends Schema.TaggedError<T3ProjectFileLoad
 export class T3ProjectFileLoader extends Context.Service<
   T3ProjectFileLoader,
   {
-    /** Missing, unreadable, or invalid t3.json files yield None; invalid files log warnings. */
+    /**
+     * Never fails: missing, unreadable, or invalid files resolve to `Option.none` (invalid files
+     * are logged as warnings).
+     */
     readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<T3ProjectFile>>;
   }
 >()("t3/project/T3ProjectFileLoader") {}

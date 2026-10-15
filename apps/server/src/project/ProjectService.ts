@@ -131,14 +131,9 @@ export class ProjectService extends Context.Service<
       options?: { readonly includeDeleted?: boolean },
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly snapshot: Effect.Effect<ProjectSnapshot, ProjectOperationError>;
-    /**
-     * An active project's shell with its immediately available repository
-     * identity; missing identity resolves in the background.
-     */
     readonly getShell: (
       projectId: ProjectId,
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectOperationError>;
-    /** Active project shells, enriched like `getShell`, in creation order. */
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectOperationError>;
@@ -217,7 +212,6 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  /** Reused command ids return their original receipts even when re-planning produces a different outcome. */
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
@@ -484,8 +478,11 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  // Remove overrides so machine-disabled providers are not left enabled and probed.
-  // Settings failures must not block project deletion.
+  // A machine-disabled provider instance that a deleted project's override
+  // once turned on must not stay probed and alive forever. Nothing else
+  // removes the entry, so deletion is where it goes; best-effort because a
+  // settings write failure should not block the deletion it is cleaning up
+  // after, and a server crash before a replay never revisits this project.
   const clearProjectSettingsOverrides = (projectId: ProjectId) =>
     serverSettings.updateSettings({ projectSettingsOverrides: { [projectId]: null } }).pipe(
       Effect.asVoid,

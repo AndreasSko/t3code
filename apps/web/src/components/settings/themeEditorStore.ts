@@ -8,11 +8,12 @@ import {
 } from "../../themePalette";
 
 /**
- * Keep the editor above the router to preserve drafts during navigation; use ids because definitions can
- * change.
+ * The theme editor lives above the router so a draft survives navigation: the
+ * palette is painted on the live app, and judging it means browsing the app
+ * while the editor stays open. Themes are referenced by id because the stored
+ * definitions change underneath an open session (an edit, an import).
  */
 export type ThemeEditorSessionInput = {
-  /** Set when editing an installed theme; null creates a new one. */
   editingThemeId: string | null;
   seedThemeId: string | null;
   seedName: string | null;
@@ -20,7 +21,10 @@ export type ThemeEditorSessionInput = {
 };
 
 export type ThemeEditorSession = ThemeEditorSessionInput & {
-  /** Distinguish sessions for the same themes so reopening still reseeds a fresh draft. */
+  /**
+   * Distinguishes two sessions that name the same themes, so asking for a
+   * fresh draft while the panel is already open still reseeds it.
+   */
   id: number;
 };
 

@@ -220,8 +220,9 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   },
 ];
 
-// Match iOS PostScript font names on Android so React Native and the native composer
-// share family names without waiting for runtime font loading.
+// These aliases match the fonts' PostScript names on iOS. Register the same
+// names on Android so React Native and the native composer use one set of
+// family names without waiting for runtime font loading.
 
 const config: ExpoConfig = {
   name: variant.appName,
@@ -247,8 +248,6 @@ const config: ExpoConfig = {
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
-    // Multitasking-capable iPad apps cannot rotate programmatically, so the
-    // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
@@ -426,7 +425,6 @@ const config: ExpoConfig = {
           minSdkVersion: 24,
           // kotlinx-io uses Kotlin 2.3's return-value checker annotation, while
           // SDK 58 builds with Kotlin 2.2. It has no runtime behavior.
-          //
           // WorkManager 2.9 keeps InputMerger classes but not their constructors,
           // and R8 full mode no longer keeps a default constructor implicitly.
           // Without it no work request can start, so the Glance session behind
@@ -451,8 +449,11 @@ const config: ExpoConfig = {
     // Only the accelerometer is used (device viewer shake). Compile out the
     // pedometer so iOS needs no motion purpose string.
     ["expo-sensors", { motionPermission: false }],
-    // Register before expo-widgets so reverse-order mods run after it creates the target
-    // and wipes its directory; otherwise the asset catalog or compile phase is lost.
+    // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
+    // first, so registering earlier makes this plugin's mods run AFTER
+    // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
+    // would delete the asset catalog) and its xcodeproj mod creates the widget
+    // target (which must exist before the compile phase can be attached).
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",

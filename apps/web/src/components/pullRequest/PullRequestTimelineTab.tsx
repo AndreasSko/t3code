@@ -194,7 +194,8 @@ function ConversationCard({
   });
 
   const save = async (body: string) => {
-    // Hosts cannot rewrite review summaries through comment mutations.
+    // A review's own summary is not a kind any host rewrites, which is why `editable` is never
+    // one; the check is here because the comment's own type still allows it.
     if (editable === null || saving || editable.kind === "review") return;
     setSaving(true);
     const result = await updateComment({
@@ -344,7 +345,9 @@ function ConversationGroup({
               <div className="mt-1 space-y-1">
                 {events.map((event) => (
                   <ConversationCard
-                    // Host-local remark ids can collide across PRs; scope editor keys by PR too.
+                    // Named with the pull request too: a remark's id is the host's own, and two
+                    // pull requests can hand out the same one — which would leave one card's open
+                    // editor standing over the other's remark.
                     key={`${reactions.reference.projectId}#${reactions.reference.number}:${event.id}`}
                     event={event}
                     editable={editable.get(event.id) ?? null}
@@ -453,7 +456,8 @@ function ReviewVerdictEvent({
 }) {
   return (
     <div className="group relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">
-      {/* Pin avatars to the name so a growing body cannot center them farther down. */}
+      {/* Pinned rather than centred: this row grows with a body, and a
+          centred avatar drifts down beside it instead of sitting by the name. */}
       <ActorTimelineMarker
         actors={event.actor ? [event.actor] : []}
         className="top-6"
@@ -463,8 +467,8 @@ function ReviewVerdictEvent({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
             <ActorName actor={event.actor} />
-            {/* Stale verdicts keep their label but lose color; lowercase with CSS to
-   preserve the accessible label shared by other surfaces. */}
+            {/* Lowercased in the styling rather than the string, so what a screen reader
+                announces stays the label every other surface uses. */}
             <Tooltip disabled={!stale}>
               <TooltipTrigger
                 render={
@@ -509,7 +513,6 @@ function ReviewVerdictEvent({
         ) : null}
         <OpenOnHostButton url={event.url} onOpen={onOpen} />
       </div>
-      {}
       {event.body ? (
         <TimelineBody
           body={event.body}

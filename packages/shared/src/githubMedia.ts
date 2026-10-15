@@ -1,6 +1,7 @@
 /**
- * Private GitHub media returns unauthenticated 404s; fetch with gh because the renderer has no session.
- * Signed objects/private-user-images URLs load directly; credentials cannot rescue expired signatures.
+ * Only hosts where a credential is what decides the answer belong here. `objects.githubusercontent.com`
+ * and the `private-user-images` links GitHub's own HTML carries are already signed and load on their
+ * own, and a token does nothing for them once that signature expires.
  */
 
 const RAW_HOST = "raw.githubusercontent.com";
@@ -17,7 +18,6 @@ function canonicalUrl(host: string, url: URL): string {
   return `https://${host}${url.pathname}${url.search}`;
 }
 
-/** Returns the credentialed GitHub fetch URL, or null for media that should load directly. */
 export function githubMediaFetchUrl(source: string): string | null {
   let url: URL;
   try {
@@ -43,8 +43,8 @@ export function githubMediaFetchUrl(source: string): string | null {
 }
 
 /**
- * Last path segment, for the signed URL's display name. A percent sequence GitHub accepts but
- * `decodeURIComponent` rejects is left encoded rather than failing the whole asset.
+ * A percent sequence GitHub accepts but `decodeURIComponent` rejects is left
+ * encoded rather than failing the whole asset.
  */
 export function githubMediaFileName(fetchUrl: string): string {
   const segment = new URL(fetchUrl).pathname.split("/").pop() ?? "";

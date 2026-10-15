@@ -57,8 +57,11 @@ import {
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
-// Sandbox agent HTML with an opaque origin and no modals: it can open
-// unattended. Allow scripts and downloads without access to app cookies or APIs.
+// HTML previews are agent output, not the app. The sandbox gives the document an
+// opaque origin: scripts run, but same-origin cookies, storage, and API calls are
+// out of reach. Relative sibling assets still load through their signed URLs. No
+// modals: agent HTML can open without a click (inline renders, and mobile loads
+// it as the top document), and must not raise blocking dialogs.
 const HTML_CONTENT_SECURITY_POLICY =
   "sandbox allow-scripts allow-forms allow-popups allow-downloads";
 
@@ -195,8 +198,9 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
   const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
   if (isMedia) {
-    // Mutable host media lacks byte-identity validators; attachments also
-    // must not outlive signed access URLs, so do not cache media.
+    // Host media can change in place. Do not invite conditional range requests
+    // with validators that cannot establish byte-for-byte identity. Attachment media
+    // carries no `file`, and must not outlive the signed URL that granted it either.
     headers["Cache-Control"] = "private, no-store";
   }
   let status = 200;
@@ -257,8 +261,8 @@ export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
-    // Credentialed dev calls need explicit Vite/Electron origins. Extra allowed
-    // origins cover direct backend callers; packaged desktop uses wildcard CORS.
+    // Dev uses credentialed requests from Vite or the Electron custom origin, so both must be
+    // explicit. Packaged desktop omits credentials and uses Effect's default wildcard origin.
     return HttpRouter.cors({
       ...(devOrigin
         ? {
@@ -330,8 +334,8 @@ class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecor
   readonly cause: unknown;
 }> {}
 
-// Renderer exports can arrive every second; tracing the proxy would create
-// more spans than it forwards, so disable handler and server spans.
+// Renderers export up to once a second while they have spans buffered, so
+// tracing this proxy would add more server spans than it forwards.
 export const layerOtlpTracesProxyRoute = HttpRouter.add(
   "POST",
   OTLP_TRACES_PROXY_PATH,
@@ -388,8 +392,11 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
 
 const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_PATH]);
 
-// The HTTP span starts before routing; provide the single disable predicate
-// to the served layer, adding exempt paths here instead of inside handlers.
+// Skips the HTTP server span for UNTRACED_REQUEST_PATHS. That span starts
+// before routing, so a route handler cannot skip it. TracerDisabledWhen is one
+// predicate for the whole server, and HttpRouter.serve builds its routes
+// privately, so it is provided to the served layer, never merged into the
+// routes. Add paths here instead of providing it again.
 const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
   const queryIndex = request.url.indexOf("?");
   const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
@@ -678,7 +685,6 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
   }),
 );
 
-// Read the installed build's manifest once. Unknown files use revalidation.
 export const layerStaticAndDevRoute = Layer.unwrap(
   loadImmutableBuildAssets.pipe(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),

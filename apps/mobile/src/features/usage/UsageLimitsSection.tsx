@@ -33,7 +33,6 @@ const PACE_LABEL = { ahead: "ahead of pace", on: "on pace", under: "under pace" 
 
 type Driver = ServerProvider["driver"];
 
-/** The series colour the usage chart uses for this driver, so the two views read as one. */
 function useBarColor(driver: Driver): string | null {
   const colors = useProviderColors();
   const kind: UsageProviderKind | null =
@@ -41,7 +40,6 @@ function useBarColor(driver: Driver): string | null {
   return kind ? colors[kind] : null;
 }
 
-/** Fill tracks quota left; the hairline tracks time left, so matching edges indicate even spending. */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
   readonly color: string | null;
@@ -127,7 +125,6 @@ export function AccountLimits(props: {
   readonly now: number;
   readonly first: boolean;
   readonly dense?: boolean;
-  /** Appended to the heading row. */
   readonly trailing?: ReactNode;
   readonly footer?: ReactNode;
 }) {
@@ -188,7 +185,10 @@ const OUTCOME_TEXT: Record<ProviderConsumeResetCreditOutcome, string> = {
   alreadyRedeemed: "That credit was already redeemed.",
 };
 
-/** Redeeming spends a provider-granted credit, so require native confirmation. */
+/**
+ * Redeeming spends a credit the provider granted the user, so it goes through the native confirm
+ * alert rather than firing on a bare tap.
+ */
 export function ResetCredits(props: {
   readonly environmentId: EnvironmentId;
   readonly input: ProviderConsumeResetCreditInput;
@@ -280,7 +280,10 @@ export function ResetCredits(props: {
   );
 }
 
-/** Anchor quota and elapsed time to the same refresh; name failed probes because their rows retain stale quota. */
+/**
+ * Countdowns and pace anchor to `now` rather than ticking, so a refresh also re-anchors the
+ * clock: quota and elapsed time move together, or not at all.
+ */
 export function useRefreshLimits(
   selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null,
   active = false,

@@ -155,7 +155,6 @@ export function UsagePage() {
     isPartial,
     refresh,
   } = useUsage(window, selectedEnvironmentIds, hiddenProviders);
-  // Until a new window's first answer, the previous one stays on screen, muted.
   const merged = shown?.merged ?? answeredUsage;
   const shownWindow = shown?.window ?? window;
   const shownHourly = shownWindow.resolution === "hour";
@@ -216,8 +215,6 @@ export function UsagePage() {
         : enumerateHourStarts(shownWindow.sinceTime, shownWindow.untilTime),
     [shownWindow.sinceTime, shownWindow.untilTime],
   );
-  // Newest first: the window can run 90 periods, so the interesting end
-  // belongs at the top of the table.
   const breakdownPeriods = useMemo<readonly (DailyTotals | HourlyTotals)[]>(
     () => (shownHourly ? merged.hourly : merged.daily).toReversed(),
     [shownHourly, merged.daily, merged.hourly],
@@ -374,6 +371,7 @@ export function UsagePage() {
     if (showingLimits && connectedLimitsEnvironments) autoRefreshLimits();
   }, [showingLimits, connectedLimitsEnvironments]);
 
+  // Names the period on screen, which is the previous one until the new one answers.
   const windowLabel =
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone)}`
@@ -686,7 +684,6 @@ export function UsagePage() {
                                   : formatTokens(totals?.totalTokens ?? 0)}
                             </span>
                           </div>
-                          {/* Kept while awaiting data so the row does not grow when it lands. */}
                           <span
                             className={cn(
                               "text-xs text-muted-foreground",
@@ -846,8 +843,6 @@ export function UsagePage() {
                               >
                                 <td className="py-2.5 pr-3 text-left text-xs">{index + 1}</td>
                                 <td className="py-2.5 text-left whitespace-normal">
-                                  {/* The button's overlay makes the whole row open the model.
-                                      Focus shows as the row's hover fill, not a ring. */}
                                   <button
                                     type="button"
                                     onClick={() => setSelectedModelKey(key)}
@@ -863,7 +858,6 @@ export function UsagePage() {
                                     <div
                                       className="h-full rounded-full"
                                       style={{
-                                        // A short minimum keeps tiny shares a dash, not a dot.
                                         width:
                                           value > 0 && breakdownPeak > 0
                                             ? `max(0.5rem, ${(value / breakdownPeak) * 100}%)`
@@ -1156,7 +1150,7 @@ function ProviderMark({
   );
 }
 
-/** Mutes a figure that is still coming in. The delay keeps a quick answer from flashing. */
+/** The delay keeps a quick answer from flashing. */
 function figureClass(loading: boolean) {
   return cn("transition-opacity", loading && "opacity-40 delay-150");
 }
@@ -1182,7 +1176,7 @@ function Metric({
   );
 }
 
-/** Keep coverage notices in the environment filter so arriving results do not shift the page. */
+/** Shown inside the environment filter so arriving results do not move the page. */
 function UsageCoverageNotice({
   environments,
   duplicateSources,

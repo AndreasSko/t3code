@@ -8,7 +8,6 @@ interface UsageProgressEnvironment {
   readonly summary: UsageSummary | null;
 }
 
-/** Manual refresh makes all summaries stale; inactive sources cannot improve totals by waiting. */
 export function usageEnvironmentProgress(
   environment: UsageProgressEnvironment,
   refreshing = false,
@@ -38,7 +37,11 @@ export function updatingProvidersLabel(
     : `Updating ${providers.length} providers…`;
 }
 
-/** Dim only while all figures are old; one answer clears dimming while labels track slow environments. */
+/**
+ * The page dims only while old numbers are all that is on screen. Once any
+ * environment answers, the label carries what is still coming, so one slow
+ * device never holds the page dimmed.
+ */
 export function usageProgress(
   environments: readonly UsageProgressEnvironment[],
   {
@@ -73,7 +76,11 @@ export function usageProgress(
   };
 }
 
-/** Marks partial totals/providers; unanswered or wholly stale summaries may change every provider. */
+/**
+ * An environment that
+ *   has not answered yet, or whose whole summary is stale, could change any
+ *   provider, so it sets `everyProvider`.
+ */
 export function usageLoadingState(
   environments: readonly UsageProgressEnvironment[],
   refreshing = false,

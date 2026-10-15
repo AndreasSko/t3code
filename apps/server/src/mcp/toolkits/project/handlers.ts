@@ -24,7 +24,9 @@ function projectFailure(error: Project.ProjectServiceError) {
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 
-// Accept only this project's worktrees so launches cannot bind arbitrary host directories.
+/**
+ * Without this check a launch could point an agent at any directory on the machine.
+ */
 const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
   workspaceRoot: string,
   worktreePath: string,

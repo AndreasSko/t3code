@@ -52,7 +52,9 @@ type LinkedDraftRequest = {
   readonly pullRequest: PromptLinkPullRequest | null;
 };
 
-/** Resolves t3code://new route params into a draft; never sends the prompt. */
+/**
+ * Nothing is ever sent: the user reads the prompt and presses Send.
+ */
 export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> | undefined) {
   const navigation = useNavigation();
   const flow = useNewTaskFlow();
@@ -77,7 +79,8 @@ export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> 
         environment.connectionState === "connecting" || environment.connectionError === null,
     );
 
-  // Returns true when the requested model is unavailable and the default is used.
+  // Writes the prompt and the requested model into a draft. Returns true when the link named a
+  // model the user cannot use, so their default stands in.
   const writeDraft = (
     draftKey: string,
     environmentId: EnvironmentId,
@@ -186,7 +189,9 @@ export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> 
     await openProjectDraft(result.value, { ...request, pullRequest: null });
   };
 
-  // PR prompts require a completed clone; the user must reopen that link afterward.
+  // Clone needs a tap on the destination screen, which then opens a draft in the cloned project
+  // holding the prompt. A pull request's prompt belongs on its branch, which only exists once the
+  // clone is done, so that link, like any on an older server, has to be opened again.
   const cloneRepository = (repository: PromptLinkRepository, request: LinkedDraftRequest) => {
     const environmentId =
       flow.selectedEnvironmentId ?? connectedEnvironments[0]?.environmentId ?? null;

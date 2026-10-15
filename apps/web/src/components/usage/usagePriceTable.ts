@@ -121,7 +121,6 @@ export function usagePriceTableChanges(
   return { changes, errors };
 }
 
-/** Unavailable destinations report a save failure without blocking writable environments. */
 export function usagePriceTableErrors(
   targets: readonly UsagePriceTarget[],
   drafts: readonly UsagePriceDraft[],

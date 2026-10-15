@@ -8,7 +8,6 @@ import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
 import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
 
-/** Source view for attachments, host files, and truncated reads that cannot be edited. */
 export default function ReadOnlySourcePreview(props: {
   readonly name: string;
   readonly text: string;

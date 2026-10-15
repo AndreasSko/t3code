@@ -449,7 +449,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isRemoteThread = thread.environmentId !== primaryEnvironmentId;
   const remoteEnvLabel = environment?.label ?? null;
   const remoteMachine = resolveEnvironmentMachineKind(environment?.serverConfig ?? null);
-  // Desktop-local backends such as WSL run on this machine; a cloud icon would mislabel them.
+  // A desktop-local secondary backend (e.g. the WSL backend) shows up as a
+  // bearer environment whose connection id is prefixed "local:". It runs on the
+  // user's own machine, so the cloud icon is misleading, label it "Local" and
+  // suppress the cloud icon (the project header already shows a
+  // local-environment icon for desktop-local projects, see sidebarProjectGrouping).
   const isDesktopLocalThread =
     environment !== null && isDesktopLocalConnectionTarget(environment.entry.target);
   const threadEnvironmentLabel = isRemoteThread
@@ -541,6 +545,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       // On mobile the first tap navigates and closes the sidebar sheet, so the
       // inline rename can't be shown. Renaming there stays on the context menu.
       if (isMobile) return;
+      // cmd/ctrl/shift double-clicks are multi-select intent, not rename.
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       if ((event.target as HTMLElement).closest("button, a")) return;
       event.preventDefault();
@@ -665,7 +670,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       void commitRename(threadRef, renamingTitle, thread.title);
     }
   }, [commitRename, renamingCommittedRef, renamingTitle, thread.title, threadRef]);
-  // A bubbling dblclick would reset the rename draft when selecting a word in the input.
+  // Without stopping `dblclick`, double-clicking to select a word would re-fire
+  // the row's rename handler and reset the in-progress edit back to the title.
   const handleRenameInputClick = useCallback((event: React.MouseEvent<HTMLInputElement>) => {
     event.stopPropagation();
   }, []);
@@ -1266,7 +1272,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       ),
     [sidebarThreads],
   );
-  // Mirror the latest map without invalidating every thread-row callback on list changes.
+  // Keep a ref so callbacks can read the latest map without appearing in
+  // dependency arrays (avoids invalidating every thread-row memo on each
+  // thread-list change).
   const sidebarThreadByKeyRef = useRef(sidebarThreadByKey);
   sidebarThreadByKeyRef.current = sidebarThreadByKey;
   const projectThreads = sidebarThreads;
@@ -1873,7 +1881,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
-      // Skip plain double-click navigation after modifier handling so rename keeps cmd/shift selection behavior.
+      // Ignore the trailing click of a plain double-click so it doesn't navigate
+      // while a double-click is starting an inline rename. Placed after the
+      // modifier branches so cmd/shift selection still processes every click.
       if (isTrailingDoubleClick(event.detail)) {
         return;
       }
@@ -2477,9 +2487,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               the row's end (two slots on touch, where both stay visible). */}
           <span aria-hidden className="w-4 shrink-0 max-sm:w-10" />
         </SidebarMenuButton>
-        {/* Environment badge – visible by default, crossfades with the
-            "new thread" button on hover using the same pointer-events +
-            opacity pattern as the thread row archive/timestamp swap. */}
+
         {project.environmentPresence === "remote-only" && (
           <Tooltip>
             <TooltipTrigger
@@ -2702,7 +2710,11 @@ const SidebarProjectListRow = memo(function SidebarProjectListRow(props: Sidebar
 
 function LocalSecondaryStatus() {
   const { environments } = useEnvironments();
-  // No bridge change event exists; poll bootstraps and show cold backends before they have catalog URLs.
+  // The desktop reports which local secondary backends (e.g. the WSL backend)
+  // exist; the hook polls because the bridge has no change event. A backend that
+  // is still cold-booting has no httpBaseUrl yet and isn't in the catalog, so we
+  // surface "Connecting" straight from the bootstrap list and clear it once the
+  // matching environment reports a connected phase.
   const secondaries = useDesktopLocalBootstraps();
 
   // Connected desktop-local environments keyed by their backend URL so we can

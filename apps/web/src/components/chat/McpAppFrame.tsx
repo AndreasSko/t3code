@@ -43,12 +43,10 @@ const commandFailure = (result: {
   );
 };
 
-/** A cached asset URL with less life than this is minted afresh first. */
 const MIN_URL_LIFE_MS = 5 * 60_000;
 const fullscreenSupported =
   typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype;
 
-/** Largest file an app may hand the user through `ui/download-file`. */
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 function saveBlob(blob: Blob, name: string) {
@@ -62,8 +60,6 @@ function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** Opaque-origin MCP frame; non-readonly calls, messages and downloads require approval.
- * Fullscreen keeps the same frame to preserve app state. */
 export function McpAppFrame(props: {
   readonly environmentId: EnvironmentId;
   /** The thread that produced the app, which its requests run against. */
@@ -74,7 +70,6 @@ export function McpAppFrame(props: {
   readonly revision: string;
   readonly app: McpAppReference;
   readonly onSendMessage: ((text: string) => Promise<void>) | undefined;
-  /** The agent waits on the user, in a panel a full-screen app would cover. */
   readonly awaitingUser?: boolean;
   readonly onFullscreenChange?: (fullscreen: boolean) => void;
 }) {
@@ -87,7 +82,6 @@ export function McpAppFrame(props: {
   const [navigatedAway, setNavigatedAway] = useState(false);
   const [displayMode, setDisplayMode] = useState<McpAppDisplayMode>("inline");
   const [closed, setClosed] = useState(false);
-  // Reopening creates a new document that needs its own host and load tracking.
   const [documentGeneration, setDocumentGeneration] = useState(0);
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -112,7 +106,10 @@ export function McpAppFrame(props: {
   );
   const asset = useAssetUrlState(props.environmentId, resource);
   const refreshAsset = useAssetUrlRefresh(props.environmentId, resource);
-  // Keep each document's first URL to avoid reloads; mint near expiry once so skewed clocks cannot loop.
+  // The frame keeps its first URL: a re-minted one would reload the app. A
+  // cached URL near expiry is minted afresh first, since a frame cannot
+  // report a failed load. At most one mint per document, so a skewed clock
+  // cannot mint on every update.
   const [src, setSrc] = useState<string | null>(null);
   const [mintFailed, setMintFailed] = useState(false);
   const minting = useRef(false);
@@ -180,20 +177,18 @@ export function McpAppFrame(props: {
     const shown = box.matches(":popover-open");
     if (displayMode === "fullscreen" && !shown) box.showPopover();
     if (displayMode !== "fullscreen" && shown) box.hidePopover();
-    // Report fullscreen only on changes so inline rows cannot overwrite another row's pin.
+    // Reported only on a change, so an inline row never touches another
+    // row's pin.
     if (displayMode === "fullscreen") {
       latest.current.props.onFullscreenChange?.(true);
       return () => latest.current.props.onFullscreenChange?.(false);
     }
   }, [displayMode]);
-  // The approval or question the agent waits on renders in the page, so a
-  // full-screen app steps aside for it.
   const [stepAsideFor, setStepAsideFor] = useState(props.awaitingUser);
   if (stepAsideFor !== props.awaitingUser) {
     setStepAsideFor(props.awaitingUser);
     if (props.awaitingUser === true) setDisplayMode("inline");
   }
-  // The top-layer app hides outside controls; return it inline on outside focus or Escape, preserving its own keys.
   useEffect(() => {
     if (displayMode !== "fullscreen") return;
     const leave = () => setDisplayMode("inline");
@@ -214,6 +209,8 @@ export function McpAppFrame(props: {
     };
   }, [displayMode]);
 
+  // The definition is read once per app, before the host is built, so the
+  // initialize response can carry it; a failure only leaves it out.
   useEffect(() => {
     let cancelled = false;
     void latest.current
@@ -230,8 +227,10 @@ export function McpAppFrame(props: {
       cancelled = true;
     };
   }, [props.environmentId, props.threadId, props.itemId, app.tool]);
-  // A navigated frame keeps its window; stop its bridge on a second load so another page cannot impersonate the served app.
-  // This checks document identity, not data exfiltration; reopening starts a new document.
+  // The bridge belongs to the captured document. A frame that navigates keeps
+  // its window, so a second load stops the app rather than letting a page T3
+  // never served pose as it. Counted per document: a reopened app is a new
+  // document, not a navigation.
   const loads = useRef({ generation: 0, count: 0 });
   const onFrameLoad = () => {
     if (loads.current.generation !== documentGeneration) {
@@ -279,8 +278,6 @@ export function McpAppFrame(props: {
     const ask = async (message: string) => {
       flushSync(() => setDisplayMode("inline"));
       const approved = await requestConfirmDialog(message);
-      // No dialog host is mounted, so nobody was asked; say so rather than
-      // reporting that the user declined.
       if (approved === undefined) {
         throw new McpAppHostRefusal("T3 could not ask for approval here.");
       }
@@ -326,7 +323,6 @@ export function McpAppFrame(props: {
         return result.value;
       },
       openLink: async (url) => {
-        // Only right after the reader used this frame, as with HTML renders.
         if (document.activeElement !== frameRef.current || !navigator.userActivation?.isActive) {
           throw new McpAppHostRefusal("Links open only from a click in the app.");
         }
@@ -352,7 +348,6 @@ export function McpAppFrame(props: {
         if (result._tag !== "Success") throw commandFailure(result);
       },
       requestDisplayMode: async (mode) => {
-        // Fullscreen cannot cover pending approvals/questions or another fullscreen app.
         const otherFullscreen = document.querySelector("[data-mcp-app-fullscreen]");
         if (
           mode === "fullscreen" &&
@@ -416,21 +411,17 @@ export function McpAppFrame(props: {
     window.addEventListener("message", receive);
     return () => {
       window.removeEventListener("message", receive);
-      // An unmount cannot wait: the request goes out before the frame does,
-      // which is all a list that recycles rows can offer the app.
       void host.teardown();
       hostRef.current = null;
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A reopened document needs a new host.
   }, [src, app, documentGeneration]);
 
-  // The host reads the context through `latest`; these only say when to resend.
   useEffect(() => {
     hostRef.current?.updateHostContext();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Context changes trigger a resend.
   }, [theme, width, displayMode, toolDefinition]);
 
-  // A new document gets a new host, which needs the call again.
   useEffect(() => {
     if (toolCall !== undefined) hostRef.current?.setToolCall(toolCall);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Each new document needs the call.
@@ -465,7 +456,9 @@ export function McpAppFrame(props: {
     <div style={{ height }}>
       <div
         ref={boxRef}
-        // Top-layer presentation escapes row fixed positioning without reparenting and reloading the frame.
+        // Full screen is the same box shown in the browser's top layer: moving
+        // the frame to another parent would reload the app, and the timeline's
+        // rows contain fixed positioning, which the top layer escapes.
         {...(fullscreenSupported ? { popover: "manual" as const } : {})}
         data-mcp-app-fullscreen={fullscreen ? "" : undefined}
         className={cn(

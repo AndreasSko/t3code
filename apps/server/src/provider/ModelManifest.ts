@@ -1,4 +1,3 @@
-/** Failed remote refreshes retain the last-good disk manifest or bundled fallback. */
 import {
   ModelCapabilities,
   TrimmedNonEmptyString,
@@ -27,7 +26,8 @@ const MODEL_MANIFEST_URL =
 
 const MANIFEST_TTL_MS = 60 * 60 * 1000;
 
-/** Offline servers must not pay a network timeout on every provider check. */
+/** Minimum gap between fetch attempts after a failure, so an offline server
+ * does not pay a network timeout on every provider check. */
 const MANIFEST_RETRY_MS = 5 * 60 * 1000;
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -67,7 +67,11 @@ const ManifestProviderCatalog = Schema.Struct({
  */
 const ModelManifestEnvelopeSchema = Schema.Struct({
   version: Schema.Literal(1),
-  /** ISO edit date; optional undated manifests count as older than any dated bundle. */
+  /**
+   * A release bundles its manifest, and a disk cache of an older edit must not
+   * outrank it. Optional so older remote files still decode; they count as
+   * older than any dated bundle.
+   */
   updatedAt: Schema.optional(Schema.String),
   compatibility: Schema.optional(Schema.Array(ProviderCompatibilityPolicy)),
   currentModels: Schema.Record(Schema.String, Schema.Array(Schema.String)),
@@ -172,7 +176,9 @@ export class ModelManifest extends Context.Service<
     readonly refresh: Effect.Effect<ModelManifestData>;
     /** Explicit refresh bypasses freshness and retry timers, retaining last-good data. */
     readonly forceRefresh: Effect.Effect<ModelManifestData>;
-    /** Refresh in the service scope so shared fetches survive the triggering instance's teardown. */
+    /** Forks `refresh` into the service's own scope. Drivers call this from
+     * provider checks: the fetch is process-shared state, so it must survive
+     * the teardown of whichever instance happened to trigger it. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
 >()("t3/provider/ModelManifest") {}
@@ -200,7 +206,9 @@ export const make = Effect.gen(function* () {
   let lastAttemptMs: number | null = null;
   const refreshSemaphore = yield* Semaphore.make(1);
 
-  // Deduplicate the disk load without blocking current behind the network refresh's semaphore.
+  // `Effect.cached` makes concurrent first readers await the same disk load
+  // rather than racing a "loaded" flag. Only `refreshed` takes the fetch
+  // semaphore; `current` must never wait behind an in-flight network refresh.
   const ensureDiskCacheLoaded = yield* Effect.cached(
     Effect.gen(function* () {
       const fromDisk = yield* fileSystem.readFileString(cachePath).pipe(
@@ -208,7 +216,8 @@ export const make = Effect.gen(function* () {
         Effect.catchCause(() => Effect.succeed(null)),
       );
       if (fromDisk === null) return;
-      // Compare edit dates, not fetch times, so an older disk manifest cannot undo bundled version gates.
+      // Comparing edit dates, not fetch time, keeps this independent of when
+      // the cache was written relative to the release.
       if (manifestUpdatedAtMs(BUNDLED_MODEL_MANIFEST) > manifestUpdatedAtMs(fromDisk.manifest)) {
         return;
       }
@@ -228,7 +237,10 @@ export const make = Effect.gen(function* () {
     if (!force && isWithin(fetchedAtMs, MANIFEST_TTL_MS)) return manifest;
     if (!force && isWithin(lastAttemptMs, MANIFEST_RETRY_MS)) return manifest;
 
-    // Disabling update checks stops network fetches but retains already cached data.
+    // The same switch that gates provider CLI update checks. It stops network
+    // fetches only: a manifest already cached on disk from an earlier fetch
+    // stays in effect, since the setting is about phoning home, not about
+    // discarding data the server already holds.
     const settings = yield* settingsService.getSettings.pipe(
       Effect.catchCause(() => Effect.succeed(null)),
     );
@@ -271,12 +283,10 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ModelManifest, make);
 
-/** Bundled data only, with the provider catalog port drivers read; for tests. */
 export const layerTest = Layer.suspend(() =>
   layerModelCatalog.pipe(Layer.provideMerge(layerBundledOnly)),
 );
 
-/** Exposes the manifest to provider packages as their per-driver catalogs. */
 export const layerModelCatalog = Layer.effect(
   ModelCatalog.ModelCatalog,
   Effect.gen(function* () {

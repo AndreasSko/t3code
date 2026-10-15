@@ -38,18 +38,25 @@ const MAX_CONSOLE_TEXT_CHARS = 500;
 const VIEWPORT_HEIGHT = 800;
 const MAX_CAPTURE_HEIGHT = 4_000;
 const CAPTURE_TIMEOUT = "20 seconds";
-// A web origin blocks local-file reads; inline local images. .localhost keeps
-// a secure context while allowing HTTP resources. Proxy traffic to public
-// addresses and keep captures on the main page without popups.
+// Pages load from this made-up web origin, never from a file. Chrome refuses
+// local files to every web page, frame, worker, and popup, so a page cannot
+// read files the agent's provider withholds; local images reach it already
+// inlined as data URIs. `.localhost` keeps it a secure context that may still
+// load plain-http resources, and the request never leaves the browser.
+// All of the browser's traffic goes through `publicProxy`, which only reaches
+// public addresses, so a page cannot reach this machine's local network. The
+// main frame also stays on the page and the browser opens no popups, so a
+// capture always shows the page itself.
 const PAGE_ORIGIN = "http://t3-page.localhost";
 const PAGE_URL = `${PAGE_ORIGIN}/page.html`;
-// Stack traces and load errors name the page this way instead of its URL.
 const PAGE_NAME = "page.html";
 const MEASURE_CONCURRENCY = 3;
 
 const textEncoder = new TextEncoder();
 
-// Use Node base64 encoding because pages can reach 25 MiB.
+/**
+ * Node's encoder, since pages run to 25 MiB.
+ */
 const pageBody = (html: string) =>
   Buffer.from(Buffer.from(html, "utf8").toString("base64"), "latin1");
 
@@ -158,7 +165,10 @@ interface PageEvents {
   omittedConsoleMessages: number;
 }
 
-// CDP pipe uses fd 3/4 and NUL-delimited JSON; scope close kills the browser group.
+/**
+ * Starts the headless shell for the life of the scope, speaking CDP over
+ * `--remote-debugging-pipe` (fd 3 in, fd 4 out, NUL-delimited JSON).
+ */
 const launchBrowser = Effect.fnUntraced(function* (input: {
   readonly executable: string;
   readonly noSandbox: boolean;
@@ -232,7 +242,6 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
   let disconnected: BrowserFailure | undefined;
   let nextId = 0;
 
-  // A command whose reply nobody awaits; `receive` drops replies without a waiter.
   const post = (method: string, params: Record<string, unknown>, sessionId: string) =>
     Queue.offer(
       outgoing,
@@ -241,8 +250,9 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
       ),
     ).pipe(Effect.asVoid);
 
-  // Queue shared page bytes between JSON halves so multi-width loads avoid
-  // copying up to 25 MiB on this side.
+  // Serves the page. Its body is shared bytes between two small JSON halves,
+  // queued together, so loading a page of up to 25 MiB at several widths never
+  // copies it on this side.
   const fulfillPage = (sessionId: string, requestId: string, body: Uint8Array) =>
     Queue.offerAll(outgoing, [
       textEncoder.encode(
@@ -311,7 +321,8 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
     return Effect.void;
   };
 
-  // Startup failures report on stderr after pipe closure; let it drain briefly for diagnostics.
+  // The pipe closes when the browser exits. A startup abort, such as a missing
+  // sandbox, says why on stderr, which may still be draining, so give it a moment.
   const disconnect = Effect.gen(function* () {
     yield* Fiber.await(stderrReader).pipe(Effect.timeout("1 second"), Effect.ignore);
     const error = new HtmlRenderBrowserError({
@@ -543,7 +554,10 @@ export const captureHtmlScreenshot = Effect.fn("headlessChrome.captureHtmlScreen
   }),
 );
 
-/** Reload per width because pages may choose layout only once at load. */
+/**
+ * Content heights of the page at each width, each from a fresh load, since
+ * pages often lay themselves out from the width once at load.
+ */
 export const measureHtmlHeights = Effect.fn("headlessChrome.measureHtmlHeights")(function* (input: {
   readonly executable: string;
   readonly noSandbox: boolean;

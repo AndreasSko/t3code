@@ -65,7 +65,6 @@ type SourceControlCliRemoteRefinementSpec = SourceControlCliDiscoverySpec & {
   readonly refineUnknownRemote: NonNullable<SourceControlCliDiscoverySpec["refineUnknownRemote"]>;
 };
 
-// Most CLI version probes finish within a second; slower specs can override this budget.
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 
 function probeTimeoutMs(spec: SourceControlCliDiscoverySpec): number {

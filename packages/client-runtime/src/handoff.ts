@@ -7,7 +7,10 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 
-// Only content-stable run fields belong here; status/timestamps churn on every stream event.
+/**
+ * Kept minimal so the timeline can hold a content-stable snapshot: run status/timestamps churn on
+ * every stream event, but these fields only change when a run is added.
+ */
 export type HandoffTimelineRun = Pick<
   OrchestrationV2Run,
   "id" | "ordinal" | "providerInstanceId" | "modelSelection"
@@ -15,7 +18,6 @@ export type HandoffTimelineRun = Pick<
 
 export type HandoffEndpoints = ReturnType<typeof resolveHandoffEndpoints>;
 
-/** Preview the next send's handoff without adding anything to durable history. */
 export function resolvePendingHandoff(
   projection: OrchestrationV2ThreadProjection | null | undefined,
   selection: ModelSelection | null | undefined,
@@ -44,8 +46,9 @@ export function resolveHandoffEndpoints(
   >,
   runs: ReadonlyArray<HandoffTimelineRun>,
 ) {
-  // Unstamped handoffs recover target and newest prior source models from runs;
-  // clients fall back to provider names when neither model exists.
+  // Items persisted before models were stamped only carry instance ids;
+  // recover the models from the thread's runs (the handoff's own run is
+  // the target, the newest earlier run per source instance is the origin).
   const handoffRun = item.runId === null ? undefined : runs.find((run) => run.id === item.runId);
   const toModel =
     item.toModel ??
@@ -65,7 +68,6 @@ export function resolveHandoffEndpoints(
   return { from: fromEndpoints, to: { instanceId: item.toProviderInstanceId, model: toModel } };
 }
 
-// Legacy handoffs need the newest source-instance model before their own run.
 function latestRunModelBefore(
   runs: ReadonlyArray<HandoffTimelineRun>,
   instanceId: ProviderInstanceId,

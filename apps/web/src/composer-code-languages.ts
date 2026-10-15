@@ -1,4 +1,3 @@
-/** Keep the picker curated; unlisted highlighter languages remain usable by typing their fence info string. */
 export const CODE_BLOCK_LANGUAGES = [
   { id: "", label: "Plain text" },
   { id: "bash", label: "Bash" },
@@ -57,14 +56,13 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   yml: "yaml",
 };
 
-/** The language is the info string's first word; the rest belongs to the fence. */
 export function languageOfInfoString(info: string): string {
   return info.trim().split(/\s+/, 1)[0] ?? "";
 }
 
 /**
- * Preserve surrounding whitespace and metadata. Clearing language with metadata keeps text in front so
- * title=x cannot become the language.
+ * Plain text clears it, unless something follows: a bare `title=x` would read
+ * as the language, so that keeps `text` in front.
  */
 export function withInfoStringLanguage(info: string, language: string): string {
   const leading = /^\s*/.exec(info)![0];

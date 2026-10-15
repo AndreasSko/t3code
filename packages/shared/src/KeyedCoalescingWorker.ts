@@ -1,6 +1,8 @@
 /**
- * Enqueues for active or queued keys merge atomically. Each batch yields to other keys
- * before processing newer updates; drainKey resolves only after all work for that key ends.
+ * Enqueues for an active or already-queued key are merged atomically instead of creating
+ * duplicate queued items. Each batch yields to other queued keys before processing newer
+ * updates. `drainKey()` resolves only when that key has no queued, pending, or active work
+ * left.
  */
 import * as Scope from "effect/Scope";
 import * as Effect from "effect/Effect";

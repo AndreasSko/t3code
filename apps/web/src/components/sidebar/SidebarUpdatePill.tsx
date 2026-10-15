@@ -144,8 +144,6 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 };
 
-/** Downloads this app's update. Resolves true when it is ready to install;
-    failures go to `reportError` (a toast by default) and resolve false. */
 async function downloadLocalUpdate(
   bridge: DesktopBridge,
   {
@@ -172,10 +170,6 @@ async function downloadLocalUpdate(
   }
 }
 
-/** Installs this app's downloaded update, which relaunches the app. Resolves
-    true when the relaunch is under way. Failures go to `reportError` (a toast
-    by default). A refused install (the download is not marked ready yet)
-    leaves the restart to the user. */
 async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
@@ -238,10 +232,8 @@ function useUpdateRunTooltip(
 }
 
 /**
- * The sidebar update button. With only a local app update it downloads, then
- * installs. When other machines' servers or any providers are behind, one
- * click updates everything: providers, then servers, then this app last. On
- * web there is no local app, so the button shows only for remote updates.
+ * When other machines' servers or any providers are behind, one click updates everything:
+ * providers, then servers, then this app last.
  */
 export function SidebarUpdatePill() {
   return <SidebarUpdateControl />;
@@ -436,7 +428,6 @@ function SidebarUpdateControl() {
     );
   }, [prefersReducedMotion, state?.status]);
 
-  // Web has no local app to check, so it only shows the button for remote work.
   if (!isElectron && !runsEverything && !isRunningEverything) return null;
 
   const updateButton = (

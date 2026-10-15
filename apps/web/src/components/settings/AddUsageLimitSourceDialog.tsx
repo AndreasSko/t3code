@@ -16,7 +16,11 @@ import { Input } from "../ui/input";
 import { SecretInput } from "./SecretInput";
 import { Label } from "../ui/label";
 
-/** Preserve dots and dashes so foo-bar.com and foo.bar.com cannot collide. */
+/**
+ * Stable per hub and readable in settings.json. Dots and dashes in the host
+ * are kept so `foo-bar.com` and `foo.bar.com` do not collide; anything else
+ * (a port's colon, a path) is folded to a dash.
+ */
 function sourceIdFromUrl(url: string): UsageLimitSourceId {
   let host = url;
   try {
@@ -31,7 +35,10 @@ function sourceIdFromUrl(url: string): UsageLimitSourceId {
   return UsageLimitSourceId.make(`cliproxy-${slug || "hub"}`);
 }
 
-/** Send management keys once to environment secret storage; later settings contain only redaction. */
+/**
+ * The management key is sent once and kept in that server's secret store; settings only ever
+ * carry a redaction marker for it afterwards.
+ */
 export function AddUsageLimitSourceDialog({
   open,
   onOpenChange,
@@ -59,6 +66,7 @@ export function AddUsageLimitSourceDialog({
   const save = () => {
     if (!canSave) return;
     const id = sourceIdFromUrl(trimmedUrl);
+    // The patch names only this entry; the server merges it into its map.
     updateSettings({
       usageLimitSources: {
         [id]: {

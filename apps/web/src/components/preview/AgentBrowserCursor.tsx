@@ -11,7 +11,6 @@ import { agentBrowserCursorOpacity, type BrowserController } from "./agentBrowse
 
 const CURSOR_ACTIVE_MS = 700;
 
-/** Keep the agent cursor active for 700 ms after its latest pointer event. */
 export function AgentBrowserCursor(props: {
   readonly tabId: string;
   readonly zoomFactor: number;

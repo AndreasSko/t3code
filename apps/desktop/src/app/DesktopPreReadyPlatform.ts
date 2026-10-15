@@ -89,9 +89,7 @@ export const make = Effect.gen(function* () {
               ),
               iconPath,
             );
-          } catch {
-            // Icon installation is optional; registration retries after readiness.
-          }
+          } catch {}
         }
         NodeFS.writeFileSync(
           NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
@@ -106,9 +104,7 @@ export const make = Effect.gen(function* () {
           }),
           "utf8",
         );
-      } catch {
-        // The URL handler retries with the full environment and logs failures.
-      }
+      } catch {}
       // Chromium caches its portal registration during startup. Set the identity
       // before any asynchronous work can initialize it with Electron's default.
       Electron.app.setDesktopName(linux.linuxDesktopEntryName);

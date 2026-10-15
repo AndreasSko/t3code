@@ -1,5 +1,10 @@
-// Keep unauthenticated hub actions and shell-exec behind a scoped T3 session.
-// Forward only Device panel routes on the same origin for remote access.
+/**
+ * The hub binds loopback and is never reachable directly: serve-sim exposes a shell-exec route
+ * and serve-emu's action routes are unauthenticated, so the only way to a device stream is
+ * through this route, which requires an environment session with read scope (operate scope for
+ * input and tuning). Reusing the T3 origin is also what makes remote connections work unchanged —
+ * Tailscale and T3 Connect already carry `/api/*` and WebSocket upgrades for the app itself.
+ */
 import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -28,7 +33,6 @@ const ALLOWED_PATHS: ReadonlyArray<RegExp> = [
   /^\/vendor\/serve-emu\/health$/,
 ];
 
-/** Read paths are GET-only; only these accept other methods (screenshot captures, stream tuning). */
 const MUTABLE_PATHS: ReadonlyArray<RegExp> = [
   /^\/vendor\/serve-sim\/api\/screenshot$/,
   /^\/vendor\/serve-emu\/api\/(screenshot|stream-mode|stream-settings)$/,
@@ -71,7 +75,6 @@ const forwardHeaders = (request: HttpServerRequest.HttpServerRequest, origin: st
   return headers;
 };
 
-// WebSocket frames are opaque H.264 units and input packets; preserve framing.
 const proxyWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
   request: HttpServerRequest.HttpServerRequest,
   upstreamUrl: string,
@@ -162,8 +165,10 @@ const handler = Effect.gen(function* () {
   if (!ready) {
     return HttpServerResponse.text("Device hub is not running", { status: 503 });
   }
-  // The standalone hub needs no T3 prefix; the panel constructs URLs.
-  // Strip the authentication ticket before forwarding to the hub.
+  // The hub runs in standalone mode at its origin root; the panel builds every
+  // stream and socket URL itself, so nothing depends on the hub knowing the
+  // T3 prefix.
+  // The ticket authenticates here and must not travel on to the hub.
   const upstreamSearch = new URLSearchParams(url.value.search);
   upstreamSearch.delete("wsTicket");
   upstreamSearch.delete("hostId");

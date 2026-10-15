@@ -13,7 +13,6 @@ import type { WorkspaceTab } from "./workspace-tabs-state";
 import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
 import { useSystemWorkspaceTabBar } from "./useSystemWorkspaceTabBar";
 
-// Tabler's git-pull-request geometry, rasterized at 1x/2x/3x for UIKit template images.
 const PULL_REQUEST_ICON = require("../../../assets/icons/pull-request.png");
 const COMPOSE_TAB = "compose";
 
@@ -45,7 +44,10 @@ function RetainedWorkspaceTab(props: {
   ) : null;
 }
 
-/** The phone's search-role tab opens compose without selection; UIKit detaches it from the workspace tabs. */
+/**
+ * On phones, compose is UIKit's own search-role tab, detached like Photos' search button; it never
+ * becomes selected and opens a new chat instead.
+ */
 export function WorkspaceNativeTabs(props: {
   readonly children: ReactNode;
   readonly hidden: boolean;

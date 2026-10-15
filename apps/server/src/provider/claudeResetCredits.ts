@@ -1,4 +1,3 @@
-/** Claude's cedar_ember grants use file-backed OAuth credentials; macOS keychain logins are unsupported. */
 import type {
   ProviderConsumeResetCreditOutcome,
   ServerProviderResetCredits,
@@ -82,7 +81,11 @@ class ClaudeResetCreditError extends Schema.TaggedError<ClaudeResetCreditError>(
 
 const isClaudeResetCreditError = Schema.is(ClaudeResetCreditError);
 
-/** Unanswered or unconfirmed claims retry with the same request id; other failures are settled. */
+/**
+ * Every reset failure except `requestFailed` and `unconfirmed` is final:
+ * Claude answered, or nothing was sent. An unanswered or unconfirmed claim
+ * retries with the same request id.
+ */
 export const isSettledClaudeResetCreditFailure = (error: unknown) =>
   isClaudeResetCreditError(error) &&
   error.reason !== "requestFailed" &&
@@ -150,7 +153,10 @@ const withClaudeHeaders = (token: string, version: string) =>
     "user-agent": `claude-cli/${version} (external, cli)`,
   });
 
-/** Optional usage data: read failures produce no resets so the usage bars remain available. */
+/**
+ * Any failure reads as "no resets" so the usage bars never break on this
+ * optional extra.
+ */
 export const readClaudeResetCredits = Effect.fn("readClaudeResetCredits")(
   function* (configDir: string, version: string) {
     const token = yield* readAccessToken(configDir);
@@ -196,7 +202,10 @@ const CLAIM_OUTCOMES = {
   ineligible: "noCredit",
 } as const satisfies Record<string, ProviderConsumeResetCreditOutcome>;
 
-/** `requestId` is the idempotency key; retrying it must remain the same claim. */
+/**
+ * Claims `grantId`. `requestId` is the idempotency key: a retry with the same
+ * id is the same claim. Ids are checked before anything is sent.
+ */
 export const consumeClaudeResetCredit = Effect.fn("consumeClaudeResetCredit")(function* (input: {
   readonly configDir: string;
   readonly accountConfigPath: string;

@@ -16,7 +16,6 @@ interface CodexRateLimitWindow {
   readonly windowDurationMins?: number | null;
 }
 
-/** Structural view of the generated `RateLimitSnapshot`; both messages satisfy it. */
 export interface CodexRateLimitSnapshot {
   readonly limitId?: string | null;
   readonly planType?: string | null;
@@ -25,7 +24,6 @@ export interface CodexRateLimitSnapshot {
   readonly secondary?: CodexRateLimitWindow | null;
 }
 
-/** Structural view of the read response's `rateLimitResetCredits`. */
 export interface CodexResetCreditsSummary {
   readonly availableCount: number;
   readonly credits?: ReadonlyArray<{
@@ -54,7 +52,11 @@ function labelForKind(kind: ServerProviderUsageWindow["kind"]): string {
   return kind === "session" ? "Session" : kind === "weekly" ? "Weekly" : "Monthly";
 }
 
-/** Positions do not imply durations; missing durations default to 5h/weekly for paid plans or monthly for Free/Go. */
+/**
+ * `primary` / `secondary` are positions, not durations. Codex usually sends
+ * `windowDurationMins`; when it does not, paid plans expose the 5-hour and
+ * weekly pair and Free/Go expose one monthly allowance.
+ */
 function codexRateLimitsToWindows(
   snapshot: CodexRateLimitSnapshot,
 ): ReadonlyArray<ServerProviderUsageWindow> {
@@ -129,7 +131,11 @@ export function codexRateLimitsToUpdate(
   return windows.length > 0 ? { windows } : undefined;
 }
 
-/** Raw errors stay in logs; clients receive only a bounded category and JSON-RPC code. */
+/**
+ * A bounded, client-safe reason for a failed `account/rateLimits/read`. The
+ * raw error is for the log; only the category and, for a JSON-RPC failure,
+ * the code reach the Limits view.
+ */
 export function codexRateLimitsFailureMessage(error: CodexErrors.CodexAppServerError): string {
   switch (error._tag) {
     case "CodexAppServerRequestError":
@@ -143,7 +149,12 @@ export function codexRateLimitsFailureMessage(error: CodexErrors.CodexAppServerE
   }
 }
 
-/** Omitted notification fields retain earlier values so partial updates cannot discard known windows. */
+/**
+ * Codex sends `account/rateLimits/updated` as a partial view of the snapshot: a
+ * field the update omits keeps the value observed earlier in the session, so a
+ * later notification that only names the limit it reached must not drop the
+ * windows an earlier one carried.
+ */
 export function mergeCodexRateLimits(
   previous: CodexRateLimitSnapshot | undefined,
   update: CodexRateLimitSnapshot,
@@ -164,7 +175,6 @@ export function mergeCodexRateLimits(
   };
 }
 
-/** Coarse remaining wait, matching how the usage rows read: `5d 5h`, `3h 20m`, `12m`. */
 function formatCodexUsageLimitWait(waitMs: number): string {
   const totalMinutes = Math.ceil(waitMs / 60_000);
   const days = Math.floor(totalMinutes / (24 * 60));
@@ -189,8 +199,10 @@ function codexUsageLimitNextStep(rateLimitReachedType: string | null | undefined
 }
 
 /**
- * Business provider errors can blame credits for an exhausted window; name the latest unreset window instead.
- * atIso is the stopping event's timestamp, not the wall clock.
+ * The message a usage-limit stop shows instead of the provider sentence, which
+ * on a Business workspace blames credits for a window that simply ran out. The
+ * window named is the exhausted one that has yet to reset, latest first; `atIso`
+ * is the stopping event's timestamp, not the wall clock.
  */
 export function codexUsageLimitMessage(
   snapshot: CodexRateLimitSnapshot | undefined,

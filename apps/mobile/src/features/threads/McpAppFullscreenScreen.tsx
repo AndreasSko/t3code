@@ -23,7 +23,11 @@ type McpAppFullscreenScreenProps = StaticScreenProps<{
   readonly revision?: string;
 }>;
 
-/** Route links may send messages only to the app's thread or its forks. */
+/**
+ * The thread an app's messages go to. A link only names it, so it counts only
+ * when it is the app's own thread or a fork of it; anything else falls back to
+ * the app's thread.
+ */
 function useConversationThreadId(
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -60,11 +64,17 @@ function descendsFrom(
   return false;
 }
 
-/** Reads apps from stored tool calls so route links cannot supply arbitrary app content. */
+/**
+ * The app is read from its stored tool call, never from the route, so a link
+ * can only open an app that call really produced.
+ */
 export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  // A delayed exit must wait for this modal to regain focus so goBack cannot pop another screen.
+  // A plain goBack pops whatever is on top, so it only runs while this modal
+  // is: an exit that lands while another screen covers it (after a teardown
+  // wait) waits for the modal to be on top again, rather than popping that
+  // screen or being lost.
   const focused = useIsFocused();
   const [exitRequested, setExitRequested] = useState(false);
   const onClose = useCallback(() => {
@@ -92,7 +102,8 @@ export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
     }),
   );
   const item = detail.data?.item;
-  // Preserve app identity across refetches so the document's host is not rebuilt.
+  // One reference per app: the item is a new object on every refetch (a
+  // reconnect, for one), and a new reference would rebuild the app's host.
   const derived = item?.type === "dynamic_tool" ? mcpAppFromToolItem(item) : undefined;
   const [app, setApp] = useState(derived);
   if (derived?.attachmentId !== app?.attachmentId) setApp(derived);

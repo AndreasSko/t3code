@@ -60,7 +60,11 @@ function buildSearchSnippet(text: string, query: string): string {
   }`;
 }
 
-/** Search finished user/assistant messages in active threads/projects; unimported V1 transcripts are excluded. */
+/**
+ * Searches the finished user and assistant messages of active V2 threads in
+ * active projects. Legacy V1 transcripts that have not been imported yet are
+ * not searched.
+ */
 export class ThreadSearch extends Context.Service<
   ThreadSearch,
   {
@@ -70,12 +74,9 @@ export class ThreadSearch extends Context.Service<
   }
 >()("t3/orchestration-v2/ThreadSearch") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
-  // One best match per thread: user messages outrank assistant ones, then the
-  // newest message wins. Threads order by match kind, then recency.
   const searchRows = SqlSchema.findAll({
     Request: SearchRequest,
     Result: SearchRow,

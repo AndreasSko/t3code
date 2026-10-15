@@ -1,7 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-/** Shell imports run at startup; transcripts hydrate on demand or in a low-priority background pass. */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 

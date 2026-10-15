@@ -10,9 +10,18 @@ type EditorDefinition = {
   readonly commands: readonly [string, ...string[]] | null;
   readonly baseArgs?: readonly string[];
   readonly launchStyle: EditorLaunchStyle;
-  /** Remote deep-link scheme for VS Code, forks with Remote-SSH support, and Zed. */
+  /**
+   * URL scheme for editors that support VS Code's remote deep links
+   * (`<scheme>://vscode-remote/ssh-remote+<host><path>`). Only set for VS Code
+   * and forks that ship the Remote-SSH machinery, plus Zed, which uses its own
+   * `zed://ssh/<host><path>` shape.
+   */
   readonly remoteScheme?: string;
-  /** Toolbox gateway product code selects the JetBrains remote backend. */
+  /**
+   * JetBrains product code (`IU`, `PY`, ...). JetBrains IDEs open remote
+   * projects through the Toolbox App's `jetbrains://gateway/ssh/...` link,
+   * which uses the code to choose the IDE backend.
+   */
   readonly jetbrainsProductCode?: string;
 };
 
@@ -160,7 +169,9 @@ export type FileManagerRevealKind = typeof FileManagerRevealKind.Type;
 export const LaunchEditorInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   editor: EditorId,
-  /** File-manager reveal requires the server shellRevealInFileManager capability. */
+  /** Reveal (select) `cwd` in the file manager instead of opening it. Only
+      honored by the "file-manager" editor; clients must check the server's
+      `shellRevealInFileManager` config flag before sending this. */
   reveal: Schema.optional(Schema.Boolean),
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
@@ -177,7 +188,6 @@ export const remoteSchemeForEditor = (id: EditorId): string | undefined => {
   return editor === undefined ? undefined : remoteSchemeOf(editor);
 };
 
-/** Opens SSH paths with editor-specific links; undefined when remote deep links are unsupported. */
 export const buildRemoteOpenUrl = (input: {
   readonly editor: EditorId;
   readonly host: string;
@@ -204,8 +214,10 @@ export const buildRemoteOpenUrl = (input: {
   const rootedPath = posixPath.startsWith("/") ? posixPath : `/${posixPath}`;
   const encodedHost = encodeURIComponent(input.host);
   if (input.editor === "zed") {
-    // Zed resolves rooted Windows paths on the system drive: C:\Users becomes /Users (verified in #8938).
-    // Other drives are untested; preserve them and POSIX /C: paths rather than silently remapping them.
+    // Zed's remote server resolves a rooted path on the system drive, so a
+    // Windows `C:\Users\x` must become `/Users/x` (verified in #8938). Other
+    // drives are untested and kept as is rather than silently remapped, and a
+    // POSIX path that happens to start with `/C:` is left alone.
     const zedPath = /^[Cc]:[\\/]/.test(input.absolutePath) ? rootedPath.slice(3) : rootedPath;
     const encodedZedPath = zedPath.split("/").map(encodeURIComponent).join("/");
     return `${scheme}://ssh/${encodedHost}${encodedZedPath}`;
@@ -214,7 +226,12 @@ export const buildRemoteOpenUrl = (input: {
   return `${scheme}://vscode-remote/ssh-remote+${encodedHost}${encodedPath}`;
 };
 
-/** Advertise self-resolving names only with local sshd listening, ordered tailnet then mDNS; clients check reachability. */
+/**
+ * SSH hostnames an environment advertises for remote open links. Reachability
+ * is client-side; the server only advertises names that resolve to itself and
+ * gates them on a local sshd listen check. Ordered most-reachable first
+ * (tailnet MagicDNS name, then mDNS `<hostname>.local`).
+ */
 export const RemoteOpenTargetKind = Schema.Literals(["tailscale", "mdns"]);
 export type RemoteOpenTargetKind = typeof RemoteOpenTargetKind.Type;
 

@@ -75,7 +75,6 @@ const PreviewAutomationTabTargetFields = {
 export const PreviewAutomationTabTargetInput = Schema.Struct(PreviewAutomationTabTargetFields);
 export type PreviewAutomationTabTargetInput = typeof PreviewAutomationTabTargetInput.Type;
 
-/** `human`: a person controls the tab now; `agent`: an agent session opened it; `unclaimed`: neither. */
 export const PreviewAutomationTabOwner = Schema.Literals(["agent", "human", "unclaimed"]);
 
 export const PreviewAutomationProfile = Schema.Struct({
@@ -146,7 +145,6 @@ export const PreviewAutomationStatus = Schema.Struct({
       }),
     ),
   ),
-  /** Server hosts: the browser profiles preview_open accepts, as the user's client reported them. */
   profiles: Schema.optional(Schema.Array(PreviewAutomationProfile)),
   /** Server hosts: the profile preview_open uses when given none. */
   defaultProfileId: Schema.optional(BrowserProfileId),
@@ -774,7 +772,10 @@ export type PreviewAutomationHostIdentity = typeof PreviewAutomationHostIdentity
 
 export const PreviewAutomationHost = Schema.Struct({
   ...PreviewAutomationHostIdentity.fields,
-  /** Missing means the V1 operation set so newer servers can route to older desktops. */
+  /**
+   * Missing means the pre-capability-negotiation V1 operation set. This lets
+   * a newer server safely coexist with an older desktop during rollout.
+   */
   supportedOperations: Schema.optional(Schema.Array(PreviewAutomationOperation)),
 });
 export type PreviewAutomationHost = typeof PreviewAutomationHost.Type;
@@ -1004,7 +1005,10 @@ export class PreviewAutomationExecutionError extends Schema.TaggedError<PreviewA
   {
     ...PreviewAutomationRequestErrorFields,
     ...PreviewAutomationRemoteDiagnosticFields,
-    /** Server-browser failure reason, such as a refused connection; absent for other hosts. */
+    /**
+     * What went wrong, as the server's own browser reported it, such as a
+     * page that refused the connection. Absent for other hosts.
+     */
     reason: Schema.optional(Schema.String),
   },
 ) {

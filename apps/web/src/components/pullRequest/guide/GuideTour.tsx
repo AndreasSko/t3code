@@ -21,7 +21,6 @@ import {
 import { stepTourPosition, stopFilePaths } from "@t3tools/client-runtime/review-guide-tour";
 import { useGuideDiffFiles } from "./useGuideDiffFiles";
 
-/** Share progress per guide head across panels; a new head resets the tour. */
 export function GuideTour({
   environmentId,
   reference,
@@ -37,7 +36,6 @@ export function GuideTour({
   reference: PullRequestRef;
   guide: PullRequestReviewGuide;
   banner: ReactNode;
-  /** Whether the tour is the tab on screen, which is when J and K step through it. */
   active: boolean;
   commenting: ExcerptCommenting | null;
   onAsk: ((stop: number, question: string) => void) | null;
@@ -54,7 +52,6 @@ export function GuideTour({
   const position = Math.max(Math.min(tour.position, stopCount - 1), 0);
   const stop = guide.stops[position] ?? null;
 
-  // Only the open stop's files are read: its excerpts, and the files it lists to open in place.
   const wantedPaths = useMemo(() => (stop === null ? [] : stopFilePaths(stop)), [stop]);
   const diff = useGuideDiffFiles({
     environmentId,
@@ -85,8 +82,9 @@ export function GuideTour({
   };
   const step = (delta: 1 | -1) => goTo(stepTourPosition(position, delta, stopCount));
 
-  // Handle J/K globally for the active tour because rail buttons sit outside
-  // the stop; ignore typing and other consumed key events.
+  // J and K step through the tour whenever it is the tab on screen, wherever focus is, unless
+  // the reader is typing: clicking a stop in the rail leaves focus on a button outside any
+  // element that could hold a key handler of its own.
   const stepFromKey = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing || isCommandPaletteOpen()) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -105,7 +103,6 @@ export function GuideTour({
   return (
     <div ref={scrollRef} className="@container/guide h-full overflow-y-auto scrollbar-gutter-both">
       <div className="mx-auto grid max-w-[100rem] gap-6 px-4 py-4 @min-[56rem]/guide:grid-cols-[16rem_minmax(0,1fr)] @min-[90rem]/guide:gap-8 @min-[90rem]/guide:px-6">
-        {}
         <aside className="sticky top-4 self-start @max-[56rem]/guide:hidden">
           <GuideRail stops={guide.stops} position={position} seen={tour.seen} onSelect={goTo} />
         </aside>

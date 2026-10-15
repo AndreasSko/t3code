@@ -180,7 +180,9 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   // time, so neither can overwrite what the other wrote in between.
   const snapshotWriteLock = yield* Semaphore.make(1);
 
-  // Apply each received batch once; the bounded RPC buffer may split a server chunk.
+  // Apply each received batch with one state write. The RPC client's bounded
+  // buffer can split a server chunk, so a bulk action can still need several
+  // writes, but each write includes every event in that batch.
   const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
     items: ReadonlyArray<OrchestrationV2ShellStreamItem>,
     // Ids of rows whose links will fill later; they are held out of saves before one queues.
@@ -246,10 +248,14 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     }
   }, snapshotWriteLock.withPermit);
 
-  // Scope deferred link fills with this state; replace links only on rows retaining their original identity.
+  // Rows can arrive before their pull request links (see DeferredShellSnapshot), so the list
+  // paints first. The links then fill into the rows that still hold the object they arrived
+  // with; a row the server has replaced since carries its own links.
+  // Captured so fills started from the subscription callback still end with this state.
   const stateScope = yield* Effect.scope;
-  // New snapshots supersede older fills so reused rows cannot receive stale links.
-  // Cancelled fill rows stay pending until the next snapshot.
+  // Each full snapshot supersedes the previous one's fill; links from an older snapshot must
+  // not land on rows a newer snapshot reused. A cancelled fill's rows stay pending until the
+  // next snapshot replaces the pending set.
   let activeFill: Fiber.Fiber<void> | undefined;
   const cancelActiveFill = Effect.suspend(() => {
     const fill = activeFill;
@@ -287,7 +293,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           const threads = snapshot.threads.map((thread) => {
             if (!arrivedRows.has(thread) || !arrivedIds.has(thread.id)) return thread;
             const links = linksByThreadId.get(thread.id);
-            // A reused row may already hold these links from an earlier fill.
             if (sameThreadPullRequests(thread.pullRequests, links)) return thread;
             changed = true;
             if (links === undefined) {
@@ -335,8 +340,9 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
         yield* setSynchronizing;
 
-        // Same-session resumes use the memory cursor; new sessions need HTTP snapshots
-        // so valid cursors cannot preserve incomplete cached data.
+        // Foreground resubscriptions on the same live session can resume from
+        // the in-memory cursor. A new session reloads the authoritative HTTP
+        // snapshot so a valid cursor cannot preserve incomplete cached data.
         const hasAuthoritativeSnapshot = (yield* Ref.get(lastAuthoritativeSession)) === session;
         let canResume = hasAuthoritativeSnapshot;
         let current = yield* SubscriptionRef.get(state);

@@ -12,14 +12,14 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as DesktopCliShim from "./DesktopCliShim.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
-// Uninstall removes only our launcher links and PATH entries we recorded adding.
+// Removing undoes only what installing did: a link that points at one of the
+// app's launchers, or a PATH entry the app recorded adding.
 
 export class DesktopCliCommandError extends Schema.TaggedError<DesktopCliCommandError>()(
   "DesktopCliCommandError",
   { message: Schema.String },
 ) {}
 
-/** User-writable folders that login shells commonly put on PATH, in preference order. */
 const unixCandidates = (home: string, platform: NodeJS.Platform) =>
   platform === "darwin"
     ? ["/opt/homebrew/bin", "/usr/local/bin", `${home}/.local/bin`, `${home}/bin`]
@@ -33,8 +33,12 @@ const sameWindowsPath = (left: string, right: string) =>
   left.replace(/[\\/]+$/, "").toLowerCase() === right.replace(/[\\/]+$/, "").toLowerCase();
 
 /**
- * Preserve registry PATH types and unexpanded %VAR% entries; SetEnvironmentVariable breaks expansion.
- * Broadcast WM_SETTINGCHANGE for new terminals and fail closed on reads to avoid replacing PATH.
+ * Reads, or with `T3_SET` set writes, the user's PATH in the registry, keeping
+ * `%VAR%` entries unexpanded. Writes keep REG_EXPAND_SZ (Windows' default for
+ * PATH; `SetEnvironmentVariable` would store REG_SZ and break every `%VAR%`
+ * entry), then broadcast WM_SETTINGCHANGE so Explorer and the terminals it
+ * opens see the change. A failed read exits nonzero rather than reading as
+ * empty, so a write never replaces the user's PATH wholesale.
  */
 const WINDOWS_USER_PATH_SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -84,7 +88,11 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
 
-  /** Recognizes launcher markers across T3 homes so installation cannot create duplicate links. */
+  /**
+   * A link to one of the app's launchers, by the marker the launcher carries.
+   * This also finds links made under a previous T3 home, so Remove can clean
+   * them up and Install does not add a second.
+   */
   const isOurLink = (link: string) =>
     Effect.gen(function* () {
       yield* fs.readLink(link);

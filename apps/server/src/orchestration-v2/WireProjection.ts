@@ -35,9 +35,9 @@ function truncateDetail(
 }
 
 /**
- * Full provider diffs would grow the database and heap beyond what clients
- * receive (see projectTurnItemForWire). MCP thread reads also get this
- * bounded text.
+ * Clients never receive more than this (see projectTurnItemForWire), so a full
+ * diff of a large file would only grow the database and the heap that reads it
+ * back.
  */
 export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   if (item.type !== "file_change") return item;
@@ -100,7 +100,6 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
     }
     case "command_execution": {
       const { output, ...projected } = item;
-      // Preserve failure detection without retaining or serializing the full output.
       const failed =
         item.outputIndicatesFailure === true ||
         (item.exitCode !== undefined && item.exitCode !== 0) ||
@@ -155,7 +154,6 @@ function boundDynamicValue(value: unknown): unknown {
   if (typeof value === "string") return truncateDetail(value, MAX_ON_DEMAND_BYTES);
   let json: string;
   try {
-    // Compact, so measuring does not inflate the value; clients indent it.
     json = JSON.stringify(value) ?? String(value);
   } catch {
     return "Unserializable tool value";
@@ -165,8 +163,11 @@ function boundDynamicValue(value: unknown): unknown {
     : truncateDetail(json, MAX_ON_DEMAND_BYTES);
 }
 
-// Preserve image marker order when truncating tool text so clients can
-// still fetch each image by index.
+/**
+ * A tool output for a detail read, without image bytes. When the rest is too
+ * large to send whole, its truncated text still comes with the image markers,
+ * in order, so clients can load each image by index.
+ */
 function boundToolOutput(output: unknown): unknown {
   const omitted = omitToolOutputImageData(output);
   const bounded = boundDynamicValue(omitted);
@@ -180,7 +181,9 @@ function boundToolOutput(output: unknown): unknown {
       ];
 }
 
-/** Bound expanded tool input/output so large results cannot stall the socket; fetch image bytes separately. */
+/**
+ * Image bytes are left out; clients load them as `tool-output-image` assets.
+ */
 export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "command_execution":

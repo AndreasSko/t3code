@@ -36,7 +36,6 @@ const EMPTY_THREAD_TITLES_ATOM = Atom.make(EMPTY_THREAD_TITLES).pipe(
   Atom.withLabel("mobile-thread-titles:empty"),
 );
 
-/** Thread titles in one environment. Emits when a title changes, not on every shell update. */
 const threadTitlesAtom = Atom.family((environmentId: EnvironmentId) => {
   let previous = EMPTY_THREAD_TITLES;
   return Atom.make((get) => {

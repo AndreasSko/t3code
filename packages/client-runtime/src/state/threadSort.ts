@@ -25,7 +25,6 @@ export type SettledThreadTimestampInput = Pick<
   "settledAt" | "latestUserMessageAt" | "latestRun" | "updatedAt"
 >;
 
-/** Prefers settledAt, then message/turn time, then updatedAt. */
 export function resolveSettledThreadTimestamp(thread: SettledThreadTimestampInput): string | null {
   if (thread.settledAt != null && toSortableTimestamp(thread.settledAt) !== null) {
     return thread.settledAt;
@@ -49,7 +48,8 @@ export function resolveSettledThreadTimestamp(thread: SettledThreadTimestampInpu
   return toSortableTimestamp(thread.updatedAt) === null ? null : thread.updatedAt;
 }
 
-/** Orders by work end, newest first with id ties; resolve each key once per sort. */
+/** Each key resolves once per sort, not once
+    per comparison. */
 export function sortSettledThreads<T extends SettledThreadTimestampInput & { readonly id: string }>(
   threads: readonly T[],
 ): T[] {
@@ -115,7 +115,10 @@ export function getThreadSortTimestamp(
   return getLatestUserMessageTimestamp(thread);
 }
 
-/** Reanchors creation order on unsettledAt, staying static between lifecycle transitions; malformed times sink to 0. */
+/**
+ * The list stays static between lifecycle transitions, but an un-settled thread
+ * surfaces at the top instead of sinking back to its creation-order slot.
+ */
 export function activeThreadAnchorTimestampMs(thread: {
   readonly createdAt: string;
   readonly unsettledAt?: string | null | undefined;
@@ -165,8 +168,12 @@ export function getLatestThreadForProject<
   return latest;
 }
 
-// Fractional keys let reorders write only the moved thread across environments,
-// preserving neighbor records and converging on the same client order.
+// Pinned threads carry an optional pinOrderKey (a base-26 string). The
+// pinned block sorts keyed threads by plain string comparison, so a drag
+// (web) or Move up/down (mobile) writes ONE key to ONE thread on that
+// thread's own server — neighbors, possibly living on other servers, are
+// never touched, and every client connected to the same servers converges
+// on the same order.
 const PIN_ORDER_DIGITS = "abcdefghijklmnopqrstuvwxyz";
 
 function isValidPinOrderKey(key: string): boolean {
@@ -193,12 +200,14 @@ function pinOrderMidpoint(a: string, b: string): string {
   if (digitB - digitA > 1) {
     return PIN_ORDER_DIGITS.charAt(Math.round((digitA + digitB) / 2));
   }
-  // Extend consecutive digits without a trailing minimum digit so later midpoints remain possible.
   if (b.length > 1) return b.charAt(0);
   return PIN_ORDER_DIGITS.charAt(digitA) + pinOrderMidpoint(a.slice(1), "");
 }
 
-/** Null bounds are open ends; corrupt or unordered keys return null so callers can rewrite the section. */
+/** Key that sorts strictly between two neighbors; null bounds mean "top of
+    the pinned block" / "bottom of the keyed run". Returns null instead of
+    throwing when existing keys are corrupt or out of order — callers fall
+    back to rewriting the section. */
 export function pinOrderKeyBetween(before: string | null, after: string | null): string | null {
   const a = before ?? "";
   const b = after ?? "";
@@ -208,7 +217,7 @@ export function pinOrderKeyBetween(before: string | null, after: string | null):
   return pinOrderMidpoint(a, b);
 }
 
-/** Evenly spaced keys for materializing an order. Wider keys keep a large
+/** Wider keys keep a large
     active list from exhausting the space between two-digit keys. */
 export function generateSpreadPinOrderKeys(count: number): string[] {
   let width = 2;
@@ -232,10 +241,7 @@ export function generateSpreadPinOrderKeys(count: number): string[] {
   return keys;
 }
 
-/** Writes one moved key when neighbors are keyed; keyless/corrupt neighbors require section materialization.
- * Active reordering reuses this planner with activeOrderKey values. */
 export function planPinnedReorder(input: {
-  /** Thread ids in the desired visual order (after the move). */
   readonly orderedIds: readonly string[];
   /** Include retained keys from hidden rows; only orderedIds receive writes. */
   readonly keysById: ReadonlyMap<string, string | null | undefined>;
@@ -268,13 +274,14 @@ export function planPinnedReorder(input: {
   });
 }
 
-/** Keyed rows use string order with id ties; keyless legacy rows retain newest-created order at the bottom. */
 export function sortPinnedThreadsByOrderKey<
   T extends {
     readonly id: string;
     readonly createdAt: string;
     readonly pinOrderKey?: string | null | undefined;
-    /** Include environment in ties because merged thread ids are only environment-local. */
+    /** Thread ids are only unique within an environment, and the pinned
+        block merges environments — the tiebreak needs both parts or two
+        clients could render equal-key threads in stream-arrival order. */
     readonly environmentId?: string | undefined;
   },
 >(threads: readonly T[]): T[] {
@@ -339,9 +346,7 @@ export function sortActiveThreadsByOrderKey<
   });
 }
 
-/** Swaps with a displayed neighbor using the reorder planner; null when moving past either end. */
 export function planPinnedMove(input: {
-  /** Reorder-capable pinned thread ids in displayed order. */
   readonly orderedIds: readonly string[];
   readonly keysById: ReadonlyMap<string, string | null | undefined>;
   readonly movedId: string;

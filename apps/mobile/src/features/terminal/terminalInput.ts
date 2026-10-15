@@ -10,11 +10,9 @@ export type ModifiedTerminalInput =
   | { readonly kind: "write"; readonly data: string }
   | { readonly kind: "paste" };
 
-// C0 controls other than tab, LF, and CR, plus DEL.
 // eslint-disable-next-line no-control-regex -- Pasted text must not carry raw terminal controls.
 const UNSAFE_PASTE_BYTES = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 
-/** Encodes a key using the toolbar's one-shot Ctrl modifier. */
 export function applyCtrlModifier(input: string): string {
   const firstCharacter = input[0];
   if (!firstCharacter) {
@@ -37,7 +35,14 @@ export function applyCtrlModifier(input: string): string {
   return input;
 }
 
-/** Paste chords use the device clipboard; forwarding Ctrl+V would paste the host clipboard in PowerShell. */
+/**
+ * The host's paste chord (cmd+v on a macOS host, ctrl+v elsewhere) pastes the
+ * device clipboard instead of reaching the remote shell as a raw control byte,
+ * which matches what the web terminal does with the same chord. Forwarding the
+ * byte is never what a phone user means: PowerShell binds ctrl+v to paste from
+ * the host machine's clipboard, so the shell inserts whatever the desktop last
+ * copied rather than the text on the phone.
+ */
 export function resolveModifiedTerminalInput(input: {
   readonly data: string;
   readonly modifier: PendingModifier;
@@ -54,13 +59,22 @@ export function resolveModifiedTerminalInput(input: {
   };
 }
 
-/** Replace unsafe controls with spaces to defuse embedded paste-end markers; map LF (Ctrl+J) to CR.
- * Native surfaces do not expose bracketed-paste mode. */
+/**
+ * Encodes clipboard text for the remote pty the way the web terminal does when
+ * bracketed paste is off: unsafe control bytes become spaces (which also
+ * defuses an embedded bracketed-paste end marker, since its ESC goes too) and
+ * line breaks become carriage returns, since a bare LF is Ctrl+J to a raw-mode
+ * TUI. The native mobile surface does not expose DECSET 2004, so mobile never
+ * wraps a paste in bracketed-paste markers.
+ */
 export function encodeTerminalPaste(text: string): string {
   return text.replace(UNSAFE_PASTE_BYTES, " ").replace(/\r\n|\n/g, "\r");
 }
 
-/** Keeps writes within the wire limit without splitting UTF-16 surrogate pairs. */
+/**
+ * Splits terminal input into writes the wire contract accepts, never cutting
+ * through a surrogate pair so every chunk stays valid UTF-16.
+ */
 export function chunkTerminalWrite(data: string): ReadonlyArray<string> {
   const chunks: string[] = [];
   let start = 0;
@@ -76,7 +90,10 @@ export function chunkTerminalWrite(data: string): ReadonlyArray<string> {
   return chunks;
 }
 
-/** Returns null for unknown hosts so callers can use a weaker platform hint. */
+/**
+ * Maps the OS reported by the environment descriptor onto the toolbar's host
+ * layout. Returns null for "unknown" so callers can fall back to a weaker signal.
+ */
 export function hostPlatformFromOs(os: ExecutionEnvironmentPlatformOs | null): HostPlatform | null {
   if (os === "darwin") return "mac";
   if (os === "linux") return "linux";

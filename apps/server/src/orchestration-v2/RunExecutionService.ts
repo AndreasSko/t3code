@@ -52,10 +52,11 @@ import * as RunFinalizationService from "./RunFinalizationService.ts";
 
 export interface ProviderEventRoutingState {
   readonly ownedThreadIds: ReadonlySet<ThreadId>;
-  // After the root ends, adopt only enrolled workflow members; their coordinator
-  // keeps this run open. Other new children belong to the next live run.
+  // Set once this run's root turn ended. A child thread created after that
+  // belongs to the run that is live then, so this one no longer adopts it,
+  // except a workflow member enrolled below: its coordinator keeps this run
+  // open, so the member is this run's to follow.
   readonly rootTurnEnded: boolean;
-  /** Member thread id to the coordinator child thread that spawned it. */
   readonly workflowMemberParents: ReadonlyMap<ThreadId, ThreadId>;
   readonly ownedProviderThreadIds: ReadonlySet<ProviderThreadId>;
   readonly ownedProviderTurnIds: ReadonlySet<ProviderTurnId>;
@@ -93,8 +94,6 @@ function isSettledSubagentStatus(status: OrchestrationV2Subagent["status"]): boo
   return !isOrchestrationV2WorkActive(status);
 }
 
-// Background-capable items keep ingestion open until terminal so their
-// late completions cannot leave permanently running projection rows.
 const backgroundCapableTurnItemTypes: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
   "command_execution",
   "dynamic_tool",
@@ -110,8 +109,9 @@ function isSettledRunEligibleForInheritedBackground(status: OrchestrationV2Run["
 }
 
 /**
- * After subscriber loss, use provider-thread lineage because sessions can host several threads.
- * Only interrupted, failed, or cancelled prior runs qualify; terminal items remain excluded.
+ * Provider sessions are runtime containers and can host multiple provider threads, so the durable
+ * provider-thread lineage is the discriminator. Completed, rolled-back, and already-terminal items
+ * remain excluded.
  */
 export function selectInheritedBackgroundTurnItems(input: {
   readonly threadId: ThreadId;
@@ -149,7 +149,6 @@ type OpenRunOwnedSubagentProjection = {
   readonly turnItems: ReadonlyMap<NodeId, SubagentTurnItem>;
   readonly childTurnItems: ReadonlyMap<TurnItemId, OrchestrationV2TurnItem>;
   readonly nodes: ReadonlyMap<NodeId, OrchestrationV2ExecutionNode>;
-  /** Child threads once linked by a root-run subagent row; kept for cascade. */
   readonly linkedChildThreadIds: ReadonlySet<ThreadId>;
 };
 
@@ -169,8 +168,9 @@ function isRunOwnedSubagentTerminalStatus(
 }
 
 /**
- * Route only completed subagents to new runs. Active children retain their original subscriber
- * to avoid duplicate events; interrupted, failed, and cancelled children cannot resume.
+ * A running subagent stays with the run that launched it, which keeps ingesting until it ends;
+ * taking it over too would store its events twice. An interrupted, failed or cancelled one is never
+ * resumed.
  */
 export function canRouteRelatedSubagent(status: OrchestrationV2Subagent["status"]): boolean {
   return status === "completed";
@@ -589,8 +589,9 @@ export const layer: Layer.Layer<
         const shouldFinalizeRun =
           input.shouldFinalizeRun === undefined ? true : yield* input.shouldFinalizeRun();
         if (!shouldFinalizeRun) {
-          // Emit an interrupt result for a superseded attempt only when hard Stop
-          // left an unpaired request; steers and already-paired stops emit nothing.
+          // Superseded attempt (steer / selection restart). Emit
+          // run_interrupt_result only when hard Stop left an unpaired request
+          // for this run; plain steers and already-paired stops emit nothing.
           if (input.terminal.status === "interrupted") {
             const hasUnpairedRequest =
               input.hasUnpairedRunInterruptRequest === undefined
@@ -642,8 +643,9 @@ export const layer: Layer.Layer<
             : [];
         const persistedStatus =
           input.terminal.status === "completed" ? "waiting" : input.terminal.status;
-        // Omit the startup delegatedCompletion snapshot so newer cohort acknowledgments,
-        // successors, and Stop barriers cannot be overwritten.
+        // Completion cohorts are advanced by Orchestrator while a provider
+        // turn is in flight. Do not replay the run snapshot captured at start
+        // over a newer acknowledgement, successor, or Stop barrier.
         const { delegatedCompletion: _delegatedCompletion, ...runWithoutDelegatedCompletion } =
           input.run;
         const finalizedRun: OrchestrationV2Run = {
@@ -668,8 +670,9 @@ export const layer: Layer.Layer<
         const checkpointCaptureCommandId = CommandId.make(
           `command:effect:checkpoint.capture:${input.run.id}`,
         );
-        // Stopped runs need checkpoints for the next message's rollback baseline;
-        // enqueue capture ahead of later starts on the same effect lane.
+        // Stopped runs capture too: their checkpoint is the rollback point for
+        // the next message. The capture is enqueued with these terminal events,
+        // ahead of any later run's start on this thread's effect lane.
         const finalization = {
           effects:
             input.terminal.status === "completed" ||
@@ -1042,8 +1045,10 @@ export const layer: Layer.Layer<
                     return next;
                   });
                 }
-                // Retain child linkage for interrupt cascade even after its subagent row ends;
-                // nested native subagents can live runless on the child's thread and must end too.
+                // Preserve childThreadId linkage for the root-run lifetime even after the subagent
+                // row terminalizes, so open child-thread nodes can still be proven linked on a
+                // later root interrupt. A provider records nested native subagents on the child
+                // thread, runless; they die with this run too.
                 if (
                   belongsToRootRun ||
                   (belongsToOwnedChildThread &&
@@ -1158,8 +1163,14 @@ export const layer: Layer.Layer<
             if (childSubagents.size > 0) {
               return false;
             }
-            // Completed roots keep ingesting live owned/inherited items even after owner loss; failed/stopped roots do not.
-            // Adapters must emit live items before the root terminal; inherited items are seeded from durable rows.
+            // Keep ingesting past root settlement while background-capable items owned by this run
+            // (or an owned child thread) are still non-terminal, so their late completion events
+            // reach the projection (stuck-spinner fix). Only for completed runs: interrupted/failed
+            // turns intentionally drop background tracking rather than pinning the stream open.
+            // Newly owned items depend on adapters emitting a non-terminal event before the root
+            // terminal. Owner loss (a newer run claimed lastRunOrdinal) must not close this stream
+            // while these sets are non-empty: turn_item.updated writes are not ownership-gated, so
+            // late completions still land.
             const backgroundItems = yield* Ref.get(activeBackgroundTurnItems);
             if (backgroundItems.size > 0) {
               return false;
@@ -1169,8 +1180,13 @@ export const layer: Layer.Layer<
             if (yield* Ref.get(providerThreadOwnerLost)) {
               return true;
             }
-            // Claude background Bash has no turn item; retain ingestion for this thread's
-            // roster clears. Session-wide pending work would pin unrelated root subscriptions.
+            // Claude background Bash has no turn-item projection. Keep the
+            // stream open while this root's provider thread still reports
+            // pending roster work so late empty updates can clear Waiting.
+            // Use only the thread-scoped probe: session-wide pending work
+            // (siblings, wake buffers, session subagents) must not pin this
+            // root subscription. Session idle release still uses
+            // hasPendingBackgroundWork via ProviderSessionManager.
             const latestProviderThreadSnapshot = yield* Ref.get(latestProviderThread);
             if (input.session.hasPendingBackgroundWorkForThread !== undefined) {
               const hasPendingWork = yield* input.session
@@ -1195,8 +1211,11 @@ export const layer: Layer.Layer<
                   DateTime.toEpochMillis(yield* DateTime.now),
                 );
                 if (deliveredEvent) {
-                  // Gate root provider-thread updates on the current attempt before terminal,
-                  // and on thread ownership after terminal so late roster clears cannot overwrite a newer run.
+                  // Root provider_thread.updated always uses an ownership gate:
+                  // pre-terminal writeIfRunCurrent (attempt still running), or
+                  // post-terminal writeIfProviderThreadOwner so late roster
+                  // clears still land while this attempt owns the run and this
+                  // run owns lastRunOrdinal.
                   const rootTerminalAlreadySeen = yield* Ref.get(rootTerminalSeen);
                   const isRootProviderThreadUpdate =
                     event.type === "provider_thread.updated" &&
@@ -1238,8 +1257,6 @@ export const layer: Layer.Layer<
                     rootTerminalAlreadySeen &&
                     storedEventCount === 0
                   ) {
-                    // Ownership lost (or thread row missing). Stop pinning the
-                    // stream on this run's background probe.
                     yield* Ref.set(providerThreadOwnerLost, true);
                   }
                 }
@@ -1364,7 +1381,9 @@ export const layer: Layer.Layer<
                 ),
               ),
             )).map((entry) => ({
-            // Use the unique item ID: free-text server/tool names can break Codex's context tag.
+            // The item id alone is unique and needs no escaping; server and
+            // tool names are free text that would break the tag Codex wraps
+            // the context in.
             key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
             text: entry.text,
           }));

@@ -63,8 +63,6 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
         seen.add(message.itemId);
         return true;
       });
-    // Handoffs without structured history include preformatted context when it fits;
-    // otherwise the coverage marker points to retrieval.
     const oldContext = pending
       .filter((handoff) => handoff.history === undefined)
       .map((handoff) => handoff.summaryText)

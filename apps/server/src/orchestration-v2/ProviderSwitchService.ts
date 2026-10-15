@@ -51,7 +51,6 @@ export class ProviderSwitchServiceV2 extends Context.Service<
   ProviderSwitchServiceV2Shape
 >()("t3/orchestration-v2/ProviderSwitchService/ProviderSwitchServiceV2") {}
 
-// Only live sessions can participate in transitions; stopped/errored records remain as history.
 const isLiveProviderSession = (
   session: OrchestrationV2ThreadProjection["providerSessions"][number],
 ) => session.status !== "stopped" && session.status !== "error";
@@ -95,7 +94,9 @@ export const layer: Layer.Layer<
                 DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
             );
           const currentSession = currentSessions.find(isLiveProviderSession);
-          // Negotiated capabilities describe the provider instance and remain valid after process exit.
+          // Negotiated capabilities describe the provider, not the dead
+          // process; the newest record still reports what the instance
+          // supports after its session stops.
           const negotiatedCapabilities =
             currentSession?.capabilities ?? currentSessions[0]?.capabilities;
           // Detaching a process removes its session binding, not its native history.

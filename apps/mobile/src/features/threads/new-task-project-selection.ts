@@ -43,7 +43,6 @@ function getOnlySelectableProject(
   return onlyScope?.representative ?? null;
 }
 
-/** Matches repository identity, then unknown-identity basename/title; a first-project fallback keeps a draft key. */
 export function resolveEnvironmentProjectMatch(
   projectsOnTarget: ReadonlyArray<EnvironmentProject>,
   selectedProject: EnvironmentProject | null,
@@ -51,9 +50,12 @@ export function resolveEnvironmentProjectMatch(
   const repositoryKey = selectedProject?.repositoryIdentity
     ? repositoryGroupingKeyOf(selectedProject.repositoryIdentity)
     : null;
-  // Placeholder projects can have empty workspaceRoot; || excludes that meaningless basename.
+  // `|| null` (not `??`): a pending-task placeholder project can have an empty
+  // workspaceRoot, and an "" basename would match nothing meaningful.
   const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
-  // Known different repository identities must not match on a shared basename or title.
+  // The weaker signals only apply where identity is unknown on at least one
+  // side; two known, different repositories never match on a shared basename
+  // or title (mirrors the environment list filter in the new-task flow).
   const isKnownMismatch = (project: EnvironmentProject) => {
     const projectKey = project.repositoryIdentity
       ? repositoryGroupingKeyOf(project.repositoryIdentity)

@@ -29,8 +29,9 @@ function meaningfulHastChildren(node: MarkdownImageHastNode): MarkdownImageHastN
 }
 
 /**
- * Reserve layout for standalone figures; placeholders for inline images could
- * shift the page more than the images themselves.
+ * Images mixed with text or other images — badge rows, icons in a sentence —
+ * stay inline at their natural size, since a placeholder taller than the image
+ * would move the page more than the image itself does.
  */
 const STANDALONE_IMAGE_BLOCKS = new Set([
   "p",

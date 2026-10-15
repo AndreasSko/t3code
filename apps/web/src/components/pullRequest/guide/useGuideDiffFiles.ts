@@ -18,8 +18,10 @@ interface LoadedDiff {
 
 const NO_FILES: ReadonlyMap<string, FileDiffMetadata> = new Map();
 
-/** Reuse Code-tab pages and stop fetching once all wanted files arrive;
- * retain loaded pages so revisiting a stop needs no read. */
+/**
+ * Paging stops once every wanted path has arrived: a stop's excerpts are usually in the first
+ * page, and a large change should not be read whole to show one of them.
+ */
 export function useGuideDiffFiles({
   environmentId,
   reference,
@@ -28,7 +30,7 @@ export function useGuideDiffFiles({
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
-  /** Changed guide heads must invalidate excerpts against the previous diff. */
+  /** The guide's head. A push writes a new guide, whose excerpts must read the new diff. */
   headSha: string;
   wantedPaths: ReadonlyArray<string>;
 }) {

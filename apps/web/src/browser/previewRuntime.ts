@@ -10,7 +10,11 @@ import {
   useEnvironmentSupportsServerBrowser,
 } from "~/state/entities";
 
-/** Desktop opens remote tabs locally to avoid streaming latency and use this computer's network. */
+/**
+ * The desktop app draws its own server's tabs natively, so those stay agent-drivable at no
+ * cost. A remote environment's tabs would stream, so the desktop opens them in its own browser
+ * instead: no latency, and it reaches what this computer reaches.
+ */
 export function previewRuntimeFor(environmentId: EnvironmentId): PreviewRuntime | undefined {
   if (!readEnvironmentSupportsServerBrowser(environmentId)) return undefined;
   if (
@@ -22,7 +26,6 @@ export function previewRuntimeFor(environmentId: EnvironmentId): PreviewRuntime 
   return "server";
 }
 
-/** Returns null when this tab cannot move between desktop and environment browsers. */
 export function alternatePreviewRuntime(
   environmentId: EnvironmentId,
   primaryEnvironmentId: EnvironmentId | null,
@@ -44,7 +47,6 @@ export function usePreviewAvailable(environmentId: EnvironmentId | null): boolea
   return isPreviewSupportedInRuntime() || serverBrowser;
 }
 
-/** Only the desktop client renders its primary server's tabs natively; other connections stream. */
 export function rendersServerTabNatively(
   environmentId: EnvironmentId,
   primaryEnvironmentId: EnvironmentId | null,

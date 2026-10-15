@@ -36,28 +36,22 @@ export class AcpAgent extends Context.Service<
   {
     readonly raw: {
       readonly notifications: Stream.Stream<AcpProtocol.AcpIncomingNotification>;
-      /** @see https://agentclientprotocol.com/protocol/extensibility */
       readonly request: (
         method: string,
         payload: unknown,
       ) => Effect.Effect<unknown, AcpError.AcpError>;
-      /** @see https://agentclientprotocol.com/protocol/extensibility */
       readonly notify: (method: string, payload: unknown) => Effect.Effect<void, AcpError.AcpError>;
     };
     readonly client: {
-      /** @see https://agentclientprotocol.com/protocol/schema#session/request_permission */
       readonly requestPermission: (
         payload: AcpSchema.RequestPermissionRequest,
       ) => Effect.Effect<AcpSchema.RequestPermissionResponse, AcpError.AcpError>;
-      /** @see https://agentclientprotocol.com/protocol/schema#elicitation/create */
       readonly elicit: (
         payload: AcpSchema.CreateElicitationRequest,
       ) => Effect.Effect<AcpSchema.CreateElicitationResponse, AcpError.AcpError>;
-      /** @see https://agentclientprotocol.com/protocol/schema#session/update */
       readonly sessionUpdate: (
         payload: AcpSchema.SessionNotification,
       ) => Effect.Effect<void, AcpError.AcpError>;
-      /** @see https://agentclientprotocol.com/protocol/schema#elicitation/complete */
       readonly elicitationComplete: (
         payload: AcpSchema.CompleteElicitationNotification,
       ) => Effect.Effect<void, AcpError.AcpError>;
@@ -73,22 +67,18 @@ export class AcpAgent extends Context.Service<
       readonly notifyMcp: (
         payload: AcpSchema.MessageMcpNotification,
       ) => Effect.Effect<void, AcpError.AcpError>;
-      /** @see https://agentclientprotocol.com/protocol/extensibility */
       readonly extRequest: (
         method: string,
         payload: unknown,
       ) => Effect.Effect<unknown, AcpError.AcpError>;
-      /** @see https://agentclientprotocol.com/protocol/extensibility */
       readonly extNotification: (
         method: string,
         payload: unknown,
       ) => Effect.Effect<void, AcpError.AcpError>;
     };
-    /** @see https://agentclientprotocol.com/protocol/schema#initialize */
     readonly handleInitialize: (
       handler: AcpRequestHandler<AcpSchema.InitializeRequest, AcpSchema.InitializeResponse>,
     ) => Effect.Effect<void>;
-    /** @see https://agentclientprotocol.com/protocol/schema#authenticate */
     readonly handleAuthenticate: (
       handler: AcpRequestHandler<AcpSchema.AuthenticateRequest, AcpSchema.AuthenticateResponse>,
     ) => Effect.Effect<void>;
@@ -137,7 +127,6 @@ export class AcpAgent extends Context.Service<
     readonly handlePrompt: (
       handler: AcpRequestHandler<AcpSchema.PromptRequest, AcpSchema.PromptResponse>,
     ) => Effect.Effect<void>;
-    /** @see https://agentclientprotocol.com/protocol/schema#session/cancel */
     readonly handleCancel: (
       handler: (
         notification: AcpSchema.CancelNotification,
@@ -201,7 +190,6 @@ interface AcpCoreAgentRequestHandlers {
 
 const decodeCancelNotification = Schema.decodeUnknownEffect(AcpSchema.CancelNotification);
 
-/** @public */
 export const make = Effect.fn("effect-acp/AcpAgent.make")(function* (
   stdio: Stdio.Stdio,
   options: AcpAgentOptions = {},
@@ -392,7 +380,8 @@ export const make = Effect.fn("effect-acp/AcpAgent.make")(function* (
   );
 
   yield* RpcServer.make(AcpRpcs.AgentRpcs, { disableFatalDefects: true }).pipe(
-    // runHandler logs defects with the method; suppress inherited reporters to avoid duplicates.
+    // runHandler logs handler defects with their method. A reporter inherited
+    // from the caller (a WebSocket request, say) would log them again.
     Effect.provideService(ErrorReporter.CurrentErrorReporters, new Set()),
     Effect.provideService(RpcServer.Protocol, transport.serverProtocol),
     Effect.provide(layerAgentHandler),

@@ -14,7 +14,12 @@ type DialogRequest =
 
 let presentRequest: ((request: DialogRequest) => void) | null = null;
 
-/** Requires ConfirmDialogHost at the app root; supports per-dialog destructive colors on Android. */
+/**
+ * Native iOS alerts already match the app (and support per-button destructive
+ * red), so this is for Android, where the native dialog can only theme all
+ * confirm buttons at once. Requires ConfirmDialogHost to be mounted at the app
+ * root.
+ */
 export function showConfirmDialog(request: ConfirmDialogRequest): void {
   presentRequest?.({ kind: "confirm", request });
 }

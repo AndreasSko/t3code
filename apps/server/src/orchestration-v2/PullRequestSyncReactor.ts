@@ -37,7 +37,6 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import { isTerminalRunStatus } from "./ThreadManagementService.ts";
 
 const SLOW_SYNC_INTERVAL_MS = 15 * 60 * 1_000;
-/** Shell commands that can merge or close a pull request without a merge notification. */
 const PULL_REQUEST_CLOSE_COMMAND = /\b(?:gh\s+pr|glab\s+mr)\s+(?:merge|close)\b/u;
 
 const isPullRequestProviderError = Schema.is(PullRequestProviderError);
@@ -131,8 +130,6 @@ function isUnsettled(thread: ProjectionStore.ProjectionThreadPullRequests): bool
   return thread.settledOverride !== "settled" && thread.settledAt === null;
 }
 
-// Group links by pull request so each sweep reads the host once per PR;
-// write changed snapshots and auto-link host-reported stack layers.
 export class PullRequestSyncReactor extends Context.Service<
   PullRequestSyncReactor,
   {
@@ -146,7 +143,6 @@ export class PullRequestSyncReactor extends Context.Service<
   }
 >()("t3/orchestration-v2/PullRequestSyncReactor") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -184,7 +180,6 @@ export const make = Effect.gen(function* () {
     <E>(cause: Cause.Cause<E>): Effect.Effect<void, E> =>
       Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.logWarning(message, fields);
 
-  /** `requested` reads only keys asked for through `requestSync`; `all` is the periodic pass. */
   const sweep = Effect.fn("PullRequestSyncReactor.sweep")(function* (scope: "all" | "requested") {
     const threads = yield* projections.getThreadsWithPullRequests();
     const now = yield* DateTime.now;
@@ -309,8 +304,7 @@ export const make = Effect.gen(function* () {
                 (cause) => !Cause.hasInterruptsOnly(cause),
                 (cause) =>
                   rateLimitRetryAt(cause) !== undefined
-                    ? // The sweep records the pause and holds the host's other reads until it ends.
-                      Effect.sync(() => retryStacks.add(key)).pipe(
+                    ? Effect.sync(() => retryStacks.add(key)).pipe(
                         Effect.andThen(Effect.failCause(cause)),
                       )
                     : Effect.logWarning("pull request stack lookup failed", {
@@ -419,8 +413,6 @@ export const make = Effect.gen(function* () {
     "PullRequestSyncReactor.start",
   )(function* () {
     const events = engine.streamDomainEvents;
-    // A client reading a pull request, or its branch status, can see it merge or close before
-    // the next sweep does.
     const stateChanges = Stream.merge(
       yield* pullRequests.subscribeStateChanges,
       yield* git.subscribePullRequestStateChanges,
@@ -443,8 +435,10 @@ export const make = Effect.gen(function* () {
               requestSync,
               { discard: true },
             );
-          // Merge/close shell commands emit no host notification; refresh their thread's
-          // open links on run completion so settlement need not wait for a cached sweep.
+          // An agent can merge or close its pull request from a shell (`gh pr merge`), which
+          // sends no merge notification. When a run that ran such a command ends, read the
+          // thread's open links fresh, so settlement does not wait for the next sweep and the
+          // cached summary. Other runs add no host reads.
           case "turn-item.updated":
             if (
               event.payload.type === "command_execution" &&

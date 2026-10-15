@@ -1,7 +1,16 @@
 const { withMainActivity } = require("expo/config-plugins");
 
-// The manifest portrait lock also covers tablets; override it at >=600dp with
-// FULL_USER to respect auto-rotate lock, and re-evaluate on fold/unfold without activity recreation.
+// The top-level `orientation: "portrait"` writes android:screenOrientation="portrait"
+// into the manifest, which locks every Android device — including tablets — to
+// portrait. Mirror that split on Android: keep the manifest lock for phones and lift
+// it at runtime on tablets (smallest width >= 600dp, the standard tablet breakpoint),
+// since requestedOrientation set at runtime overrides the manifest value. FULL_USER
+// allows all four orientations while still respecting the user's auto-rotate lock,
+// matching iPad behavior. Foldables change smallestScreenWidthDp on fold/unfold
+// without recreating the activity (smallestScreenSize is in the manifest's
+// configChanges), so the policy is re-evaluated in onConfigurationChanged: unfolding
+// past the tablet breakpoint unlocks rotation, and folding back restores the portrait
+// lock.
 
 const ORIENTATION_METHODS = `
   // Applied in onCreate and re-applied on fold/unfold; added by

@@ -40,7 +40,8 @@ import {
 import { GuideNoteMarker } from "./GuideNotes";
 import { GuideProse } from "./GuideProse";
 
-// Keep long-line scrollbars visible so the excerpt does not appear cut off.
+// Long lines scroll inside the excerpt. The renderer only shows its scrollbar on hover, which
+// reads as code cut off at the edge, so the excerpt keeps it visible.
 const EXCERPT_UNSAFE_CSS = `${DIFF_VIEW_UNSAFE_CSS}
 [data-code]::-webkit-scrollbar-thumb {
   background-color: var(--diffs-bg-context);
@@ -77,7 +78,6 @@ interface ExcerptDraft {
   readonly position: PullRequestReviewPosition;
 }
 
-/** Preserve real file line numbers so excerpt expansion can load surrounding file content. */
 export function GuideExcerpt({
   excerpt,
   file,
@@ -115,8 +115,9 @@ export function GuideExcerpt({
     return { fileDiff, rows: shown, shown: shown.length, total: rows.length, drawn };
   }, [excerpt, file]);
 
-  // The excerpt needs a synthetic old side matching surrounding new content;
-  // cross-hunk slices have no consistent context to expand into.
+  // The excerpt expands against an old side of its own: the file's real old side differs from
+  // the new one wherever another hunk changed it, and the renderer needs the two to agree around
+  // the lines it shows. A slice across hunks has nothing consistent to expand into.
   const sliceRows = slice?.rows ?? null;
   const loadExcerptFiles = useMemo<FileDiffContentsLoader | null>(() => {
     if (sliceRows === null || sliceRows.some((row) => row.hunk !== sliceRows[0]?.hunk)) {
@@ -137,7 +138,6 @@ export function GuideExcerpt({
     };
   }, [excerpt.end, excerpt.side, excerpt.start, loadDiffFiles, sliceRows]);
 
-  // Notes, queued comments and the draft share one annotation per line, as in the Code tab.
   const annotations = useMemo(() => {
     const groups = new Map<string, DiffLineAnnotation<ExcerptAnnotation>>();
     const at = (side: "additions" | "deletions", line: number) => {
@@ -184,7 +184,8 @@ export function GuideExcerpt({
     return [...groups.values()];
   }, [commenting?.pending, draft, excerpt.path, excerpt.side, notes, slice]);
 
-  // Build positions from the whole file diff so excerpts and Code comments anchor identically.
+  // Positions and the agent's copy of the lines come from the whole file's diff, so a comment
+  // lands where the Code tab would put it rather than on the excerpt's cut-down patch.
   const beginComment = useCallback(
     (range: SelectedLineRange | null) => {
       if (range === null || file === null) return;

@@ -6,9 +6,7 @@ import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import packageJson from "./package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
 
-// Bundle JS: NSIS install time tracks file count (13,875 loose dependency files for 20 native binaries).
-// External dependencies must live outside asar for WSL.
-// Exemptions are defined in scripts/lib/cli-external-packages.ts.
+// NSIS install time tracks file count, not bytes.
 import {
   isExternalCliDependency,
   shouldBundleCliDependency,
@@ -21,11 +19,14 @@ const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(packageJson.version
   ? "nightly"
   : "latest";
 
-// SEA builds need a single chunk (even sourcemaps count) and host Node 25.7+ for --build-sea.
-// Keep this a separate mode from the default build.
+// `build:exe` wraps the same bundle in a Node single-executable. tsdown's exe
+// step refuses multi-chunk output and counts the sourcemap as a chunk, and the
+// executable needs a host Node that supports `--build-sea` (25.7+), so this is
+// a separate mode rather than a second entry in the default build.
 const packExecutable = process.env.T3CODE_PACK_EXE === "1";
-// Pin the embedded runtime across release archives; T3CODE_PACK_EXE_TARGET names the Node platform/arch.
-// Cross-building is safe with code caching disabled.
+// The Node inside the executable is pinned here rather than taken from the
+// build host, so every archive of a release embeds the same runtime no matter
+// which Node happens to run the build.
 const SEA_NODE_VERSION = "26.8.2";
 const SEA_TARGETS = {
   "darwin-arm64": { platform: "darwin", arch: "arm64" },
@@ -75,15 +76,19 @@ export default mergeConfig(
               fileName: "t3",
               outDir: "dist-exe",
               ...(packExecutableTargets ? { targets: packExecutableTargets } : {}),
-              // SEA code caching disables dynamic import and is platform-bound.
-              // Leave it off for server module loading and cross-builds.
+              // Node's SEA docs: `import()` does not work when useCodeCache is
+              // true, and the server reaches several modules that way. The
+              // cache is also platform-bound, so leaving it off keeps the
+              // build correct on any host.
               seaConfig: { useCodeCache: false },
             },
           }
         : {}),
       deps: {
-        // alwaysBundle=false leaves transitive dependencies eligible for bundling.
-        // neverBundle must exclude native loaders explicitly to preserve native acceleration.
+        // `neverBundle` forces the native packages out: returning false from
+        // `alwaysBundle` only means "no opinion", so a transitive dependency
+        // would still be bundled — which silently inlined native loaders such
+        // as node-gyp-build, losing native acceleration.
         alwaysBundle: shouldBundleCliDependency,
         neverBundle: (id: string) => isExternalCliDependency(id),
         onlyBundle: false,
@@ -118,7 +123,8 @@ export default mergeConfig(
       sequence: { sequencer: WeightedShardSequencer },
       // Appended to the root setup, which mergeConfig concatenates.
       setupFiles: ["./src/testUtils/gitConfig.setup.ts"],
-      // Combined sqlite/git/orchestration tests can exceed the default budget on loaded CI hosts.
+      // Server integration tests exercise sqlite, git, and orchestration together.
+      // Under package-wide runs they can exceed the default budget on loaded CI hosts.
       hookTimeout: 120_000,
       testTimeout: 120_000,
     },

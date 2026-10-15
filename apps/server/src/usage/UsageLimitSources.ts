@@ -48,7 +48,7 @@ function sourceLabel(id: string, config: UsageLimitSourceConfig): string {
   }
 }
 
-/** @public */
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const api = yield* makeCliproxyApi;
   const settingsService = yield* Settings.ServerSettingsService;
@@ -84,7 +84,9 @@ export const make = Effect.gen(function* () {
       if (changed) yield* PubSub.publish(changes, next);
     });
 
-  // Serialize refreshes so a slow read cannot resurrect a source removed by a settings change.
+  // One refresh at a time: a slow hub read started before a settings change
+  // must not publish after the change's own refresh and resurrect a removed
+  // source. Callers queue behind the in-flight run and see current settings.
   const refreshLock = yield* Semaphore.make(1);
   const refresh = Effect.gen(function* () {
     const settings = yield* settingsService.getSettings.pipe(

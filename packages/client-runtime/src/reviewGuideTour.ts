@@ -5,7 +5,6 @@ export function stepTourPosition(current: number, delta: 1 | -1, stopCount: numb
   return Math.max(Math.min(current + delta, stopCount - 1), 0);
 }
 
-/** The stop's files in reading order: the excerpted ones first, then the rest it owns. */
 export function stopFilePaths(stop: PullRequestReviewGuideStop): ReadonlyArray<string> {
   return [
     ...new Set([
@@ -21,18 +20,14 @@ export function stopSubline(stop: PullRequestReviewGuideStop): string {
   return count === 1 ? "1 file" : `${count} files`;
 }
 
-/** A note's marker: A, B, C… in the order the guide lists them, numbers past Z. */
 function noteMarker(index: number): string {
   return index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
 }
 
 export interface DiffRow {
   readonly kind: "context" | "addition" | "deletion";
-  /** Line number on the old side, null for an added line. */
   readonly oldLine: number | null;
-  /** Line number on the new side, null for a removed line. */
   readonly newLine: number | null;
-  /** The next line number on each side when this row is reached, for hunk headers. */
   readonly oldAt: number;
   readonly newAt: number;
   readonly text: string;
@@ -91,7 +86,11 @@ export function fileDiffRows(file: FileDiffMetadata): ReadonlyArray<DiffRow> {
   return rows;
 }
 
-/** Includes both halves of replacements at excerpt boundaries so the excerpt reads as a change. */
+/**
+ * Its range is in one side's line numbers, so the other side's half of a replacement at either
+ * edge comes along: an excerpt starting on an added line also shows the lines it replaced, which
+ * is what makes it read as a change rather than as new code.
+ */
 export function excerptRows(
   rows: ReadonlyArray<DiffRow>,
   excerpt: Pick<PullRequestReviewGuideExcerpt, "side" | "start" | "end">,
@@ -124,7 +123,6 @@ export function excerptRows(
 
 const ROW_PREFIX = { context: " ", addition: "+", deletion: "-" } as const;
 
-/** Produces a patch with real line numbers for the shared diff renderer. */
 export function rowsToPatch(
   path: string,
   previousPath: string,
@@ -154,8 +152,13 @@ export function rowsToPatch(
   return `${lines.join("\n")}\n`;
 }
 
-/** Rebuilds an old side agreeing with the new file outside this excerpt so expansion stays coherent.
- * Null for excerpts spanning hunks. */
+/**
+ * The old side an excerpt expands against: the new file with only the excerpt's lines put back
+ * as they were. The renderer fills the code around a hunk from both files and needs them to
+ * agree outside it, which the real old file does not wherever another hunk changed lines. Only
+ * the lines the reader can expand into are read, and those are the new file's, so the code
+ * around the excerpt shows as it reads after the change. Null when the excerpt spans hunks.
+ */
 export function excerptExpansionOldContents(
   newContents: string,
   rows: ReadonlyArray<DiffRow>,
@@ -184,7 +187,9 @@ export interface LetteredNote<Note> {
   readonly note: Note;
 }
 
-/** Notes outside every excerpt retain their letter but have no marked line. */
+/**
+ * A note outside every excerpt keeps its letter in the list; it just has no line to mark.
+ */
 export function letterStopNotes(stop: PullRequestReviewGuideStop) {
   const lettered = stop.notes.map((note, index) => ({ marker: noteMarker(index), note }));
   const byExcerpt = stop.excerpts.map((excerpt) => {

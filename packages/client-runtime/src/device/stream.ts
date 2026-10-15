@@ -2,11 +2,15 @@
 /* oxlint-disable unicorn/prefer-add-event-listener -- Each client owns its sockets and their handlers. */
 
 /**
- * Hub protocols: iOS AVCC HTTP envelopes are u32be length, u8 tag, payload
- * (1 avcC, 2 keyframe, 3 delta, 4 JPEG seed); HID uses [tag][json] on helper/ws.
- * Android ws messages carry H.264 with a 16-byte SEMU header (magic, version,
- * key flag, pts) and accept JSON gestures upstream.
- * Remote plain-HTTP origins lack WebCodecs; use MJPEG when unavailable and stop hidden viewers to avoid idle GPU work.
+ * - iOS (serve-sim): video is an HTTP `stream.avcc` body of length-prefixed
+ *   envelopes (`u32be length, u8 tag, payload`; tag 1 avcC description,
+ *   2 keyframe, 3 delta, 4 JPEG seed) decoded with WebCodecs; input goes over
+ *   `helper/ws?device=<udid>` as `[tag][json]` packets. When WebCodecs is
+ *   unavailable (plain-http remote origins) the MJPEG endpoint is used as an
+ *   `<img>` source instead.
+ * - Android (serve-emu): one WebSocket at `ws?device=<serial>&frame-meta=1`
+ *   carries H.264 access units prefixed with a 16-byte "SEMU" header
+ *   (magic, version, key flag, pts) and accepts JSON gestures upstream.
  */
 import {
   createDuoControl,
@@ -80,9 +84,12 @@ export interface DeviceStreamEvents {
   readonly onScreen: (screen: DeviceScreenSize) => void;
   /** The proxy rejected the credential; the owner should refresh access and reconnect. */
   readonly onUnauthorized: () => void;
-  /** Show an img and attach it with setMjpegImage when WebCodecs or the H.264 profile is unsupported. */
+  /**
+   * H.264 cannot be decoded here (no WebCodecs, or the simulator's profile is
+   * unsupported); the owner should show an `<img>` instead of the canvas
+   * and attach it with `setMjpegImage` so the client can observe real frames.
+   */
   readonly onMjpegFallback: (url: string) => void;
-  /** Whether touches and keys can currently reach the device. */
   readonly onInputConnected: (connected: boolean, detail?: string) => void;
 }
 
@@ -108,12 +115,10 @@ const SEMU_HEADER_BYTES = 16;
 const SEMU_FLAG_KEY = 1;
 const SOFT_DECODE_QUEUE = 8;
 
-// serve-sim binary WS message tags (browser -> helper).
 const IOS_MSG_TOUCH = 0x03;
 const IOS_MSG_BUTTON = 0x04;
 const IOS_MSG_KEY = 0x06;
 const IOS_MSG_ORIENTATION = 0x07;
-// helper -> browser.
 const IOS_TAG_SCREEN_CONFIG = 0x82;
 const IOS_TAG_INPUT_ADMITTED = 0x83;
 
@@ -170,7 +175,6 @@ const isVideoSessionMessage = (text: string) => {
   }
 };
 
-/** Walk an Annex-B access unit for its keyframe flag and SPS bytes. */
 export function scanAccessUnit(buf: Uint8Array): { isKey: boolean; sps: Uint8Array | null } {
   let isKey = false;
   let sps: Uint8Array | null = null;
@@ -206,7 +210,6 @@ const AVCC_TAGS: Record<number, AvccChunk["type"] | undefined> = {
   4: "seed",
 };
 
-/** Turns a fragmented AVCC byte stream into complete envelopes. */
 export class AvccDemuxer {
   private buffer = new Uint8Array(64 * 1024);
   private length = 0;
@@ -251,7 +254,9 @@ export class AvccDemuxer {
 export interface DeviceStreamClient {
   readonly start: () => void;
   readonly stop: () => void;
-  /** stop() detaches the MJPEG image; attach a fresh one on each restart. */
+  /**
+   * `stop()` detaches it; attach a fresh image for each restart.
+   */
   readonly setMjpegImage: (image: HTMLImageElement | null) => void;
   /** Normalized 0..1 coordinates in the displayed frame. */
   readonly sendTouch: (phase: "begin" | "move" | "end", x: number, y: number) => void;
@@ -729,7 +734,11 @@ export function createDeviceStreamClient(
     }
   };
 
-  // AVCC does not reliably start serve-sim capture, which HID/config need; one aborted MJPEG request does.
+  /**
+   * serve-sim's helper only accepts HID and pushes its screen config once
+   * screen capture is running, and the AVCC stream does not reliably start
+   * it. Touching the MJPEG endpoint does; one aborted request is enough.
+   */
   const primeIosHelper = async (session: number) => {
     const controller = new AbortController();
     primeController = controller;
@@ -753,7 +762,9 @@ export function createDeviceStreamClient(
 
   const startDuoVideo = (panels: DuoPanelSinks) => {
     for (const panel of panelClients) panel.stop();
-    // Fixed-panel feeds can retain shutdown frames during physical handoff; use the elected active feed.
+    // Physical handoff elects a native surface. Fixed-panel encoders can keep
+    // an inactive shutdown frame after election, so this build uses one active
+    // feed instead of decoding a third stream alongside the two fixed feeds.
     const ids = screen?.supportsPhysicalOrientation ? ([null] as const) : ([1, 3] as const);
     panelClients = ids.map((id) => {
       const output = id === 1 ? panels.cover : panels.inner;
@@ -826,7 +837,9 @@ export function createDeviceStreamClient(
               rotationCursor = screen.orientation;
             panelSinks?.onScreen?.(screen);
             events.onScreen(screen);
-            // Reopen video after surface election for its seed and codec; preserve HID and the viewer.
+            // A surface election can leave an existing decoder on the former
+            // encoder description. Reopen only video to acquire the elected
+            // surface's seed and codec configuration; HID and the viewer stay.
             if (
               panelSinks &&
               screen.supportsPhysicalOrientation &&

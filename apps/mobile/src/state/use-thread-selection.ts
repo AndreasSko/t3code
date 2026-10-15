@@ -58,7 +58,11 @@ function latestUserMessageAt(
   return null;
 }
 
-/** Bridge detail arrival before the shell list materializes a newly created thread. */
+/**
+ * Builds an optimistic thread shell from the detail projection for the window
+ * where the shell list has not materialized the thread yet (e.g. a thread that
+ * was just created from this device).
+ */
 function threadDetailToShell(
   environmentId: EnvironmentId,
   projection: OrchestrationV2ThreadProjection,
@@ -140,8 +144,6 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
       : scopedThreadKey(selectedThreadRef.environmentId, selectedThreadRef.threadId);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const creationOutcome = useAtomValue(pendingThreadCreationOutcomesAtom);
-  // A creation the outbox still holds or just delivered: the thread screen
-  // opened before the server made the thread, so present a stand-in shell.
   const pendingCreation = useMemo<PendingThreadCreation | null>(() => {
     if (selectedThreadKey === null) {
       return null;

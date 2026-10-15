@@ -1,7 +1,3 @@
-/**
- * Providers read only their own manifest entry through this service,
- * without coupling to fetching or storage; reads never wait for the network.
- */
 import type {
   ModelCapabilities,
   ProviderDriverKind,
@@ -35,13 +31,17 @@ export interface ProviderCatalog {
 export class ModelCatalog extends Context.Service<
   ModelCatalog,
   {
-    /** Reads memory only; undefined means the driver has no manifest entry. */
+    /**
+     * The driver's catalog from the manifest in memory (disk cache or bundle),
+     * or `undefined` when the manifest has no entry for it. Never fetches.
+     */
     readonly current: (
       driverKind: ProviderDriverKind,
     ) => Effect.Effect<ProviderCatalog | undefined>;
-    /** The same catalog from the bundled manifest; for fallbacks when remote data is invalid. */
     readonly bundled: (driverKind: ProviderDriverKind) => ProviderCatalog | undefined;
-    /** TTL-gated refresh must neither fail nor block provider checks. */
+    /**
+     * Starts a TTL-gated remote refresh in the background.
+     */
     readonly refreshInBackground: Effect.Effect<void>;
   }
 >()("@t3tools/provider-core/server/ModelCatalog") {}
@@ -73,7 +73,9 @@ export interface CatalogMatching {
 const familyOf = (matching: CatalogMatching | undefined, slug: string) =>
   matching?.family?.(slug) ?? slug;
 
-/** Classify built-ins only; user-defined custom models keep their classification. */
+/**
+ * Custom models are user-defined and never reclassified.
+ */
 export function classifyCatalogModels(
   models: ReadonlyArray<ServerProviderModel>,
   catalog: ProviderCatalog | undefined,
@@ -92,8 +94,8 @@ export function classifyCatalogModels(
 }
 
 /**
- * Move isDefault to the catalog choice and retarget aliases that followed
- * the prior default so provider-default resolution stays consistent.
+ * Aliases that pointed at the old default move with the flag so the shared "provider default"
+ * alias keeps resolving.
  */
 export function applyCatalogDefault(
   models: ReadonlyArray<ServerProviderModel>,
@@ -128,8 +130,8 @@ export function applyCatalogDefault(
 }
 
 /**
- * Apply classification/defaults and clear stale updateRequiredModels;
- * drivers add currently unavailable models themselves.
+ * Drivers that announce models a newer CLI unlocks add `updateRequiredModels` themselves; this
+ * clears a stale list.
  */
 export function applyModelCatalog(
   draft: ServerProviderDraft,

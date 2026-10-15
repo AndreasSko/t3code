@@ -10,7 +10,6 @@ import type {
 type NotificationOutcome = OrchestrationV2Notification["outcome"];
 
 export type BackgroundWork = {
-  /** Subagent title, command, or monitor description. */
   readonly label?: string | undefined;
 } & (
   | { readonly kind: "subagent"; readonly childThreadId?: ThreadId | undefined }
@@ -112,7 +111,6 @@ function reportsSource(
   if (rest.some((report) => report.kind !== first.kind)) return { kind: "background_task" };
   switch (first.kind) {
     case "subagent":
-      // One subagent is the thing the row opens; several open nothing.
       return rest.length === 0 && first.childThreadId !== undefined
         ? { kind: "subagent", childThreadId: first.childThreadId }
         : { kind: "subagent" };
@@ -123,7 +121,6 @@ function reportsSource(
   }
 }
 
-/** Null when reports are unknown so callers retain their generic notification. */
 export function backgroundWorkNotification(
   reports: readonly [BackgroundWorkReport, ...ReadonlyArray<BackgroundWorkReport>],
 ): OrchestrationV2Notification;

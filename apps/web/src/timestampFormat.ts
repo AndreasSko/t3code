@@ -20,7 +20,10 @@ function getTimestampFormatOptions(
   };
 }
 
-/** Uses a host locale only when supplied; otherwise leaves formatting to the runtime default. */
+/**
+ * A host reports a locale only when it knows better than the runtime does —
+ * see `getSystemLocale` on the desktop bridge for why desktop does.
+ */
 export function resolveTimestampLocale(
   systemLocale: string | null | undefined,
 ): string | undefined {
@@ -28,7 +31,10 @@ export function resolveTimestampLocale(
   if (!tag) return undefined;
 
   try {
-    // Reject malformed tags without breaking every timestamp; unknown well-formed tags use ICU fallback.
+    // Every timestamp in the UI runs through this formatter, so a tag the host
+    // could not normalize falls back rather than throwing. Throws on a
+    // structurally invalid tag; a well-formed tag ICU has no data for resolves
+    // here and is left to ICU's own fallback.
     Intl.DateTimeFormat.supportedLocalesOf([tag]);
     return tag;
   } catch {
@@ -51,7 +57,11 @@ type LocaleWithWeekInfo = Intl.Locale & {
   getWeekInfo?: () => { readonly firstDay: number };
 };
 
-/** Date#getDay weekday (Sunday = 0); undefined means the caller should keep its default. */
+/**
+ * First weekday of a locale as a `Date#getDay` index (0 is Sunday), or
+ * `undefined` when the runtime has no week data, so callers keep their own
+ * default. Without a locale it reads the runtime's.
+ */
 export function resolveWeekStartsOn(locale: string | undefined): WeekdayIndex | undefined {
   try {
     const resolved: LocaleWithWeekInfo = new Intl.Locale(
@@ -98,7 +108,9 @@ export function formatTimestamp(isoDate: string, timestampFormat: TimestampForma
   return getTimestampFormatter(timestampFormat, true).format(date);
 }
 
-// The ordinal suffix and day-first label are English, so the month must use the same locale.
+// Deliberately not the host locale: the tooltip's ordinal suffix and
+// day-before-month order below are English, so a localized month alone would
+// read "4th Juni 2026".
 const monthNameFormatter = new Intl.DateTimeFormat("en-US", { month: "long" });
 
 function ordinalSuffix(day: number): string {
@@ -116,7 +128,6 @@ function ordinalSuffix(day: number): string {
   }
 }
 
-/** Tooltip label such as `12:04, 4th June`. */
 export function formatChatTimestampTooltip(
   isoDate: string,
   timestampFormat: TimestampFormat,
@@ -146,7 +157,9 @@ const numericDateWithYearFormatter = new Intl.DateTimeFormat(timestampLocale, {
   year: "numeric",
 });
 
-/** Adds yesterday/date/year labels at local calendar boundaries, not 24-hour windows. */
+/**
+ * Boundaries are local calendar days, not 24-hour windows.
+ */
 export function formatDayAwareTimestamp(
   isoDate: string,
   timestampFormat: TimestampFormat,
@@ -169,7 +182,6 @@ export function formatDayAwareTimestamp(
   return `${dateFormatter.format(date)} ${time}`;
 }
 
-/** Upcoming label: time today, `tomorrow at` tomorrow, otherwise a date and time. */
 export function formatUpcomingTimestamp(
   isoDate: string,
   timestampFormat: TimestampFormat,
@@ -192,7 +204,6 @@ export function formatUpcomingTimestamp(
   return `${dateFormatter.format(date)} ${time}`;
 }
 
-/** Separates the value from its suffix so callers can style the numeric portion independently. */
 type RelativeTimeParts = { value: string; suffix: string | null };
 export type RelativeTimeState =
   | { status: "missing" }
@@ -227,7 +238,6 @@ export function getRelativeTimeState(isoDate: string | null): RelativeTimeState 
   return { status: "relative", ...relative };
 }
 
-/** Elapsed duration without an "ago" suffix, for labels such as "Connected for 3m". */
 export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date.now()): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
@@ -248,7 +258,6 @@ export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date
   return `${days}d`;
 }
 
-/** Future counterpart of {@link formatRelativeTime}. */
 export function formatRelativeTimeUntil(isoDate: string): RelativeTimeParts | null {
   const date = parseTimestampDate(isoDate);
   if (!date) return null;
@@ -271,7 +280,9 @@ export function formatRelativeTimeUntilLabel(isoDate: string): string {
   return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
 }
 
-/** Expiry countdown; pass `nowMs` when a parent tick drives re-renders. */
+/**
+ * Pass `nowMs` when a parent tick drives re-renders so the diff matches that snapshot.
+ */
 export function formatExpiresInLabel(isoDate: string, nowMs: number = Date.now()): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";

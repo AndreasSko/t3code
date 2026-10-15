@@ -33,8 +33,6 @@ export function useThreadHeaderOptions(props: {
       ...(!usesDuoHeader
         ? [
             {
-              // Match Mail's split-view detail toolbar: the first detail action sits
-              // inside the content pane, not flush against the sidebar divider.
               spacing: 18,
               type: "spacing" as const,
             },
@@ -155,7 +153,6 @@ export function useThreadHeaderOptions(props: {
       : canGoBack
         ? undefined
         : () => compactHomeHeaderItems,
-    // Search stays in the sidebar, leaving the split header's center available.
     unstable_headerRightItems: () =>
       usesDuoHeader
         ? duoRightHeaderItems
@@ -169,7 +166,10 @@ export function useThreadHeaderOptions(props: {
   const { environmentId, threadId, gitStatus } = props.gitControls;
   return {
     options,
-    // Native factories re-read only when this version changes; include hidden callback state as well as items.
+    // Header item factories are stabilized, so the native header only re-reads them when
+    // this version changes. Keying on the items keeps the Git menu status live; the menu
+    // callbacks also read state the items do not display (a "Push" item runs `push` or
+    // `commit_push` depending on the default ref), so that state is keyed too.
     optionsVersion: [
       splitLeftHeaderItems,
       threadCenterHeaderItems,

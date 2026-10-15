@@ -3,8 +3,9 @@ import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils";
 
 /**
- * CSS has no middle ellipsis; split head and tail without measuring so long virtualized lists stay cheap.
- * Both halves remain real text for selection, copying, and screen readers.
+ * No measuring and no observers, so it costs the same as `truncate` in a long list and
+ * works inside `content-visibility` skipping. Both halves are real text: selection and copy
+ * give the whole string, and a screen reader reads it through.
  */
 export function MiddleTruncate({
   value,
@@ -17,7 +18,6 @@ export function MiddleTruncate({
   value: string;
   /** Characters kept at the end. Defaults to the last path segment, capped, or 10. */
   tail?: number;
-  /** The full value on hover. Off where a tooltip already carries it. */
   showTitle?: boolean;
   /** Align capital letters with adjacent icons while preserving accents and descenders. */
   variant?: "default" | "cap-aligned";
@@ -49,10 +49,6 @@ export function MiddleTruncate({
 const DEFAULT_TAIL = 10;
 const MAX_SEGMENT_TAIL = 16;
 
-/**
- * Keep a short last path segment, otherwise a fixed tail; skip splitting when too little head would remain
- * before the ellipsis.
- */
 export function splitForMiddleTruncate(
   value: string,
   tail?: number,

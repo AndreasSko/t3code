@@ -22,9 +22,15 @@ import { TrimmedNonEmptyString } from "@t3tools/contracts";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
-/** Accept new enum strings without failing the whole payload. */
+/**
+ * GitLab's REST enums are decoded as plain strings and normalized here: a GitLab release that
+ * adds a pipeline status or a merge status must not fail the whole payload.
+ */
 const RawUserSchema = Schema.Struct({
-  /** Carry numeric reviewer ids because GitLab writes accept no usernames. */
+  /**
+   * GitLab writes a merge request's reviewers as numeric ids and takes no usernames there, so the
+   * id is carried alongside the handle rather than looked up again when a review is asked for.
+   */
   id: Schema.optional(Schema.Int),
   username: Schema.String,
   name: Schema.optional(Schema.NullOr(Schema.String)),
@@ -60,17 +66,29 @@ const RawMergeRequestSchema = Schema.Struct({
   // A string, and "1000+" past GitLab's counting limit, so it is parsed rather than decoded.
   changes_count: Schema.optional(Schema.NullOr(Schema.String)),
   head_pipeline: Schema.optional(Schema.NullOr(RawPipelineSchema)),
-  /** Single-MR can_merge includes role, approvals, and protected-branch rules that project access alone cannot express. */
+  /**
+   * GitLab answers `can_merge` for this viewer against this merge request, so it already accounts
+   * for the role, the approval rules and a protected target branch — none of which a project's
+   * access level on its own would tell apart.
+   */
   user: Schema.optional(
     Schema.NullOr(Schema.Struct({ can_merge: Schema.optional(Schema.Boolean) })),
   ),
-  /** Auto-merge is enabled if either supported field says so, across GitLab versions. */
+  /**
+   * `merge_when_pipeline_succeeds` is the field every version answers with; newer ones also
+   * carry `auto_merge_enabled`, which is the same fact under the name GitLab settled on, so
+   * either one saying yes is a yes.
+   */
   merge_when_pipeline_succeeds: Schema.optional(Schema.NullOr(Schema.Boolean)),
   auto_merge_enabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
   /** The merge request's stored squash choice, including project-policy overrides. */
   squash_on_merge: Schema.optional(Schema.NullOr(Schema.Boolean)),
   squash: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  /** GitLab only counts divergence on single-MR reads with include_diverged_commits_count. */
+  /**
+   * It costs a walk of the two branches, so GitLab withholds it unless
+   * `include_diverged_commits_count` asks for it, and answers it only for a single merge
+   * request — a list never carries it, however it is asked for.
+   */
   diverged_commits_count: Schema.optional(Schema.NullOr(Schema.Int)),
 });
 
@@ -92,7 +110,10 @@ const RawNoteSchema = Schema.Struct({
   ),
 });
 
-/** A discussion is resolved only after every resolvable note is resolved. */
+/**
+ * `resolved` lives on the note rather than on the discussion: GitLab calls a
+ * discussion resolved once every resolvable note in it is.
+ */
 const RawDiscussionNoteSchema = Schema.Struct({
   id: Schema.Int,
   body: Schema.optional(Schema.NullOr(Schema.String)),
@@ -160,7 +181,6 @@ const RawDiffSchema = Schema.Struct({
   diff: Schema.optional(Schema.NullOr(Schema.String)),
   /** GitLab omits the hunks for a file it considers too large to inline. */
   too_large: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  /** And for one it collapsed, which withholds them the same way. */
   collapsed: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 
@@ -183,7 +203,10 @@ export interface GitLabMergeRequestListItem {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
   readonly mergeability: PullRequestMergeability;
-  /** GitLab omits line totals; Code counts them from its existing patch instead. */
+  /**
+   * GitLab reports neither added nor removed lines on a merge request, so both stay zero and
+   * the surface omits the stat. The Code tab counts them from the patch it already fetched.
+   */
   readonly additions: number;
   readonly deletions: number;
   readonly createdAt: string;
@@ -199,14 +222,15 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   readonly closedAt: string | null;
   readonly reviewers: ReadonlyArray<PullRequestActor>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
-  /** False only where GitLab said so; an answer without the field leaves merging permitted. */
   readonly viewerCanMerge: boolean;
   readonly reviewerIds: ReadonlyArray<number>;
-  /** Absent where GitLab named neither auto-merge field, which is not the same as off. */
   readonly autoMergeEnabled?: boolean;
   /** GitLab only exposes the stored strategy separately when that strategy is squash. */
   readonly autoMergeMethod?: PullRequestMergeMethod;
-  /** Unknown divergence must not imply the branch is current. */
+  /**
+   * Absent where GitLab did not count, which is not the same as a branch that has nothing behind
+   * it: an install too old to answer must not be read as saying the branch is current.
+   */
   readonly divergedCommits?: number;
   readonly headSha?: string;
 }
@@ -259,7 +283,6 @@ function toLabels(raw: ReadonlyArray<string> | null | undefined): ReadonlyArray<
   });
 }
 
-/** Parse the lower bound of values such as "1000+" rather than losing GitLab's partial count. */
 function toChangedFiles(value: string | null | undefined): number {
   const parsed = Number.parseInt(value?.trim() ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -285,7 +308,10 @@ function toPipelineStatus(value: string | null | undefined): PullRequestCheckSta
   }
 }
 
-/** Report the pipeline as one check; GitLab's merge-request response has no per-job list. */
+/**
+ * GitLab has no per-job check list on a merge request, so its pipeline is reported as the one
+ * check.
+ */
 function toChecks(
   raw: Schema.Schema.Type<typeof RawMergeRequestSchema>,
 ): ReadonlyArray<PullRequestCheck> {
@@ -381,7 +407,6 @@ export interface GitLabProjectUsers {
 export interface GitLabMergeRequestListBatch {
   readonly items: ReadonlyArray<GitLabMergeRequestListItem>;
   readonly rawIndexes: ReadonlyArray<number>;
-  /** Rows GitLab returned, counted before decoding, so a skipped row cannot hide a next page. */
   readonly rawCount: number;
 }
 
@@ -422,7 +447,12 @@ export function decodeViewerJson(raw: string): Result.Result<string | null, Deco
     : Result.fail(decoded.failure);
 }
 
-/** Project users include inherited group members; requested state is joined from the merge request. */
+/**
+ * The people with access to the project, which `GET /projects/:id/users` answers with — the same
+ * list GitLab's own reviewer field is filled from, including the members a group above the project
+ * lends it. Nobody is marked requested here: who has been asked lives on the merge request, and
+ * only the caller holds both.
+ */
 export function decodeProjectUsersJson(
   raw: string,
 ): Result.Result<GitLabProjectUsers, DecodeFailure> {
@@ -446,7 +476,12 @@ export function decodeProjectUsersJson(
   return Result.succeed({ candidates, rawCount: decoded.success.length });
 }
 
-/** Project merge_method selects history policy; squash is separate. Unknown settings offer no strategy. */
+/**
+ * GitLab settles the strategy per project rather than offering all three per merge request:
+ * `merge_method` picks one of merge commit, semi-linear or fast-forward, and squashing is a
+ * separate switch. An unrecognized setting offers nothing rather than offering a strategy the
+ * project forbids.
+ */
 export function decodeProjectMergeCapabilitiesJson(
   raw: string,
 ): Result.Result<PullRequestMergeCapabilities, DecodeFailure> {
@@ -475,11 +510,14 @@ export interface GitLabDiffRefs {
 
 export interface GitLabDiscussions {
   readonly threads: ReadonlyArray<PullRequestReviewThread>;
-  /** Discussions GitLab returned, counted before decoding, so a skipped one still counts. */
   readonly rawCount: number;
 }
 
-/** Keep only positioned discussions; plain notes already appear in the conversation timeline. */
+/**
+ * Positioned discussions only. GitLab returns the merge request's whole conversation here,
+ * including the plain notes the timeline already shows, and only a positioned one belongs
+ * against a line of the diff.
+ */
 export function decodeDiscussionsJson(
   raw: string,
 ): Result.Result<GitLabDiscussions, DecodeFailure> {
@@ -507,7 +545,9 @@ export function decodeDiscussionsJson(
       line: typeof line === "number" && line > 0 ? line : null,
       side,
       isResolved: root.resolved === true,
-      // GitLab has no outdated-line flag; the diff determines whether the thread still has an anchor.
+      // GitLab reports no equivalent of "written against a line that has since moved", so a
+      // thread the diff cannot place is worked out from the diff itself rather than claimed
+      // here.
       isOutdated: false,
       comments: notes.map((note) => ({
         id: String(note.id),
@@ -626,11 +666,13 @@ export interface GitLabMergeRequestPatch {
   readonly patch: string;
   /** At least one file's hunks were withheld by GitLab as too large to inline. */
   readonly truncated: boolean;
-  /** Files GitLab returned, counted before decoding, so the caller can page. */
   readonly rawCount: number;
 }
 
-/** Assemble per-file hunks into unified patches; rawCount lets callers continue despite skipped files. */
+/**
+ * GitLab returns hunks per file with no `diff --git` header, so the unified patch every diff
+ * viewer expects is assembled here.
+ */
 export function decodeMergeRequestDiffsJson(
   raw: string,
 ): Result.Result<GitLabMergeRequestPatch, DecodeFailure> {
@@ -646,7 +688,6 @@ export function decodeMergeRequestDiffsJson(
     const value = file.value;
     const hunks = value.diff ?? "";
     if (hunks.length === 0) {
-      // A file GitLab declined to inline still belongs in the file list, header only.
       truncated = truncated || value.too_large === true || value.collapsed === true;
     }
     const { from, to } = diffHeaderPaths(value);
@@ -692,8 +733,13 @@ export function gitLabAwardName(content: PullRequestReactionContent): string {
   return GITLAB_AWARD_BY_CONTENT[content];
 }
 
-/** Batch merge-request/note awards and currentUser together; REST notes carry neither awards
- * nor whether the viewer is among those who reacted. */
+/**
+ * The REST notes endpoint the conversation comes from carries no award at all, and asking per
+ * note would be a request each.
+ *
+ * `currentUser` rides along because GitLab names who awarded but never says whether that is the
+ * reader — so the comparison is made here rather than paid for with a request of its own.
+ */
 export const AWARD_EMOJI_GRAPHQL_QUERY = `query($fullPath: ID!, $iid: String!, $cursor: String) {
   currentUser { username }
   project(fullPath: $fullPath) {
@@ -769,7 +815,10 @@ const RawAwardEmojiPageSchema = Schema.Struct({
 
 const decodeAwardEmojiPage = decodeJsonResult(RawAwardEmojiPageSchema);
 
-/** Omit the viewer from actors (shown as "You"), while retaining them in count. */
+/**
+ * The viewer's own username is left out of `actors` — the page names them "You" instead, and
+ * leaving it in would name them twice — but `count` still counts them along with everyone else.
+ */
 function toReactions(
   nodes: Schema.Schema.Type<typeof RawAwardEmojiNodesSchema>,
   viewer: string | null,
@@ -780,7 +829,8 @@ function toReactions(
     { count: number; actors: string[]; viewer: boolean }
   >();
   for (const node of nodes?.nodes ?? []) {
-    // Omit unsupported emoji so every displayed reaction has a matching remove control.
+    // An award outside the eight is left out rather than shown under a name the picker has no
+    // way to take back: GitLab accepts any emoji, and the other hosts accept none of them.
     const content = CONTENT_BY_GITLAB_AWARD[trimmed(node?.name)?.toLowerCase() ?? ""];
     if (content === undefined) continue;
     const username = trimmed(node?.user?.username);
@@ -848,7 +898,10 @@ const RawAwardSchema = Schema.Struct({
 
 const decodeAward = Schema.decodeUnknownExit(RawAwardSchema);
 
-/** Find the viewer's award id; GitLab removes awards by id, not emoji. */
+/**
+ * The reader's own award of one name on a subject, which is what taking a reaction back is
+ * addressed by: GitLab deletes an award by its id and has no way to name one by its emoji.
+ */
 export function decodeOwnAwardIdJson(
   raw: string,
   input: { readonly content: PullRequestReactionContent; readonly viewer: string },
@@ -869,7 +922,11 @@ export function decodeOwnAwardIdJson(
   return Result.succeed(null);
 }
 
-/** Request blob ids by path; missing paths mean deleted, and query cost scales with path count. */
+/**
+ * Asked for by path rather than by walking the tree, since GitLab charges this query by how many
+ * paths it is given. A path the revision does not have comes back missing rather than as an error,
+ * which is the answer for a deleted file.
+ */
 export const REPOSITORY_BLOBS_GRAPHQL_QUERY = `query($fullPath: ID!, $ref: String!, $paths: [String!]!) {
   project(fullPath: $fullPath) {
     repository {
@@ -915,8 +972,13 @@ const RawRepositoryBlobsSchema = Schema.Struct({
 
 const decodeRepositoryBlobs = decodeJsonResult(RawRepositoryBlobsSchema);
 
-/** Null means no answer, distinct from an empty map of known deletions.
- * Preserve that difference so inaccessible projects cannot stale all viewed marks. */
+/**
+ * Blob ids by path, or null where GitLab did not answer the query at all (a project the token
+ * cannot see, or a repository with no blobs connection). That case must be told apart from an
+ * empty answer: read as "the revision has none of these files", it would report every cleared
+ * file as changed again. A node missing either half is left out, since the caller treats an
+ * absent path as one the revision does not carry.
+ */
 export function decodeRepositoryBlobsJson(
   raw: string,
 ): Result.Result<ReadonlyMap<string, string> | null, DecodeFailure> {
@@ -928,7 +990,9 @@ export function decodeRepositoryBlobsJson(
   if (nodes === undefined || nodes === null) return Result.succeed(null);
   const blobs = new Map<string, string>();
   for (const node of nodes) {
-    // Preserve legal leading/trailing spaces so returned paths still match requested keys.
+    // Not trimmed, unlike everything else read out of this payload: a leading or trailing space
+    // is a legal part of a file's name, and trimming it would key this map under a name the
+    // caller's asked-for path never matches.
     const path = node?.path;
     const oid = trimmed(node?.oid);
     if (path === undefined || path === null || path.length === 0 || oid === null) continue;

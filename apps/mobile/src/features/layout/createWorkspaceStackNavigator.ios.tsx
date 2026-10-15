@@ -169,8 +169,8 @@ function WorkspaceColumns(
   );
 
   useEffect(() => {
-    // Apply the initial compact column as a native prop before the host attaches;
-    // commands switch columns only for subsequent navigation changes.
+    // The initial column is a native prop, so it is applied before the host
+    // attaches. Commands only handle later navigation changes.
     if (layout.usesSplitView || shownCompactColumn.current === compactColumn) return;
     shownCompactColumn.current = compactColumn;
     hostRef.current?.show(compactColumn);

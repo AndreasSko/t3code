@@ -67,7 +67,9 @@ export function resolveProviderCompatibility(
   );
   if (!policy) return undefined;
   const unprefixed = version?.replace(/^v/, "");
-  // Strip only known Cursor build hashes, Google release prefixes, and Muse revisions; keep prereleases unknown.
+  // Cursor appends a build hash to its date; Google's ACP runtime uses a release prefix;
+  // Muse appends a release revision. Strip only these driver-specific forms, keeping
+  // semver prereleases unknown.
   const stable =
     driver === "cursor"
       ? unprefixed?.replace(/^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/, "$1")
@@ -100,7 +102,6 @@ export function resolveProviderCompatibility(
   };
 }
 
-/** A remote policy replaces its matching bundled policy; omission keeps the bundle. */
 export function applyProviderCompatibility(
   snapshot: ServerProvider,
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,

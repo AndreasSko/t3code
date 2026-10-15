@@ -293,7 +293,6 @@ interface ProviderSettingsFormProps {
   readonly definition: SettingsFormDefinition;
   readonly value: unknown;
   readonly idPrefix: string;
-  /** card stacks labels, dialog uses compact wizard layout, settings uses shared rows. */
   readonly variant: "card" | "dialog" | "settings";
   readonly onChange: (nextConfig: Record<string, unknown> | undefined) => void;
 }

@@ -79,7 +79,6 @@ function ArrangementRow(props: {
   );
 }
 
-/** Native pan recognition wins over list scrolling only inside the handle. */
 function DragHandle(props: {
   title: string;
   disabled: boolean;
@@ -211,7 +210,8 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
         ordered: sections[section],
         allThreads: threads,
         section,
-        // The time-ordered inbox has no reorder slots; preserve its saved arrangement for later.
+        // A time-ordered inbox has no slots, so Active takes no drops while
+        // the Working beta is on. The saved arrangement stays untouched.
         reorderableEnvironmentIds: new Set(
           [...configs].flatMap(([id, config]) =>
             (

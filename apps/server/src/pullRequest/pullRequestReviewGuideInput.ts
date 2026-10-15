@@ -11,7 +11,11 @@ function oneLine(text: string): string {
   return flat.length > SETTLED_REMARK_CHARS ? `${flat.slice(0, SETTLED_REMARK_CHARS)}…` : flat;
 }
 
-/** Include resolved and outdated review threads so the guide does not raise settled remarks again. */
+/**
+ * What review already settled, one line per conversation: resolved threads, and threads whose
+ * line a later push removed. These are the review loop's finished work; the guide is told about
+ * them so it does not raise them again.
+ */
 export function settledReviewSummary(activity: PullRequestActivity): string {
   return activity.reviewThreads
     .filter((thread) => thread.isResolved || thread.isOutdated)

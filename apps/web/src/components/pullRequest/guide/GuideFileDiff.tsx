@@ -12,7 +12,9 @@ import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
 import { DIFF_VIEW_UNSAFE_CSS } from "../../diffs/StyledDiffCodeView";
 
-/** Hide the viewer header because the stop already names this file. */
+/**
+ * The row above it names the file, so the renderer's own header is left off.
+ */
 export function GuideFileDiff({
   file,
   loadDiffFiles,
@@ -21,7 +23,8 @@ export function GuideFileDiff({
   loadDiffFiles: FileDiffContentsLoader;
 }) {
   const { resolvedTheme } = useTheme();
-  // Expansion mutates metadata; clone it so excerpts keep their original patch.
+  // Loading the unchanged lines rewrites the diff it is given; the excerpts read the same file
+  // as a patch, so this view expands a copy of its own.
   const expandable = useMemo(() => cloneFileDiffMetadata(file), [file]);
   const options = useMemo(
     () => ({

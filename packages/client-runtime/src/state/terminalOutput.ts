@@ -62,8 +62,6 @@ interface Utf8Chunk {
   readonly byteLength: number;
 }
 
-// maxBytes must be positive; split only new output without cutting code points.
-// Whole chunks reuse the original string after one encode and avoid a decode.
 function splitStringByUtf8Bytes(data: string, maxBytes: number): ReadonlyArray<Utf8Chunk> {
   if (data.length === 0) return [];
 
@@ -147,7 +145,10 @@ function splitOutputChunks(
   };
 }
 
-// Compaction must preserve positions so cursors within merged chunks still append only unread suffixes.
+/**
+ * Merge adjacent chunks without changing their string positions. A reader can
+ * still append the unread suffix when its cursor falls inside a merged chunk.
+ */
 function compactRetainedChunks(chunks: ReadonlyArray<TerminalOutputChunk>) {
   const compacted: TerminalOutputChunk[] = [];
   for (const chunk of chunks) {

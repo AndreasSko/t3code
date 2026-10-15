@@ -1,5 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - setup-script bootstrap, runs before any Effect runtime exists.
-/** Vite hashes the absolute root, so each worktree needs its own dependency cache to avoid a slow first load. */
+/**
+ * The cache cannot be shared between worktrees: Vite's config hash includes
+ * the absolute project root, so each worktree must warm its own.
+ */
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 

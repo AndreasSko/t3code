@@ -1,7 +1,10 @@
 /**
- * Per-file caching avoids repeated transcript parsing without depending on the reporting timezone.
- * Measured 30-day restart scan: ~3.5s to parse versus ~11ms to reload this cache.
- * Deduplicate within each file so the aggregator can still deduplicate across files.
+ * Transcripts are append-only and a file that has not changed can never yield different usage, so
+ * parsed records are keyed by `(size, mtime)` and reused. Caching *per file* rather than per day is
+ * deliberate. It is timezone independent, so changing the reporting zone does not invalidate
+ * anything, and it keeps cross-file de-duplication exact: cached entries are de-duplicated within
+ * their own file only, and the aggregator still applies the global dedupe pass over the small
+ * surviving key set.
  */
 import type { UsageProviderKind } from "@t3tools/contracts";
 import type {
@@ -16,7 +19,12 @@ import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptRea
 const USAGE_SCAN_CACHE_VERSION = 5 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
-/** Separate versioned files prevent older servers from overwriting saved usage for deleted transcripts. */
+/**
+ * Each cache version writes its own file in the state directory. An older
+ * server sharing that directory cannot read a newer cache and would replace
+ * it, dropping saved usage for deleted transcripts. Separate files keep both.
+ * A v5 server reads the legacy (v4) file once, when its own file is missing.
+ */
 export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v5.json";
 export const LEGACY_SCAN_CACHE_FILE_NAME = "usage-scan-cache.json";
 
@@ -29,14 +37,21 @@ export interface CachedFile {
   readonly provider: UsageProviderKind;
   /** Records from newline-terminated lines, up to `position.resumeOffset`. */
   readonly records: readonly UsageRecord[];
-  /** Separate trailing records because incremental parsing re-reads the unterminated segment. */
+  /**
+   * Records from a trailing segment the writer had not newline-terminated at
+   * parse time. Kept apart from `records` because an incremental parse
+   * re-reads that segment and would otherwise double count it.
+   */
   readonly tailRecords: readonly UsageRecord[];
   readonly position: TranscriptParsePosition;
 }
 
 export type ScanCache = Map<string, CachedFile>;
 
-/** Positional rows and interned strings reduced a 30-day cache from tens of MB to under 6 MB. */
+/**
+ * Positional and interned rather than object-per-record: on a 30-day window that is the difference
+ * between a file measured in tens of megabytes and one under six.
+ */
 type SerializedRecord = readonly [
   timestampMs: number,
   modelIndex: number,
@@ -138,8 +153,9 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
 }
 
 /**
- * Memoizes JSON by immutable entry identity; re-encoding every file cost nearly 1s per large-cache persist.
- * Intern tables only grow, so memoized indexes stay valid until the writer is discarded.
+ * Entries are replaced, never mutated, when their file changes, so an entry's JSON is memoised by
+ * identity. The intern tables only grow, so a memoised entry's indexes stay valid; a pruned entry
+ * can leave an unused string behind until the next process start.
  */
 export function makeScanCacheWriter(): (
   cache: ScanCache,
@@ -172,7 +188,11 @@ function isRecordArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);
 }
 
-/** A corrupt cache should cost a cold scan rather than break usage reporting. */
+/**
+ * Anything malformed yields an empty cache rather than an error: a corrupt cache should cost one
+ * cold scan, never a broken page. Entries of a provider without a transcript format in `formats`
+ * are dropped.
+ */
 export function decodeScanCache(
   document: unknown,
   formats: ReadonlyMap<UsageProviderKind, TranscriptUsageFormat<unknown>>,
@@ -193,13 +213,17 @@ export function decodeScanCache(
   if (!isRecordArray(root.models) || !isRecordArray(root.sessions)) return cache;
   if (typeof root.files !== "object" || root.files === null) return cache;
 
-  // Reject corrupt intern tables before non-string models can reach rate lookup.
+  // The intern tables must be all strings: a numeric entry would pass the
+  // undefined guard below, land in a record's model, and crash the aggregate
+  // at lookupRate. A corrupt table rejects the whole cache.
   if (!root.models.every((value) => typeof value === "string")) return cache;
   if (!root.sessions.every((value) => typeof value === "string")) return cache;
   const models = root.models as readonly string[];
   const sessions = root.sessions as readonly string[];
 
-  // A partially decoded entry would stay a warm hit and permanently lose the rejected rows' usage.
+  // Any corrupt row disqualifies the whole entry. Keeping the survivors
+  // under the original (size, mtime) would read as a valid warm hit and the
+  // file would never be re-parsed, silently losing the dropped rows' usage.
   const decodeRecords = (
     rows: readonly unknown[],
     provider: UsageProviderKind,
@@ -269,7 +293,10 @@ export function decodeScanCache(
     const format = formats.get(entry.p);
     if (format === undefined) continue;
     if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;
-    // Invalid offsets or guard lengths can break every parse and silently drop this file's usage.
+    // Position fields feed byte offsets and a Buffer allocation in the reader,
+    // so anything outside their real ranges must reject the entry: a bogus
+    // guard length would otherwise fail every parse of the file, silently
+    // dropping its usage instead of costing the documented cold re-parse.
     if (
       typeof entry.o !== "number" ||
       !Number.isSafeInteger(entry.o) ||
@@ -284,8 +311,10 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Preserve v4 usage for deleted rollouts, but force live stateful files to reparse for service tiers.
-    // Size -1 cannot match a file; offset zero prevents resuming.
+    // v4 records of stateful formats (Codex) predate service tiers, so they
+    // all priced as standard. Keep them, because the rollout may be gone, but
+    // make a live rollout re-parse whole: no file has size -1, and a zero
+    // position cannot resume.
     const legacy = format.state !== undefined && version < USAGE_SCAN_CACHE_VERSION;
     // A corrupt state disqualifies the entry: resuming with it would attach
     // appended usage to the wrong model or replay fork-copied history.
@@ -342,7 +371,10 @@ export function pruneScanCache(cache: ScanCache, retentionCutoffMs: number): num
   return removed;
 }
 
-/** Share one mutable `seen` set across incremental line and tail batches to deduplicate the whole file. */
+/**
+ * Callers stitching an incremental parse together pass one `seen` set across the line and tail
+ * record batches so the whole file stays deduplicated as a unit; the set is mutated in place.
+ */
 export function dedupeWithinFile(
   records: readonly UsageRecord[],
   seen: Set<string> = new Set(),

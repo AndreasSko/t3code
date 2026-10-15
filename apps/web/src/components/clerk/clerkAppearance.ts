@@ -1,9 +1,14 @@
 import type { ClerkProviderProps } from "@clerk/react";
 
-/** CSS variables propagate theme changes to Clerk portals without remounting. */
+/**
+ * CSS variables make theme changes propagate to portaled sign-in and profile
+ * surfaces without remounting Clerk.
+ */
 export const clerkAppearance = {
   variables: {
-    // Clerk shares primary between links and buttons; use a readable action hue and inverse card surface.
+    // Clerk reuses its primary color for filled buttons and bare links. The
+    // app's update foreground is the palette's action hue cast for readable
+    // text, while the card surface provides the inverse filled-control pair.
     colorPrimary: "var(--update-foreground)",
     colorPrimaryForeground: "var(--card)",
     colorDanger: "var(--error)",

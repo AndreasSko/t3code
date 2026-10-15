@@ -1,4 +1,3 @@
-// Shared with client settings; keep this schema browser-safe.
 import { CustomModelSetting, makeProviderSettingsSchema, TrimmedString } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -9,7 +8,8 @@ export const CursorSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    // CLI-based installs share this settings file, so preserve their unused configuration.
+    // Keep V1's CLI configuration when V2 rewrites the shared settings file.
+    // V2's Cursor SDK does not use these fields.
     binaryPath: Schema.optionalKey(TrimmedString).pipe(
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),

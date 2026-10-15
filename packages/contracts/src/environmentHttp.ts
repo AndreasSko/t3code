@@ -152,7 +152,6 @@ export class EnvironmentAuthInvalidError extends Schema.TaggedError<EnvironmentA
   {
     code: Schema.Literal("auth_invalid"),
     reason: EnvironmentAuthInvalidReason,
-    // Older servers do not send a DPoP failure category.
     dpopFailureReason: Schema.optionalKey(DpopFailureReason),
     traceId: TrimmedNonEmptyString,
   },
@@ -414,14 +413,13 @@ export const EnvironmentCloudLinkStateResult = Schema.Struct({
   cloudUserId: Schema.NullOr(Schema.String),
   relayUrl: Schema.NullOr(Schema.String),
   relayIssuer: Schema.NullOr(Schema.String),
-  // Activity-only links lack a managed tunnel, so the capabilities stay independent.
+  // False for a publish-only link (activity publishing without a relay-managed tunnel), so clients
+  // can present the two capabilities as independent settings.
   managedTunnelActive: Schema.optional(Schema.Boolean),
   publishAgentActivity: Schema.Boolean,
-  // Opt-in relay holding while offline; optional for older servers.
   holdWebhooksWhileOffline: Schema.optional(Schema.Boolean),
-  // The relay rejected this link's credential, usually because the environment
-  // was deregistered from T3 Connect. The link stays stored until it is linked
-  // again. Optional so newer clients tolerate older environment servers.
+  // The relay rejected this link's credential, usually because the environment was deregistered
+  // from T3 Connect. The link stays stored until it is linked again.
   linkRevoked: Schema.optional(Schema.Boolean),
 });
 export type EnvironmentCloudLinkStateResult = typeof EnvironmentCloudLinkStateResult.Type;
@@ -530,7 +528,12 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
-// OAuth authorize returns approval redirects or plain errors, so its response is not schema-decoded.
+/**
+ * The OAuth authorization server outside agents use to sign in to `/mcp`.
+ * `authorize` is where the agent sends the browser: it answers a redirect to
+ * the web app's approval page, or a plain error page for a request that names
+ * an unverified client or redirect, so the response is not a schema.
+ */
 class EnvironmentMcpOAuthHttpApi extends HttpApiGroup.make("mcpOAuth")
   .add(
     HttpApiEndpoint.get("protectedResource", "/.well-known/oauth-protected-resource", {
@@ -581,7 +584,10 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
   threadId: ThreadId,
 });
 
-/** Only compactTurnItems=1 opts in; older servers ignore the query. */
+/**
+ * `compactTurnItems=1` opts into `turnItemsOmitLocalVisible`. Other values are
+ * ignored, and older servers ignore the whole query.
+ */
 const EnvironmentOrchestrationThreadBoundedSnapshotQuery = Schema.Struct({
   compactTurnItems: Schema.optionalKey(Schema.String),
 });
@@ -736,8 +742,11 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
-// Webhook path tokens and optional signatures authenticate requests;
-// validate signatures over exact raw body bytes.
+/**
+ * Public entry point for webhook tasks. Unauthenticated by design: the token
+ * in the path, and an optional body signature, are the credential. The handler
+ * reads the raw body itself so a signature is checked over the exact bytes.
+ */
 const WebhookParams = Schema.Struct({
   hookId: TrimmedNonEmptyString,
   token: TrimmedNonEmptyString,

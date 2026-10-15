@@ -8,12 +8,18 @@ export function isNewTaskDraftKey(draftKey: string): boolean {
   return draftKey.startsWith(NEW_TASK_DRAFT_PREFIX);
 }
 
-/** Outbox recovery and "Edit task" must derive the same key for a rejected creation. */
+/**
+ * The outbox drain writes it and the thread screen's "Edit task" action opens
+ * it, so both sides derive the key here rather than rebuilding the string.
+ */
 export function restoredNewTaskDraftKey(messageId: string): string {
   return newTaskDraftKey(`restored-${messageId}`);
 }
 
-/** UUID draft ids contain no colon; a colon after the prefix identifies an environment/project key. */
+/**
+ * Ids are UUIDs and never contain a colon, so a colon after the prefix marks
+ * the legacy shape.
+ */
 export function parseLegacyNewTaskDraftKey(
   draftKey: string,
 ): { readonly environmentId: string; readonly projectId: string } | null {

@@ -2,7 +2,11 @@ import * as Schema from "effect/Schema";
 
 import { ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 
-// Resolve the app's MCP server from its producing item so it cannot call another server.
+/**
+ * Requests an MCP App makes of its own MCP server, through the environment.
+ * Each names the tool call that produced the app; the environment resolves the
+ * app's server from that item, so an app can only reach the server it came from.
+ */
 const McpAppTarget = {
   threadId: ThreadId,
   itemId: TurnItemId,
@@ -30,7 +34,6 @@ export const McpAppToolInfoInput = Schema.Struct({
 });
 export type McpAppToolInfoInput = typeof McpAppToolInfoInput.Type;
 
-/** Indicates whether an app may call the tool and whether the server declares it read-only. */
 export const McpAppToolInfo = Schema.Struct({
   callable: Schema.Boolean,
   readOnly: Schema.Boolean,
@@ -52,10 +55,15 @@ export const McpAppReadResourceResult = Schema.Struct({
 });
 export type McpAppReadResourceResult = typeof McpAppReadResourceResult.Type;
 
-/** Each ui/update-model-context replaces prior context; absent content clears it. */
+/**
+ * Each update replaces the app's previous one; no content clears it.
+ */
 export const McpAppUpdateModelContextInput = Schema.Struct({
   ...McpAppTarget,
-  /** On-screen conversation receives context, including forks showing the app. */
+  /**
+   * The thread whose next turn gets the context: the one on screen, which is
+   * the app's own thread or a fork that shows it.
+   */
   conversationThreadId: ThreadId,
   content: Schema.optional(Schema.Array(Schema.Unknown)),
   structuredContent: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
@@ -87,8 +95,6 @@ export class McpAppRequestError extends Schema.TaggedError<McpAppRequestError>()
       case "provider-unsupported":
         return "This thread's provider cannot run MCP app requests.";
       case "session-stopped":
-        // A forked thread shows its source's apps, so this names the thread
-        // that made the app rather than the one on screen.
         return "The app's thread is not running. Send a message in the thread that created it to use the app again.";
       case "tool-not-callable":
         return "This app cannot call that tool.";

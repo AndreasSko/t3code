@@ -102,7 +102,6 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 
-/** JS day-of-week (0 = Sunday) rendered Monday-first, matching how people read a week. */
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const WEEKDAY_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
@@ -189,7 +188,11 @@ export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
   return `${days} at ${schedule.timeOfDay}`;
 }
 
-/** formatRelativeTime handles the past; future runs need explicit in-time labels. */
+/**
+ * `formatRelativeTime` only handles the past, and `nextRunAt` is a future
+ * instant — render "in 5m" style labels for upcoming runs instead of a
+ * misleading "just now".
+ */
 export function relativeLabel(value: string | null): string {
   if (!value) return "Not scheduled";
   const diffMs = new Date(value).getTime() - Date.now();
@@ -720,7 +723,6 @@ function WebhookEndpointField({
           size="sm"
           variant="outline"
           type="button"
-          // A bare path is not a URL a sender can call.
           disabled={!copyable}
           onClick={() => copyToClipboard(url, undefined)}
         >
@@ -743,8 +745,10 @@ function WebhookEndpointField({
   );
 }
 
-/** Delivery mode is readable only for this machine's own environment;
- * other environments show no control. */
+/**
+ * The setting is per environment and only readable for this machine's own
+ * environment, so other environments show nothing.
+ */
 function WebhookDeliveryMode({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const cloudLink = usePrimaryCloudLinkState();
   if (cloudLink.target?.environmentId !== environmentId || cloudLink.data === null) return null;
@@ -805,13 +809,15 @@ function ScheduledTaskEditorDialog({
     draft.editingId !== null &&
     tasksQuery.data !== null &&
     !tasksQuery.data.tasks.some((entry) => entry.id === draft.editingId);
-  // Resolve rotated URLs from live tasks; a missing task after loading must not retain its URL.
+  // The live row, so a rotated URL shows up without reopening the dialog.
+  // Once the list has loaded, a missing task is gone; don't keep showing its URL.
   const liveTask = tasksQuery.data
     ? (tasksQuery.data.tasks.find((entry) => entry.id === draft.editingId) ?? null)
     : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
-  // Resolve model enablement for the task project rather than machine-wide defaults.
+  // The task runs in selectedProject, so its model picker should reflect that
+  // project's effective enablement, not just the machine's.
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
@@ -824,6 +830,8 @@ function ScheduledTaskEditorDialog({
     [providers, settings, selectedProject?.id],
   );
 
+  // The real model picker is keyed by a `${instanceId}:${model}` string, which
+  // is exactly how the draft stores its selection.
   const firstInstance = instanceEntries[0];
   const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
   const activeSelection =
@@ -898,7 +906,8 @@ function ScheduledTaskEditorDialog({
       reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
       return;
     }
-    // Preserve provider options while the instance/model selection remains unchanged.
+    // Keep the original selection object (with provider options) when the
+    // picker still points at the same instance+model.
     const modelSelection =
       draft.baseModelSelection !== null &&
       draft.baseModelSelection.instanceId === selection.instanceId &&

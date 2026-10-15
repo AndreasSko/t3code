@@ -4,7 +4,6 @@ import type { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcCommand } from "./runtime.ts";
 
-/** Instantiate with each client's connection runtime for MCP App host requests. */
 export function createMcpAppEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {

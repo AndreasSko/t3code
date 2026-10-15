@@ -22,11 +22,13 @@ const CAPABILITIES: PullRequestCapabilities = {
   actions: [...definition.changeRequestActions],
   // GitLab offers all three, though a project settles on one; `mergeCapabilities` narrows it.
   mergeMethods: ["merge", "squash", "rebase"],
-  // GitLab has no merge-target-in update, so advertise rebase alone.
+  // Rebase alone: GitLab moves a stale branch onto its target by replaying it, and has nothing
+  // that merges the target back in the way GitHub's update button can.
   updateMethods: ["rebase"],
   search: true,
   reactions: true,
-  // GitLab viewed marks live in browser local storage; environment marks let connected clients share them.
+  // GitLab keeps a reader's viewed files in one browser's local storage, where nothing outside
+  // that browser can read or write them.
   viewedFiles: "environment",
   review: {
     inlineComment: true,
@@ -40,7 +42,11 @@ const CAPABILITIES: PullRequestCapabilities = {
   edit: { changeRequest: true, comment: true },
 };
 
-/** GitLab exposes no narrower branch-write permission, so rebase uses can_merge too. */
+/**
+ * The actions `user.can_merge` answers for. Rebasing writes to the source branch rather than to
+ * the target, so it is not literally the same permission — but GitLab reports nothing narrower,
+ * and someone it will not let land this change has no business rewriting its branch either.
+ */
 const MERGE_ACTIONS: ReadonlySet<string> = new Set([
   "merge",
   "update-branch",
@@ -48,8 +54,13 @@ const MERGE_ACTIONS: ReadonlySet<string> = new Set([
   "disable-auto-merge",
 ]);
 
-/** Only can_merge is reported for the viewer. Keep other controls available because authors
- * can act with read access and GitLab does not report that authorship here. */
+/**
+ * GitLab's REST API reports the viewer's role on the project but never whether they opened this
+ * merge request — and its author may close it, reopen it and move it in and out of draft
+ * whatever their role, just as the author of a note may resolve the discussion it started.
+ * Asking for a review is granted for the same reason: GitLab takes a reviewer set from the
+ * author and from anyone with the Developer role, and states neither of those two facts here.
+ */
 export function gitLabViewerPermissions(input: {
   readonly viewerCanMerge: boolean;
 }): PullRequestViewerPermissions {
@@ -108,7 +119,8 @@ export const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.mapError(fail("listChangeRequests")),
-          // GitLab's update-descending order supports continuation on every page.
+          // GitLab is asked for its merge requests by update, newest first, whether or not it is
+          // being carried on from — so every page it answers is one a cursor can continue.
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
@@ -173,7 +185,9 @@ export const make = Effect.gen(function* () {
             ...comment,
             reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
           })),
-          // GitLab has no count; notes include discussion replies, so use the number read.
+          // GitLab reports no count of its own, so the walk's own total is the host's: the
+          // notes endpoint carries every comment on the merge request, including the ones
+          // written under a discussion, and it is read until GitLab runs out.
           commentCount: notes.comments.length,
           commentsTruncated: notes.truncated || discussions.truncated,
           reviewThreads: discussions.threads.map((thread) => ({
@@ -199,7 +213,8 @@ export const make = Effect.gen(function* () {
     getDiffFileContents: (input) =>
       cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
 
-    // Blob ids invalidate marks after pushes, matching GitLab's own local-storage marks.
+    // GitLab's own local-storage marks are keyed on the blob id too, so this stales at the same
+    // moment its web UI would.
     getFileRevisions: (input) =>
       cli.getFileRevisions(input).pipe(
         Effect.mapError(fail("getFileRevisions")),

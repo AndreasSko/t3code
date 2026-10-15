@@ -9,15 +9,14 @@ export const T3ProjectFileFromJson = fromLenientJson(T3ProjectFile);
 
 const decodeT3ProjectFile = Schema.decodeExit(T3ProjectFileFromJson);
 
-/** Treat malformed t3.json as absent when reading optional project defaults. */
 export function parseT3ProjectFile(contents: string): T3ProjectFile | null {
   const decoded = decodeT3ProjectFile(contents);
   return Exit.isSuccess(decoded) ? decoded.value : null;
 }
 
-/** Served at {@link T3_PROJECT_FILE_SCHEMA_URL} for editor `$schema` support (draft 2020-12). */
 export function buildT3ProjectFileJsonSchema(): Record<string, unknown> {
-  // Closed objects let editors flag unknown keys in t3.json.
+  // Closed objects, as before effect rc.113 changed the generator default;
+  // editors then flag unknown keys in t3.json.
   const document = Schema.toJsonSchemaDocument(T3ProjectFile, { onExcessProperty: "error" });
   const jsonSchema: Record<string, unknown> = {
     $schema: "https://json-schema.org/draft/2020-12/schema",

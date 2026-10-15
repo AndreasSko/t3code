@@ -4,7 +4,6 @@ import type { SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-/** Render only while projectGroupsSpanEnvironments is true; local-only groups show no badge. */
 export function ProjectEnvironmentBadge(props: {
   readonly group: Pick<SidebarProjectSnapshot, "memberProjects">;
   readonly primaryEnvironmentId: EnvironmentId | null;

@@ -3,8 +3,11 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-/** Use skipIf(!symlinksSupported) on hosts without symlink privileges,
- * such as Windows without Developer Mode or elevation. Probed once per process. */
+/**
+ * Windows refuses without Developer Mode or elevation, so tests that plant a
+ * symlink to prove containment or escape detection should
+ * `skipIf(!symlinksSupported)` rather than fail at setup.
+ */
 export const symlinksSupported: boolean = (() => {
   let directory: string | undefined;
   try {

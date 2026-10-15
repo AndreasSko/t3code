@@ -75,7 +75,6 @@ type ConnectFailure =
   | EnvironmentAuth.ServerAuthInternalError
   | RelayRequestError;
 
-/** Internal failures are logged with their cause before the route answers 500. */
 const toHttpError = <A, R>(effect: Effect.Effect<A, ConnectFailure, R>) =>
   effect.pipe(
     Effect.catchTags(connectErrorCases),

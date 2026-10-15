@@ -106,13 +106,16 @@ interface RightPanelTabsProps {
   inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
-  /** Fallback environment for surfaces that do not carry their own. */
   environmentId: EnvironmentId | null;
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
   desktopByTabId: Readonly<Record<string, DesktopPreviewOverlay>>;
-  /** Desktop operations require runtime ids; server session ids are unique only within one server process. */
+  /**
+   * Maps a server session tab id to the desktop runtime tab id the Electron
+   * preview manager is keyed by. Session ids are only unique within one server
+   * process, so desktop operations must not be addressed with them.
+   */
   previewRuntimeTabId?: ((tabId: string) => string) | undefined;
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
@@ -125,7 +128,11 @@ interface RightPanelTabsProps {
   onMoveSurface?: (surfaceId: string, toIndex: number) => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
-  /** Keep separate from the DOM onAddBrowser handler so MouseEvent cannot be mistaken for a profile id. */
+  /**
+   * Separate from `onAddBrowser` on purpose: that one is passed directly as a
+   * DOM click handler, and a `(profileId?: string)` signature would silently
+   * accept the MouseEvent as a profile id.
+   */
   onAddBrowserInProfile: (profileId: string) => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
@@ -170,7 +177,6 @@ const SURFACE_DISABLED_REASONS = {
   device: "Devices are only available from a thread.",
 } as const;
 
-/** Overlays that must win over the launcher's letter shortcuts. */
 const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
   '[data-slot="dialog-popup"]',
   '[data-slot="alert-dialog-popup"]',
@@ -216,7 +222,11 @@ function previewTabIdOf(
   return sessions[surface.resourceId]?.tabId ?? null;
 }
 
-/** Wait for desktop overlay state: session ids can resolve before createTab, causing unsurfaced mute failures. */
+/**
+ * Stays disabled until desktop overlay state arrives: a server session id can
+ * resolve while the preview manager's createTab is still in flight, and muting
+ * then fails with a PreviewTabNotFoundError nothing surfaces to the user.
+ */
 export function tabMuteMenuItem(input: {
   overlay: DesktopPreviewOverlay | null;
   canResolveRuntimeTabId: boolean;
@@ -252,7 +262,14 @@ export function surfaceShortcutActionForKey<
   );
 }
 
-/** Empty editors still own typing. Exclude contenteditable=false islands so closest can find their editable host. */
+/**
+ * A focused editable is a typing context whether or not it has text yet: an
+ * empty chat composer at rest is still where the user's next keystrokes are
+ * meant to land, and claiming launcher letters from it would redirect prompts
+ * into whatever surface opens. The `:not` clause lets `closest` see past
+ * non-editable islands (`contenteditable="false"`) to an editable host around
+ * them, matching ComposerPendingUserInputPanel's typing guard.
+ */
 export function surfaceShortcutTargetsTypingContext(
   target: { closest(selectors: string): unknown } | null,
 ): boolean {
@@ -311,7 +328,6 @@ function RightPanelEmptyState(props: {
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
 }) {
-  // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
   const actions = [
@@ -380,7 +396,8 @@ function RightPanelEmptyState(props: {
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
-  // Capture launcher letters before app handlers swallow them, while leaving typing contexts alone.
+  // Capture phase so app-level key handlers cannot swallow the event first;
+  // typing contexts and already-handled events are left alone.
   const shortcutActionsRef = useRef(availableActions);
   useEffect(() => {
     shortcutActionsRef.current = availableActions;
@@ -419,7 +436,6 @@ function RightPanelEmptyState(props: {
       return;
     }
     if (event.key === "Enter") {
-      // Only activate the highlight when the launcher itself has focus.
       if (event.target !== event.currentTarget) return;
       const action = availableActions[highlightIndex];
       if (!action) return;
@@ -465,7 +481,8 @@ function RightPanelEmptyState(props: {
         <div className="flex flex-col gap-0.5">
           {actions.map((action) =>
             action.available ? (
-              // Keep the profile chooser outside the row button; wrapper hover survives movement onto the chooser.
+              // The row is itself a button, so the profile chooser sits beside
+              // it in a wrapper rather than inside it.
               <div
                 key={action.label}
                 className="group relative"
@@ -495,11 +512,6 @@ function RightPanelEmptyState(props: {
                   </span>
                   <Kbd>{action.shortcut}</Kbd>
                 </button>
-                {/*
-                  Same choice the tab bar's "+" menu offers: the row opens the
-                  default profile, the chevron picks another. Only worth showing
-                  once there is something to choose between.
-                */}
                 {action.label === "Browser" && props.browserProfiles.length > 1 ? (
                   <Menu>
                     <MenuTrigger
@@ -752,7 +764,6 @@ function PullRequestSurfaceIcon({
     [surface.projectId, surface.repository, surface.number],
   );
   const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
-  // Keep compact lifecycle/draft state stable as detail data arrives; conflicts have dedicated surfaces.
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
     return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
@@ -1015,8 +1026,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           }
           break;
         case "toggle-mute": {
-          // menuOverlay repeats the disabled gate above: the desktop tab must
-          // exist before it can be addressed, however the menu was dismissed.
           const runtimeTabId =
             menuPreviewTabId && menuOverlay
               ? (props.previewRuntimeTabId?.(menuPreviewTabId) ?? null)
@@ -1116,7 +1125,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       <div
         className={cn(
           "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
-          // Keep titlebar height in the sheet so layout controls do not jump vertically on open.
+          // The sheet overlays from the viewport top, so its tab bar keeps
+          // the titlebar's height: a compact row re-centers the layout
+          // controls a few pixels higher and the cluster jumps on open.
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
@@ -1143,8 +1154,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   props.terminalLabelsById,
                 );
                 const previewTabId = previewTabIdOf(surface, props.previewSessions);
-                // Desktop state is keyed by the session id, but desktop actions
-                // must be addressed with the runtime id.
                 const audio = tabAudioState(
                   previewTabId ? (props.desktopByTabId[previewTabId] ?? null) : null,
                 );
@@ -1196,8 +1205,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                               className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
                               aria-label={audio === "muted" ? `Unmute ${title}` : `Mute ${title}`}
                               onClick={(event) => {
-                                // Sibling of the close button, inside a tab that
-                                // activates on click: keep this to the toggle.
                                 event.stopPropagation();
                                 void previewBridge
                                   ?.setAudioMuted(audioRuntimeTabId, audio !== "muted")
@@ -1293,7 +1300,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 >
                   {addSurfaceActions.map((action) => {
                     const Icon = action.icon;
-                    // Choose profiles at open time: Electron honors partition only before attach.
                     if (action.label === "Browser" && action.available) {
                       return (
                         <MenuSub key={action.label}>
@@ -1306,7 +1312,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                                 typeof event.nativeEvent.pointerType === "string"
                                   ? event.nativeEvent.pointerType
                                   : undefined;
-                              // Touch needs the submenu for profile choices; mouse click keeps the default action.
+                              // Touch has no hover path to the profile choices:
+                              // its first tap opens the submenu, then a profile
+                              // is selected there. Mouse click keeps the common
+                              // default-profile action at one click.
                               if (!shouldOpenDefaultBrowserProfileFromMenuClick(pointerType))
                                 return;
                               setAddSurfaceMenuOpen(false);
@@ -1399,7 +1408,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         ) : null}
         {props.layoutControls}
         {ownsDesktopTitleBar && !props.layoutControls ? (
-          // Keeps the tabs clear of the window controls when the layout toggles live elsewhere.
           <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
         ) : null}
         {ownsDesktopTitleBar ? (

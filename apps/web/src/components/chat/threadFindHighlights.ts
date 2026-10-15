@@ -14,7 +14,6 @@ interface ThreadFindRange {
   readonly range: Range;
 }
 
-/** Collects visible occurrences without modifying rendered markdown. */
 export function collectThreadFindRanges(container: HTMLElement, query: string): ThreadFindRange[] {
   if (query.length === 0) return [];
 
@@ -76,7 +75,6 @@ export function collectThreadFindRanges(container: HTMLElement, query: string): 
 
 const FOLD_SELECTOR = "[hidden], [data-thread-find-fold]";
 
-/** Folds around the range that currently keep it out of sight, innermost first. */
 function foldsHiding(range: Range, container: HTMLElement): Element[] {
   const folds: Element[] = [];
   for (

@@ -1,5 +1,3 @@
-/** Register one driver per host; both repository and pull-request registries consume it.
- * make's R channel declares dependencies the server supplies from the package layers. */
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 

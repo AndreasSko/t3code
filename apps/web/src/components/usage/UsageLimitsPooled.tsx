@@ -35,13 +35,11 @@ import {
   useResetCredit,
 } from "./UsageLimits";
 
-/** `someone@example.com` → `SE`: enough to tell accounts apart, too little to identify one. */
 function accountInitials(email: string): string {
   const [local = "", domain = ""] = email.split("@");
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase() || "?";
 }
 
-/** A stable hue per email, so the same account gets the same chip on every visit. */
 function accountHue(email: string): number {
   let hash = 0;
   for (let index = 0; index < email.length; index += 1) {
@@ -64,10 +62,6 @@ function AccountChip({ email }: { readonly email: string }) {
   );
 }
 
-/**
- * The same mark the model picker uses for a native instance (provider glyph,
- * initials badge, accent); hub accounts have no instance, so they get the chip.
- */
 function AccountAvatar({
   account,
   className,
@@ -95,7 +89,6 @@ function AccountAvatar({
   return account.email ? <AccountChip email={account.email} /> : null;
 }
 
-/** Keep email hidden until requested in the popover; show the instance name or initials otherwise. */
 function AccountName({
   account,
   className,
@@ -209,7 +202,10 @@ function SegmentPopover({
   );
 }
 
-/** Keep the confirmation beside the popover because closing the popover must not unmount it. */
+/**
+ * The confirm is a sibling of the popover, not a child: dialogs stack under
+ * popovers, and the popover closes as the confirm opens.
+ */
 function PoolSegment({
   account,
   window,
@@ -245,13 +241,11 @@ function PoolSegment({
           />
         }
       >
-        {/* Translucent so the label reads over the fill for any provider colour and theme. */}
         <div
           aria-hidden
           className="absolute inset-y-0 left-0 rounded-md opacity-35"
           style={{ width: `${remaining}%`, backgroundColor: color }}
         />
-        {/* The spent share is hatched, not blank: it is what the countdown restores. */}
         {remaining < 100 && reset ? (
           <div
             aria-hidden
@@ -424,7 +418,10 @@ function RedeemableSegmentPopup({
   );
 }
 
-/** Use equal-width segments because each account contributes the same share of the pool, regardless of plan. */
+/**
+ * Equal widths are honest: every account contributes the same share of the
+ * pool, whatever its plan.
+ */
 function PoolBar({
   pool,
   color,
@@ -600,7 +597,6 @@ export function UsageLimitsPooled({
   );
 }
 
-/** Sources and providers that could not be read, so a missing bar is not mistaken for a full one. */
 function LimitNotices({ notices }: { readonly notices: readonly string[] }) {
   if (notices.length === 0) return null;
   return (

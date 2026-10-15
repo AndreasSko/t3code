@@ -269,8 +269,8 @@ function writtenIds(
 }
 
 /**
- * The provider process is gone, so synthesize terminals for orphaned child/node/item
- * records, skipping ones already settled or ended by emitted.
+ * Ends a provider-native subagent, its node and its turn item once the provider process that ran
+ * it is gone, since no terminal event will come from it.
  */
 export const endOrphanedNativeSubagent = <E>(input: {
   readonly projection: Pick<OrchestrationV2ThreadProjection, "nodes" | "subagents" | "turnItems">;
@@ -350,8 +350,9 @@ export const endOrphanedNativeSubagent = <E>(input: {
   });
 
 /**
- * Settle runless native root turns and their items after provider loss;
- * skip records already ended by emitted.
+ * Ends a provider-native subagent thread's work, a runless root turn plus the
+ * items under it (Claude's live progress), which only the provider process that
+ * ran it could settle. Skips records `emitted` already ended.
  */
 export const endRunlessRootTurns = <E>(input: {
   readonly threadId: ThreadId;

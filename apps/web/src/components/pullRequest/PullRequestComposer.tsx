@@ -1,6 +1,4 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-/** Keep comment and review drafts separate so toggling cannot send either to
- * the wrong destination; open the mode with pending work. */
 import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@t3tools/contracts";
 import { MessageSquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -36,7 +34,10 @@ export function PullRequestComposer({
   ) => Promise<{ readonly commentPosted: boolean }>;
   onCommented: () => void;
   onReviewSubmitted: () => void;
-  /** Increment to reopen the composer on its review mode. */
+  /**
+   * Opens the composer on the review, each time the number changes. The guide's last stop asks
+   * for it, so finishing the tour lands on the comments it collected and the verdict.
+   */
   openReviewRequest?: number | undefined;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +47,8 @@ export function PullRequestComposer({
   const reviewRef = useRef<HTMLTextAreaElement>(null);
   const pendingComments = usePendingReviewComments(reference);
   const clearComments = usePullRequestReviewStore((store) => store.clear);
-  // Select only summary presence so typing cannot rerender the composer per keystroke.
+  // A summary typed but not sent is review work too, and it outlives the popover. Selected as a
+  // boolean rather than the text, so typing one does not re-render the composer per keystroke.
   const reviewKey = pullRequestReviewKey(reference);
   const summaryStarted = usePullRequestReviewStore(
     (store) => (store.summaries[reviewKey] ?? "").trim().length > 0,
@@ -77,7 +79,8 @@ export function PullRequestComposer({
     >
       <PopoverTrigger
         render={<Button size="icon" variant="glass" />}
-        // The icon count is decorative; include pending comments in the accessible label.
+        // The only label this control has, so the pending count belongs in it: the badge beside
+        // the icon is decorative and a reader who cannot see it still needs the number.
         aria-label={
           pendingComments.length > 0
             ? `Review pull request, ${pendingComments.length} ${pendingComments.length === 1 ? "comment" : "comments"} pending`

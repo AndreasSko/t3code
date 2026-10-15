@@ -2,8 +2,10 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /**
- * Including turn_id serves the keyset tiebreak order without sorting all turns before LIMIT.
- * The (thread_id, requested_at) index cannot bound that work by page size.
+ * Pagination orders turns by the stable keyset (requested_at, turn_id); the
+ * pre-existing (thread_id, requested_at) index cannot serve the tiebreak order,
+ * forcing a temp B-tree over all of a thread's turns before the page LIMIT
+ * applies.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

@@ -21,8 +21,6 @@ function hasImageMime(record: UnknownRecord): boolean {
   });
 }
 
-// Providers wrap image bytes differently: typed MCP/ACP blocks, Cursor image
-// parts with optional MIME, or image/* records such as Claude sources and Grok content.
 function isImageBody(record: UnknownRecord, key: string | undefined): boolean {
   if (record.type === "image" || key === "image") return true;
   if (!hasImageMime(record)) return false;
@@ -39,7 +37,7 @@ function isBase64Body(value: unknown): value is string {
 
 function base64DecodedLength(encoded: string): number {
   let length = encoded.length;
-  while (length > 0 && encoded.charCodeAt(length - 1) === 0x3d /* = */) {
+  while (length > 0 && encoded.charCodeAt(length - 1) === 0x3d) {
     length -= 1;
   }
   return Math.floor((length * 3) / 4);
@@ -107,9 +105,10 @@ function strip(
 }
 
 /**
- * Replace unserved image bodies with decoded sizes; served asset blocks remain intact.
- * Items persist in both the event log and projection; file previews use viewedImagePath, not these bytes.
- * Preserve identifiers and inline SVG, copying only changed containers and retaining unchanged references.
+ * Tools that read or capture an image return the whole file as base64, and a turn item is stored
+ * twice: in the event log and in the projection. Only the blocks `toolOutputImageBlocks` finds,
+ * within the asset size limit, are ever read back; previews of a read file load from
+ * `viewedImagePath`, and context handoff skips tool items.
  */
 export function stripUnservedToolOutputImageBytes(
   item: OrchestrationV2TurnItem,

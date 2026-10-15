@@ -204,11 +204,14 @@ export const make = DesktopLifecycle.of({
       );
     });
     yield* electronApp.onBeforeQuitForUpdate(() => {
-      // The updater owns quit/install/relaunch; cancelling its before-quit event
-      // breaks the native macOS relaunch sequence.
+      // Electron's updater owns the remaining quit/install/relaunch sequence.
+      // Cancelling the following app "before-quit" event breaks that sequence,
+      // most visibly on macOS where the native updater performs the relaunch.
       updaterQuitAllowed = true;
-      // The updater quits when this synchronous listener returns, so destroy windows
-      // inline; forking destruction would race process exit.
+      // This event is synchronous and the updater's quit proceeds as soon as
+      // the listener returns, so a forked destroyAll would race the quit
+      // and windows could still be open when the process exits (visible on
+      // macOS). Destroy them inline.
       Effect.runSyncWith(context)(
         electronWindow.destroyAll.pipe(
           Effect.andThen(logLifecycleInfo("allowing updater-controlled quit")),

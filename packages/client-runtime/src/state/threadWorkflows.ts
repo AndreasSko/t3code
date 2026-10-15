@@ -23,7 +23,6 @@ export interface QueuedThreadRun {
   readonly run: Run;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
-  /** Editing replaces this message's content, so its id and context travel with the row. */
   readonly messageId: Message["id"];
   readonly context?: Message["context"];
 }
@@ -40,7 +39,11 @@ export function resolveActiveThreadRun(projection: Pick<Projection, "runs">): Ru
   return projection.runs.findLast((run) => ACTIVE_RUN_STATUSES.has(run.status)) ?? null;
 }
 
-/** Include successful waiting runs during checkpoint capture instead of choosing an older merge-back run. */
+/**
+ * A successfully finished provider turn remains in `waiting` while its
+ * checkpoint is captured. Keep that newest turn available for merge-back
+ * instead of falling through to an older fully checkpointed run.
+ */
 export function resolveLatestMergeBackRun(projection: Projection): Run | null {
   const latestProviderFinishedRun = projection.runs.reduce<Run | null>(
     (latest, run) =>
@@ -103,7 +106,6 @@ export function threadSupportsProviderHandoff(projection: Projection | null | un
   );
 }
 
-/** Automatic completion/notification runs are not messages in the user's queue. */
 export function getUserQueuedThreadRuns(
   projection: Pick<Projection, "runs" | "messages">,
 ): ReadonlyArray<Run> {
@@ -167,7 +169,9 @@ export function canForkProjectedAssistantItem(input: {
     return false;
   }
   if (input.capabilities === undefined) {
-    // Historical rows may lack provider capability evidence; preserve portable fallback unless known unsupported.
+    // Historical and inherited rows may outlive their provider-session record.
+    // Keep the portable server-side fallback available when capability evidence
+    // is absent; a known incapable provider is rejected below.
     return true;
   }
   const capabilities = input.capabilities;

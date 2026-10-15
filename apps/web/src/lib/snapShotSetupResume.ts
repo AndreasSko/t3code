@@ -5,18 +5,14 @@ export function readSnapShotSetupResume(): { wasEnabled: boolean } | null {
   try {
     const value = window.localStorage.getItem(STORAGE_KEY);
     if (value === "enabled" || value === "disabled") return { wasEnabled: value === "enabled" };
-  } catch {
-    // Permission setup still works when local storage is unavailable.
-  }
+  } catch {}
   return null;
 }
 
 export function saveSnapShotSetupResume(wasEnabled: boolean): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, wasEnabled ? "enabled" : "disabled");
-  } catch {
-    // Permission setup still works when local storage is unavailable.
-  }
+  } catch {}
 }
 
 export function clearSnapShotSetupResume(): void {

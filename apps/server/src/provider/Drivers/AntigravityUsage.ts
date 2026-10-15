@@ -1,5 +1,3 @@
-/** Database/WAL size, mtime, and ctime keep parsed usage cached until either file changes. */
-
 import { type AntigravitySettings, UsageReadError } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -65,7 +63,7 @@ const make = Effect.gen(function* () {
     windowStartMs,
   }) {
     const roots = yield* dataRoots;
-    // Only configured instances own profiles.
+    // Only configured instances have a profile; the implicit default never ran.
     for (const { instanceId } of instances.filter((instance) => instance.configured)) {
       const directories = yield* resolveAntigravityInstanceDirectories(
         host.paths.stateDir,

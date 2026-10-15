@@ -37,7 +37,8 @@ export interface DesktopSettings {
   readonly updateChannelConfiguredByUser: boolean;
   readonly wslBackendEnabled: boolean;
   readonly wslDistro: string | null;
-  // With wslBackendEnabled, run WSL as the primary without a Windows backend.
+  // Changing this requires a desktop restart because the pool's primary spec is
+  // chosen once at layer init.
   readonly wslOnly: boolean;
 }
 
@@ -210,7 +211,6 @@ function normalizeDesktopSettingsDocument(
     parsed.updateChannelConfiguredByUser === true ||
     (isLegacySettings && Option.contains(parsedUpdateChannel, "nightly"));
 
-  // An explicit boolean takes precedence over the legacy wslMode value.
   const wslBackendEnabled =
     parsed.wslBackendEnabled === true ||
     (parsed.wslBackendEnabled === undefined && parsed.wslMode === "wsl");
@@ -465,7 +465,7 @@ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (inp
   );
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;

@@ -43,15 +43,19 @@ interface BrowserImportWizardProps {
   readonly source: BrowserImportSource;
   /** Captured when the wizard opens so destination copy and writes stay stable. */
   readonly destinationEnvironmentName: string;
-  /** Existing profiles the import can go into. Incognito is excluded upstream. */
+  /**
+   * Incognito is excluded upstream.
+   */
   readonly targetProfiles: ReadonlyArray<WizardTargetProfile>;
   readonly canCreateProfile: boolean;
-  /** Register new target profiles only after successful import so blocked attempts leave no empty profile. */
+  /**
+   * For a new target the caller only registers the profile once the import succeeds, so a
+   * blocked attempt never leaves an empty profile behind.
+   */
   readonly onImport: (input: {
     readonly sourceProfileDirectory: string;
     readonly target: WizardTarget;
   }) => Promise<ImportOutcome>;
-  /** Re-checks the source's availability after the user quits the browser. */
   readonly onRefreshSource: () => Promise<BrowserImportSource | undefined>;
   readonly onOpenFullDiskAccessSettings: () => void | Promise<void>;
   readonly onCheckFullDiskAccess?: (() => Promise<boolean>) | undefined;
@@ -78,10 +82,13 @@ export function BrowserImportWizard({
     initialTargetSelection(canCreateProfile, targetProfiles),
   );
   const [targetError, setTargetError] = useState<string>();
-  // Reuse the target id across retries so keychain reapproval cannot create extra profiles.
+  // Stable across retries so a keychain re-approval lands in one profile, not
+  // a new one each time.
   const newProfileId = useRef(`profile-${randomUUID()}`);
-  // Guard synchronously: duplicate clicks could apply parent refusal and
-  // abandon the importing screen while the first write is still running.
+  // A second Import click before React has left the configure screen would
+  // start a second run; the parent refuses it, and applying that refusal here
+  // would drop the wizard out of the importing step while the first write is
+  // still going. The ref settles synchronously where state does not.
   const importInFlight = useRef(false);
 
   const runImport = () => {
@@ -336,7 +343,6 @@ function ConfigureStep({
   const targetMissing =
     target.kind === "existing" &&
     !targetProfiles.some((profile) => profile.id === target.profileId);
-  // Reaching the cap hides New profile; explain a formerly selected target that is now unavailable.
   const targetUncreatable = target.kind === "new" && !canCreateProfile;
   const targetFeedback =
     targetError ??
@@ -354,7 +360,6 @@ function ConfigureStep({
         </DialogDescription>
       </DialogHeader>
       <DialogPanel>
-        {}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <section className="flex-1 space-y-2">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

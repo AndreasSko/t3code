@@ -81,7 +81,6 @@ function historyMetaFromCachedSnapshot(
     hasMoreHistory,
     loading: false,
     error: null,
-    // Cache never stores expanded progressive history (load-earlier growth).
     expanded: false,
     latestLocalTurnOrdinal: snapshot.latestLocalTurnOrdinal ?? null,
   };
@@ -150,8 +149,11 @@ function matchesThreadSnapshot(
   );
 }
 
-// Retained live states resume missing events without flashing sync on return;
-// replayed events establish synchronization progress when needed.
+// A retained "live" state stays live: the cursor resume that follows only
+// replays what the thread missed, and on servers that send the completion
+// marker the first replayed event moves the status to "synchronizing" on its
+// own. Downgrading here would flash a sync label on every return to a
+// recently viewed thread.
 function cachedThreadState(value: EnvironmentThreadState): EnvironmentThreadState {
   return {
     ...value,
@@ -354,7 +356,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
     thread: OrchestrationV2ThreadProjection,
     options?: {
-      /** Socket/full snapshots: drop progressive meta with the new timeline. */
       readonly resetHistory?: boolean;
       /**
        * Explicit progressive meta installed atomically with the projection
@@ -364,7 +365,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     },
   ) {
     const waiting = yield* Ref.get(awaitingCompletion);
-    // Update projection and history atomically so concurrent cursor changes cannot be clobbered.
+    // Atomic with concurrent history meta updates: never get-then-set the whole
+    // state when only the projection changes. Bounded installs pass history so
+    // projection + cursor persist together in one enqueue.
     const next = yield* SubscriptionRef.updateAndGet(state, (previous) => {
       const history =
         options?.history !== undefined
@@ -385,7 +388,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         history,
       };
     });
-    // Persist after settlement so large tool payload encoding stays off the streaming path.
+    // Active projections can update many times per second and retain large tool
+    // payloads. Persist once the run settles so cache encoding stays off the
+    // streaming path. Progressive meta rides along when the window is incomplete.
     if (shouldPersistThread(thread, next.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
       yield* Queue.offer(
@@ -463,7 +468,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (fresh.length === 0) return;
 
     const waiting = yield* Ref.get(awaitingCompletion);
-    // Apply against current projection/history atomically to preserve concurrent load-earlier merges.
+    // Apply against the latest projection/history in one update so a concurrent
+    // loadEarlier merge (or history-meta patch) cannot be clobbered by a stale
+    // get-then-set rebuild.
     type EventApplyResult =
       | { readonly _tag: "noop" }
       | { readonly _tag: "delete" }
@@ -490,7 +497,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         return [{ _tag: "delete" }, current];
       }
 
-      // expanded remains true after paging ends; only an incomplete window changes append-on-miss behavior.
+      // Incomplete progressive windows only (hasMore or open cursor). Do not
+      // use expanded: it remains true after the last page as a cache marker.
+      // Full/web and fully-loaded timelines keep default append-on-miss.
       const partial =
         current.history.hasMoreHistory || current.history.historyCursor !== null
           ? {
@@ -499,7 +508,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             }
           : undefined;
       const next = applyOrchestrationV2ProjectionEvent(current.data.value, item.event, partial);
-      // Reducer identity no-ops must not clear stream errors/status or enqueue persistence.
+      // True no-op when the reducer deliberately returns the current projection
+      // reference (e.g. dropped old partial-timeline turn-item). Do not clear
+      // stream error/status or enqueue persistence.
       if (next === null || next === current.data.value) {
         return [{ _tag: "noop" }, current];
       }
@@ -764,7 +775,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       service.changes.pipe(Stream.filter(ConnectionWakeups.shouldResubscribeAfterWakeup)),
   });
 
-  // Only the first warm resume retains live status; later resubscriptions show sync until confirmed.
+  // Only the first subscription after a warm live resume keeps the retained
+  // status. A replacement session or foreground resubscribe on the same scope
+  // may have missed events, so those show sync progress until confirmed.
   const resumingLive = yield* Ref.make(initialState.status === "live");
   const markSynchronizing = Effect.gen(function* () {
     if (yield* Ref.get(resumingLive)) return;
@@ -783,7 +796,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ORCHESTRATION_V2_WS_METHODS.subscribeThread,
       Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* (session) {
         let current = yield* SubscriptionRef.get(state);
-        // Park known-deleted threads without socket attempts so they do not retry forever.
+        // A prior definitive miss (or delete event) already cleared this thread.
+        // Park the subscription attempt without opening the socket so we do not
+        // retry forever against a known-missing id.
         if (current.status === "deleted") {
           return yield* Effect.never;
         }
@@ -818,7 +833,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               if (canLoadHistory && httpResult.history !== undefined) {
                 yield* Ref.set(acceptsBoundedSocketSnapshots, true);
               }
-              // Install projection and progressive metadata atomically so bounded windows cannot cache as full histories.
+              // Atomic projection + progressive meta so a settled bounded window
+              // never persists as a complete full-timeline cache entry. Socket
+              // snapshots still go through applyItem (resetHistory).
               yield* applyLock.withPermits(1)(
                 Effect.gen(function* () {
                   yield* SubscriptionRef.set(lastSequence, httpResult.snapshot.snapshotSequence);
@@ -841,8 +858,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               break;
             }
             case "missing": {
-              // Definitive HTTP 404: clear any stale cache and do not open or
-              // retry a socket subscription for this attempt.
               yield* setDeleted();
               return yield* Effect.never;
             }

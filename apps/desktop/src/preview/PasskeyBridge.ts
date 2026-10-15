@@ -45,9 +45,8 @@ const ceremonyError = (name: string) =>
       );
 
 /**
- * Copies request options into plain IPC-cloneable data. Chromium ignores
- * members it does not know, so functions and other uncloneable values drop out
- * here instead of failing the whole ceremony.
+ * Chromium ignores members it does not know, so functions and other uncloneable
+ * values drop out here instead of failing the whole ceremony.
  */
 const toCloneable = (value: unknown): unknown => {
   if (value instanceof ArrayBuffer) return value.slice(0);
@@ -204,8 +203,11 @@ const abortReason = (signal: AbortSignal) =>
   signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
 
 /**
- * Install before page scripts in the page world; main supplies the requesting frame's committed origin.
- * Leave conditional requests native because the modal system sheet must not open automatically.
+ * Routes this page's WebAuthn ceremonies to the system passkey sheet through
+ * the main process, which supplies the frame's real origin. Runs in the page's
+ * own world (the preview preload has contextIsolation off), before any page
+ * script. Conditional (autofill and automatic upgrade) requests stay native:
+ * the system sheet is modal and must not open on its own.
  */
 export function installPasskeyBridge(invoke: InvokePasskeyCeremony) {
   // Insecure contexts have no WebAuthn to bridge.

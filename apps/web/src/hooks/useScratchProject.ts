@@ -24,7 +24,10 @@ function reportScratchFailure(title: string, error: unknown) {
   );
 }
 
-/** Projectless threads use a server-owned scratch project; each thread gets its own subfolder. */
+/**
+ * The server creates it on first use; after that it is an ordinary project on
+ * the non-git path, and each thread gets its own subfolder.
+ */
 export function useScratchProject() {
   const { environments } = useEnvironments();
   const openScratch = useAtomCommand(projectEnvironment.openScratch, { reportFailure: false });
@@ -55,7 +58,6 @@ export function useScratchProject() {
     [environments, scratchWorkspaceRootFor],
   );
 
-  /** Resolves to the scratch project once it is in this client's store. */
   const openScratchProject = useCallback(
     async (
       environmentId: EnvironmentId,

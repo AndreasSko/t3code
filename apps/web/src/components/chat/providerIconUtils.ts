@@ -32,7 +32,6 @@ export function getDisplayModelName(
   return stripLeadingQualifier(name, model.subProvider);
 }
 
-/** Avoid repeating the provider in qualified names such as "OpenCode Zen". */
 export function getProviderRowLabel(
   providerDisplayName: string,
   subProvider: string | undefined,

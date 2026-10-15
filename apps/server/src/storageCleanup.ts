@@ -104,6 +104,7 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
   );
 }
 
+/** Live sessions keep their cwd even when no turn is currently running. */
 export function storageCleanupThreadIdle(thread: OrchestrationV2ThreadShell, now: number): boolean {
   return (
     thread.branch !== null &&
@@ -134,7 +135,11 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
   );
 }
 
-/** Squash and rebase merges need an exact PR head match because the commit may not be on the default branch. */
+/**
+ * Whether the host's pull request proves this worktree's head was merged. A
+ * squash or rebase merge leaves the head outside the default branch, so the
+ * merged pull request then has to name this exact commit.
+ */
 export function storageCleanupPullRequestMerged(
   pullRequest: Pick<
     GitManager.GitBranchPullRequest,
@@ -279,7 +284,8 @@ const make = Effect.gen(function* () {
     return false;
   });
 
-  // Avoid statusDetailsLocal's diffs and counts when checking every worktree in a sweep.
+  // Two small Git reads, since every worktree in a sweep is asked; statusDetailsLocal also diffs
+  // and counts.
   const branchChanged = Effect.fn("StorageCleanup.branchChanged")(function* (
     cwd: string,
     branch: string | null,
@@ -328,7 +334,8 @@ const make = Effect.gen(function* () {
     if (head === null) return true;
     const ref = head.exitCode === 0 ? head.stdout.trim() : "";
     const name = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length).trim() : null;
-    // Treat leading "(" as detached to match status output's "(detached)" convention.
+    // Status output writes a detached HEAD as "(detached)", so a branch named
+    // with a leading "(" has always been read as one.
     return (name?.startsWith("(") ? null : name) !== branch;
   });
 
@@ -407,7 +414,6 @@ const make = Effect.gen(function* () {
       path,
       yield* HostProcess.HomeDirectory,
     )) {
-      // An unmounted drive only skips its own worktrees.
       const root = yield* fs.exists(directory).pipe(
         Effect.flatMap((exists) => (exists ? fs.realPath(directory) : Effect.succeed(null))),
         Effect.orElseSucceed(() => null),

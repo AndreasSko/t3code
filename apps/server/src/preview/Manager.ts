@@ -53,7 +53,6 @@ export class PreviewManager extends Context.Service<
     readonly resize: (
       input: PreviewResizeInput,
     ) => Effect.Effect<PreviewSessionSnapshot, PreviewError>;
-    /** Any client may adjust appearance or zoom because it changes rendering rather than page actions. */
     readonly adjust: (
       input: PreviewAdjustInput,
     ) => Effect.Effect<PreviewSessionSnapshot, PreviewError>;
@@ -72,7 +71,6 @@ interface PreviewSessionState {
 }
 
 interface ManagerState {
-  /** All sessions across every thread, keyed by `${threadId}\u0000${tabId}`. */
   readonly sessions: ReadonlyMap<string, PreviewSessionState>;
   /** Global monotonic revision establishing list/event ordering. */
   readonly revision: number;
@@ -122,19 +120,20 @@ const normalizeUrl = (rawUrl: string): Effect.Effect<string, PreviewInvalidUrlEr
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* PreviewManagerMake() {
   const crypto = yield* Crypto.Crypto;
   const serverEpoch = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
   const stateRef = yield* SynchronizedRef.make<ManagerState>(initialState);
-  // Tiny events use an unbounded PubSub so slow subscribers cannot block publishers;
-  // WebSocket clients backpressure on their own downstream queues.
+  // Unbounded PubSub is fine here — events are tiny and we don't want to
+  // block publishers if a subscriber is slow. WS clients backpressure on
+  // their own queues downstream.
   const eventsPubSub = yield* PubSub.unbounded<PreviewEvent>();
   const events: Stream.Stream<PreviewEvent> = Stream.fromPubSub(eventsPubSub);
 
   /**
-   * Publish under the state lock so event order matches state transitions.
-   * Unbounded PubSub keeps publication non-blocking.
+   * The event is published INSIDE the lock so observers see events in the
+   * same order as the underlying state transitions. Publishing an unbounded
+   * PubSub is non-blocking, so this is cheap.
    */
   const mutateExistingSession = <R, E>(
     threadId: string,
@@ -320,7 +319,6 @@ export const make = Effect.gen(function* PreviewManagerMake() {
       return yield* mutateExistingSession(
         input.threadId,
         input.tabId,
-        // Any client may resize a tab; the browser applies the published viewport.
         Effect.fn("PreviewManager.resizeSession")(function* (session) {
           const updatedAt = yield* currentIsoTimestamp;
           const snapshot: PreviewSessionSnapshot = {
@@ -386,7 +384,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
 
   const refresh: PreviewManager["Service"]["refresh"] = Effect.fn("PreviewManager.refresh")(
     function* (input) {
-      // The desktop bridge reloads and reports status; no event is emitted here.
+      // Verify the session exists; the desktop bridge handles the actual reload
+      // and will report progress back via `reportStatus`. No event emitted.
       yield* mutateExistingSession(input.threadId, input.tabId, (session) =>
         Effect.succeed({ next: session, emit: null, result: undefined as void }),
       );

@@ -1,7 +1,7 @@
 /**
- * Only the types a provider turn accepts. A picture the provider would reject is still a
- * file, so widening this map would promote attachments the send path cannot carry.
- * Mirrors `PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES`.
+ * A picture the provider would reject is still a file, so widening this map would
+ * promote attachments the send path cannot carry. Mirrors
+ * `PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES`.
  */
 const IMAGE_MIME_TYPE_BY_EXTENSION = new Map([
   ["gif", "image/gif"],
@@ -21,8 +21,8 @@ export const GENERIC_MIME_TYPES = new Set([
 ]);
 
 /**
- * Document pickers may label images as plain files, so infer type from the attachment itself.
- * Fall back to its extension only when its MIME type is absent or generic.
+ * A picture chosen through the document picker arrives typed as a plain file, so what it *is*
+ * has to come from its own name and type rather than from which picker produced it.
  */
 export function imageMimeType(attachment: {
   readonly name: string;

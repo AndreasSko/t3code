@@ -91,7 +91,6 @@ export interface ContextPresentationRegistry<TRecord, TRenderContext, TResult> {
   render(kind: string, record: TRecord | undefined, context: TRenderContext): TResult;
 }
 
-/** Share capability definitions while keeping renderers specific to each surface. */
 export function createContextPresentationRegistry<TRecord, TRenderContext, TResult>(options: {
   handlers: ReadonlyArray<ContextPresentationHandler<TRecord, TRenderContext, TResult>>;
   requiredKinds?: ReadonlyArray<KnownComposerContextKind>;

@@ -104,7 +104,12 @@ export function setPendingUserInputCustomAnswer(
 
 const DISPLACED_ANSWER_SEPARATOR = "\n\n";
 
-/** Custom answers outrank options; move typed custom text back into the draft before replacing it. */
+/**
+ * Selecting an option replaces the custom answer, because a non-empty custom
+ * answer outranks selected options in `resolvePendingUserInputAnswer`. Text the
+ * user typed into the answer field must not vanish on that click: it moves back
+ * into the thread draft, after whatever was already waiting there.
+ */
 export function carryDisplacedCustomAnswerIntoPrompt(
   prompt: string,
   customAnswer: string | undefined,

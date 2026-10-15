@@ -17,7 +17,10 @@ export const MIN_CODE_FONT_SIZE = 8;
 export const MAX_CODE_FONT_SIZE = 18;
 export const CODE_FONT_SIZE_STEP = 1;
 
-/** Null overrides derive automatically from the base font size. */
+/**
+ * `null` overrides mean "automatic": the value is derived from the base font
+ * size.
+ */
 export interface AppearancePreferences {
   readonly baseFontSize: number;
   readonly terminalFontSize: number | null;
@@ -83,7 +86,6 @@ function normalizeCodeWordBreak(value: boolean | null | undefined): boolean {
   return value === true;
 }
 
-/** Terminal size derived from base: 10.5pt at base 16, snapped to 0.5pt steps. */
 function deriveTerminalFontSize(baseFontSize: number): number {
   const scale = normalizeBaseFontSize(baseFontSize) / DEFAULT_BASE_FONT_SIZE;
   return normalizeTerminalFontSize(Math.round(DEFAULT_TERMINAL_FONT_SIZE * scale * 2) / 2);
@@ -96,7 +98,6 @@ function deriveCodeFontSize(baseFontSize: number): number {
 
 interface StoredAppearancePreferences {
   readonly baseFontSize?: number | null | undefined;
-  /** Compatibility fallback when baseFontSize is absent. */
   readonly markdownFontSize?: number | null | undefined;
   readonly terminalFontSize?: number | null | undefined;
   readonly codeFontSize?: number | null | undefined;
@@ -166,7 +167,10 @@ export function resolveMarkdownFontSizes(baseFontSize: number): ResolvedMarkdown
   };
 }
 
-/** Keep the --text-* role mapping in sync with global.css and MOBILE_TYPOGRAPHY. */
+/**
+ * Maps the Uniwind `--text-*` theme variables (see global.css) to the
+ * MOBILE_TYPOGRAPHY roles they were authored from. Keep in sync with both.
+ */
 const TEXT_SCALE_VARIABLE_ROLES = {
   "--text-3xs": MOBILE_TYPOGRAPHY.micro,
   "--text-2xs": MOBILE_TYPOGRAPHY.caption,
@@ -179,7 +183,11 @@ const TEXT_SCALE_VARIABLE_ROLES = {
   "--text-3xl": MOBILE_TYPOGRAPHY.display,
 } as const;
 
-/** Pass these scaled --text-* variables to Uniwind.updateCSSVariables to update class-based text live. */
+/**
+ * Scaled values for every `--text-*` size and line-height variable, ready to
+ * pass to `Uniwind.updateCSSVariables`. All className-based text (`text-sm`,
+ * `text-base`, ...) re-resolves live when these are injected.
+ */
 export function resolveTextScaleVariables(baseFontSize: number): Record<string, number> {
   const scale = normalizeBaseFontSize(baseFontSize) / DEFAULT_BASE_FONT_SIZE;
   const variables: Record<string, number> = {};
@@ -192,7 +200,13 @@ export function resolveTextScaleVariables(baseFontSize: number): Record<string, 
   return variables;
 }
 
-/** Predict layout heights using the same line height injected into the role's --text-* variable. */
+/**
+ * The line height a MOBILE_TYPOGRAPHY role renders at under the given base
+ * font size — the same value resolveTextScaleVariables injects for the role's
+ * `--text-*--line-height` variable. For layout code that must predict
+ * text-driven heights (e.g. the thread feed's fixed item sizes) instead of
+ * measuring them.
+ */
 export function scaledTypographyLineHeight(
   role: { readonly lineHeight: number },
   baseFontSize: number,
@@ -201,7 +215,6 @@ export function scaledTypographyLineHeight(
   return Math.max(10, Math.round(role.lineHeight * scale));
 }
 
-/** Text dimensions shared by React Native and Compose consumers of an appearance role. */
 export function resolveScaledTextRole(role: keyof typeof MOBILE_TYPOGRAPHY, baseFontSize: number) {
   const typography = MOBILE_TYPOGRAPHY[role];
   const scale = normalizeBaseFontSize(baseFontSize) / DEFAULT_BASE_FONT_SIZE;

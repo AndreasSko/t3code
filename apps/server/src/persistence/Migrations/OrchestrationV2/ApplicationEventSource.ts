@@ -122,7 +122,9 @@ export default Effect.gen(function* () {
     { concurrency: 1, discard: true },
   );
 
-  // Baseline current project rows into the shared log so projection rebuilds preserve their state.
+  // ProjectService wrote this projection directly before the application event
+  // boundary was restored. Re-baseline every current row into the shared log so
+  // projection rebuilds preserve the exact pre-migration project state.
   const projectRows = yield* sql<ProjectProjectionRow>`
     SELECT
       project_id,

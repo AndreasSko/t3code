@@ -22,8 +22,10 @@ export function isExplicitRelativePath(value: string): boolean {
 }
 
 function isRootPath(value: string): boolean {
-  // A bare `C:` is drive-relative, so it is not an already-canonical root.
-  // Let separator normalization make project comparisons match `C:\` and `C:/`.
+  // The drive separator is required: a bare `C:` is not the drive root (it
+  // means "current directory on C:"), and treating it as already-canonical
+  // would leave it as `C:` while `C:\` and `C:/` normalize to the drive root,
+  // so the same location would fail project identity/dedup comparisons.
   return value === "/" || value === "\\" || /^[a-zA-Z]:[/\\]$/.test(value);
 }
 
@@ -55,7 +57,6 @@ export function normalizeProjectPathForComparison(value: string): string {
 // Windows refuses these as file names, with or without an extension.
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 
-/** Shared folder slug for project creation and client path previews. */
 export function newProjectFolderName(name: string): string {
   const slug = name
     .normalize("NFKD")

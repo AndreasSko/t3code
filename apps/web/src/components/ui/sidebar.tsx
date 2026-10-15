@@ -168,7 +168,6 @@ function SidebarProvider({
   return (
     <SidebarContext value={contextValue}>
       <div
-        // Inset layouts opt into bg-sidebar through className.
         className={cn(
           "group/sidebar-wrapper flex min-h-svh w-full",
           SIDEBAR_TITLEBAR_CONTROL_SIZE,
@@ -295,7 +294,6 @@ function Sidebar({
         data-state={state}
         data-variant={variant}
       >
-        {/* This is what handles the sidebar gap on desktop */}
         <div
           className={cn(
             "relative w-(--sidebar-width) bg-transparent",
@@ -634,8 +632,6 @@ function SidebarContent({
         <div
           // Reordered rows must not pull the viewport to their new position.
           className={cn(
-            // Stacked groups share one inset between them instead of doubling
-            // it, including across the fixed header's boundary.
             "flex w-full min-w-0 flex-col [overflow-anchor:none] group-data-[collapsible=icon]:overflow-hidden [&>[data-sidebar=group]+[data-sidebar=group]]:pt-0",
             fixedHeader && "[&>[data-sidebar=group]:first-child]:pt-0",
             className,

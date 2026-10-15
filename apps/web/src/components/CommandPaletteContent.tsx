@@ -11,7 +11,6 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
   readonly footerTrailing?: ReactNode;
   readonly inputAccessory?: ReactNode;
   readonly inputProps: ComponentProps<typeof CommandInput>;
-  /** "fill" gives modes the whole body for their own status and empty states. */
   readonly panelSize?: "list" | "tall-list" | "fill";
   readonly showBackHint?: boolean;
   readonly testId?: string;

@@ -1,4 +1,8 @@
-/** Lock by login directory: shared instances spend the same credits and must reuse timeout retries. */
+/**
+ * Redeeming a reset credit is an account-level action: instances that share the
+ * directory holding a provider's login share the credit, so their redemptions
+ * must serialise on that directory, not the instance.
+ */
 import type { ProviderConsumeResetCreditOutcome } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -16,7 +20,13 @@ interface AccountRedemptionState {
 export class ResetCreditCoordinator extends Context.Service<
   ResetCreditCoordinator,
   {
-    /** Reuse the account's pending key after unsettled failures; clear it on outcomes or isSettled failures. */
+    /**
+     * Run `consume` under the account's lock with a stable idempotency key.
+     * The key is cleared when the provider reports an outcome, or when
+     * `isSettled` says a failure was a final answer (such as a cooldown).
+     * Any other failure (timeout included) keeps it so the next attempt is
+     * the same attempt.
+     */
     readonly redeem: <E, R>(
       accountKey: string,
       consume: (idempotencyKey: string) => Effect.Effect<ProviderConsumeResetCreditOutcome, E, R>,
@@ -72,7 +82,6 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ResetCreditCoordinator, make);
 
-/** Counter-backed Crypto makes test keys deterministic and distinct without the platform layer. */
 export const layerTest = Layer.effect(
   ResetCreditCoordinator,
   Effect.gen(function* () {

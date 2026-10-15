@@ -16,7 +16,7 @@ function formatElapsedSeconds(totalSeconds: number): string {
   return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
-/** Short form for tight rows: "45s", "12m", "1.5h", "14h". Rounds down. */
+/** Rounds down. */
 export function formatCompactElapsedSeconds(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
   if (seconds < 60) return `${seconds}s`;
@@ -26,7 +26,6 @@ export function formatCompactElapsedSeconds(totalSeconds: number): string {
   return `${Math.floor(minutes / 6) / 10}h`;
 }
 
-/** Tick live elapsed time through DOM writes to avoid React commits; compact omits the smaller unit. */
 export function AgentElapsed({
   agent,
   compact = false,

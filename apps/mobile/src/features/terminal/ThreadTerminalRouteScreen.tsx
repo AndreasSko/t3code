@@ -377,7 +377,9 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const lastBufferReplayKeyRef = useRef<string | null>(null);
   const sentInitialInputKeyRef = useRef<string | null>(null);
   const [readyBufferReplayKey, setReadyBufferReplayKey] = useState<string | null>(null);
-  /** The default grid permits attachment before native measurement; onResize refines it. */
+  /**
+   * Default grid is always valid for attach; onResize refines cols/rows.
+   */
   const [hasMeasuredSurface, setHasMeasuredSurface] = useState(true);
   const [pendingModifierState, setPendingModifierState] = useState<{
     readonly terminalId: string;
@@ -960,7 +962,8 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       navigation.goBack();
       return;
     }
-    // Deep-linked mounts have no screen to pop, so replace the ended terminal with its thread.
+    // Deep-linked/root mounts have nothing to pop; land on the thread
+    // instead of stranding the user on a dead terminal.
     if (selectedThread) {
       navigation.dispatch(
         StackActions.replace("Thread", {
@@ -1015,6 +1018,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         navigateAwayAfterExit();
         return;
       }
+      // Leave a background terminal screen when it is focused again.
       pendingExitNavigationRef.current = terminalKey;
     },
   });

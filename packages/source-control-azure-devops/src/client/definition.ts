@@ -62,7 +62,6 @@ export const definition = defineSourceControlClient({
     isChangeRequestAuthorityOfProject(identity, link) &&
     canonicalRepositoryKey(identity.canonicalKey.toLowerCase()) ===
       canonicalRepositoryKey(`${link.host}/${link.repository}`.toLowerCase()),
-  // `az repos` reads use the checkout's organization and project, not host-wide credentials.
   canReadChangeRequestOnHost: () => false,
   isChangeRequestUrl: (url) => isChangeRequestPath(url, "/pullrequest/"),
 });

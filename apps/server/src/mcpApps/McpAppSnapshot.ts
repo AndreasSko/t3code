@@ -17,7 +17,11 @@ import { createAttachmentId } from "../attachmentStore.ts";
 
 const encoder = new TextEncoder();
 
-// Only text/html;profile=mcp-app is a document; MCP blobs use base64. Null means oversized.
+/**
+ * The HTML document in a `resources/read` result, with the `_meta.ui` the
+ * resource declared. Only `text/html;profile=mcp-app` content counts; a blob is
+ * base64 per MCP. A null document is one too large to store.
+ */
 function readMcpAppDocument(
   contents: ReadonlyArray<unknown>,
   uri: string,
@@ -27,8 +31,9 @@ function readMcpAppDocument(
     if (content.uri !== undefined && content.uri !== uri) continue;
     const mimeType = typeof content.mimeType === "string" ? content.mimeType : "";
     if (mimeType.replace(/\s+/g, "").toLowerCase() !== MCP_APP_MIME_TYPE) continue;
-    // Check size before decoding/copying oversized resources; UTF-8 is at least
-    // string length, and decoded base64 is three quarters of its length.
+    // Sizes are checked before decoding, so an oversized resource is
+    // refused without first being copied: a string's UTF-8 form is at least
+    // its length, and base64 decodes to three quarters of its own.
     const html =
       typeof content.text === "string"
         ? content.text.length > MCP_APP_MAX_HTML_BYTES
@@ -47,8 +52,11 @@ function readMcpAppDocument(
   return undefined;
 }
 
-/** Snapshots stay viewable after provider exit; interaction still needs a live session.
- * Undefined means the resource is not an MCP App or is too large. */
+/**
+ * Saving a snapshot keeps the app viewable after the provider exits;
+ * interaction still goes through a live provider session. Undefined when the
+ * resource is not an MCP App document or is too large.
+ */
 export const snapshotMcpApp = Effect.fn("McpAppSnapshot.snapshot")(function* (input: {
   readonly attachmentsDir: string;
   readonly threadId: ThreadId;

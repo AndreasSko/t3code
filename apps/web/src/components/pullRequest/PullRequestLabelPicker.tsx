@@ -1,5 +1,4 @@
 import { useAtomCommand } from "~/state/use-atom-command";
-/** Fetch label candidates only while the menu is open to avoid reads for idle PR panels. */
 import type { EnvironmentId, PullRequestLabelCandidate, PullRequestRef } from "@t3tools/contracts";
 import { CheckIcon, TagIcon } from "lucide-react";
 import { useMemo, useState } from "react";

@@ -24,7 +24,6 @@ const options: ReadonlyArray<{ value: GitHubRoutingPermission; label: string }> 
 
 const summaryLabels = { "read-write": "read and act", read: "read PRs" } as const;
 
-/** Null when no machines share GitHub access. */
 export function summarizeGitHubRouting(
   entries: ReadonlyArray<{ readonly label: string; readonly permission: GitHubRoutingPermission }>,
 ): string | null {
@@ -37,7 +36,6 @@ export function summarizeGitHubRouting(
   return groups.length === 0 ? null : groups.join(" · ");
 }
 
-/** Show sharing only with multiple enabled machines; keep the trust warning beside its control. */
 export function GitHubRoutingSettings({
   environments,
 }: {

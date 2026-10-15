@@ -249,7 +249,8 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               }
             >
               {canReorder ? (
-                // Keep vertical drag and horizontal swipe handlers separate to avoid competing pans.
+                // Outside the swipeable: two pans on one row would race, and
+                // the handle owns vertical movement while the row owns sideways.
                 <QueueDragHandle
                   disabled={busyRunId !== null}
                   title={title}
@@ -412,7 +413,8 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
   );
 
   if (Platform.OS === "ios") {
-    // formSheet omits a stack header; provide one with a nested native stack.
+    // A plain formSheet screen never renders a stack header, so it comes from
+    // a nested native stack inside the sheet (same shape as the git sheet).
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View collapsable={false} className="flex-1 bg-sheet">
@@ -495,7 +497,8 @@ function QueueRowSwipeable(props: {
       friction={2}
       rightThreshold={40}
       overshootRight={false}
-      // Require sideways intent before stealing gestures from vertical sheet scrolling and row dragging.
+      // The sheet's own vertical scroll and the drag handle both move up and
+      // down; a swipe has to be clearly sideways before it takes the gesture.
       failOffsetY={[-12, 12]}
       containerStyle={{ backgroundColor: props.background, flex: 1 }}
       childrenContainerStyle={{ backgroundColor: props.background }}

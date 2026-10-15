@@ -285,7 +285,6 @@ function selectProjectIdentitySource<TProject extends EnvironmentProject>(
   return freshestIdentifiedProject ?? winner;
 }
 
-/** Groups logical projects while preserving physical navigation and task targets across clients. */
 export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
   readonly projects: ReadonlyArray<TProject>;
   readonly settings: ProjectGroupingSettings;
@@ -370,10 +369,6 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
   });
 }
 
-/**
- * Orders projects the way a sorted group list shows them: by the first group holding each
- * project. Projects in no group follow, and ties keep their incoming order.
- */
 export function sortProjectsByGroupOrder<
   TProject extends { readonly id: string; readonly environmentId: string },
 >(

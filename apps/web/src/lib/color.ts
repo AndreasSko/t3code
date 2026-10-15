@@ -4,6 +4,7 @@ export type HsvColor = {
   v: number;
 };
 
+/** Convert a normalized six-digit sRGB hex color to HSV. */
 export function hexToHsv(hex: string): HsvColor {
   const numeric = Number.parseInt(hex.slice(1), 16);
   const red = ((numeric >> 16) & 255) / 255;

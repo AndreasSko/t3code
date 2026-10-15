@@ -90,7 +90,11 @@ export const allEnvironmentProjectSnapshotsReadyAtom =
     requiresPrimaryEnvironment: !isHostedStaticApp(),
   });
 
-/** Prompt links wait for live projects or settled offline hosts; unstarted hosts are still available. */
+/**
+ * Prompt links wait for it before they decide a repository is missing: one offline machine must
+ * not hold a link forever. A machine that has not started connecting yet is "available", not
+ * offline.
+ */
 export const allReachableShellsLiveAtom = Atom.make((get) => {
   const catalog = get(environmentCatalog.catalogValueAtom);
   if (!catalogIsComplete(catalog, !isHostedStaticApp())) return false;

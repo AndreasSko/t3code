@@ -10,8 +10,8 @@ import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 
 /**
- * Stable provider window IDs let sparse turn updates merge onto full probes.
- * `kind` only orders and labels the bar.
+ * `id` is stable per provider (`five_hour`, `seven_day_opus`, `primary`) so a
+ * sparse turn-driven update lands on the same row a full probe produced.
  */
 export const ServerProviderUsageWindow = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -23,7 +23,10 @@ export const ServerProviderUsageWindow = Schema.Struct({
 });
 export type ServerProviderUsageWindow = typeof ServerProviderUsageWindow.Type;
 
-/** Redeeming a Codex reset credit clears current quota windows. */
+/**
+ * Codex grants these when it has rate-limited the user unfairly; redeeming one
+ * clears the current windows.
+ */
 export const ServerProviderResetCredits = Schema.Struct({
   availableCount: NonNegativeInt,
   nextExpiresAt: Schema.optional(IsoDateTime),
@@ -32,14 +35,16 @@ export const ServerProviderResetCredits = Schema.Struct({
 });
 export type ServerProviderResetCredits = typeof ServerProviderResetCredits.Type;
 
-/** Unsupported accounts clear cached bars; failed probes retain the last good bars. */
+/**
+ * `unavailable` distinguishes an account that can never report windows (API
+ * key, Bedrock) from a probe that failed this time, so clients can keep the
+ * last good bars for the latter and clear them for the former.
+ */
 export const ServerProviderUsageLimits = Schema.Struct({
   checkedAt: IsoDateTime,
   windows: ForwardCompatibleArray(ServerProviderUsageWindow),
-  /** Opaque credential identity when the provider does not report an account. */
   credentialFingerprint: Schema.optional(TrimmedNonEmptyString),
   resetCredits: Schema.optional(ServerProviderResetCredits),
-  /** Provider-owned usage settings when quota windows are not available to the client. */
   externalUsage: Schema.optional(
     Schema.Struct({
       label: TrimmedNonEmptyString,
@@ -55,26 +60,34 @@ export const ServerProviderUsageLimits = Schema.Struct({
 });
 export type ServerProviderUsageLimits = typeof ServerProviderUsageLimits.Type;
 
-/** Sparse provider updates merge windows by id; omitted windows stay unchanged. */
+/**
+ * Sparse by contract: Claude's `rate_limit_event` names one window at a time
+ * and Codex documents its notification as a partial. Windows merge by `id` onto
+ * the instance's published snapshot; omitted windows are unchanged.
+ */
 export const ProviderUsageLimitsUpdate = Schema.Struct({
   windows: Schema.Array(ServerProviderUsageWindow),
 });
 export type ProviderUsageLimitsUpdate = typeof ProviderUsageLimitsUpdate.Type;
 
-/** Source accounts supply usage and driver presentation, but cannot run turns. */
+/**
+ * the account itself is not something this environment can run turns on.
+ */
 export const UsageLimitSourceAccount = Schema.Struct({
   id: TrimmedNonEmptyString,
   driver: ProviderDriverKind,
   /** The signed-in address, when the source names one; clients blur it like provider auth. */
   email: Schema.optional(TrimmedNonEmptyString),
   plan: Schema.optional(TrimmedNonEmptyString),
-  /** The workspace the quota belongs to, when the source names one; see `ServerProviderAuth`. */
   workspaceId: Schema.optional(TrimmedNonEmptyString),
   usageLimits: ServerProviderUsageLimits,
 });
 export type UsageLimitSourceAccount = typeof UsageLimitSourceAccount.Type;
 
-/** A failed source keeps an error and empty accounts so it remains visibly configured. */
+/**
+ * A source that could not be read keeps `error` beside an empty account list
+ * rather than vanishing, so the user can see it is configured but failing.
+ */
 export const UsageLimitSourceSnapshot = Schema.Struct({
   id: UsageLimitSourceId,
   kind: Schema.Literal("cliproxy"),

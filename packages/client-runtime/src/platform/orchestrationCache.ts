@@ -10,8 +10,10 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 export const ORCHESTRATION_CACHE_SCHEMA_VERSION = 3 as const;
-// Thread-only versioning keeps shell caches warm; version 4 invalidates
-// bounded windows missing queued-run items (#16987).
+/**
+ * Thread snapshots version on their own so a thread-only invalidation keeps
+ * shell caches warm.
+ */
 export const ORCHESTRATION_THREAD_CACHE_SCHEMA_VERSION = 4 as const;
 
 export const StoredOrchestrationShellSnapshot = Schema.Struct({

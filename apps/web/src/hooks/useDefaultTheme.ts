@@ -8,12 +8,17 @@ import { useEnvironmentThemeDefinitions } from "./useEnvironmentTheme";
 import { useTheme } from "./useTheme";
 
 /**
- * Track adoption per environment so switching machines neither replays a theme nor swallows another's
- * update.
+ * Scoped per environment: each machine's `t3 theme set` is its own act, so
+ * hopping between primary environments neither replays one environment's
+ * theme over the user's pick nor swallows another's.
  */
 const APPLIED_DEFAULT_THEME_STORAGE_PREFIX = "t3code:default-theme-applied:v2:";
 
-/** Key on set time so reasserting the same theme applies again; missing timestamps apply once per value. */
+/**
+ * One generation per set: keyed on when the theme was set, not just its
+ * value, so re-asserting the same theme still acts. Environments provisioned
+ * by builds without the timestamp degrade to applying once per value.
+ */
 export function defaultThemeGeneration(theme: string, setAt: string): string {
   return setAt.length > 0 ? `${theme}@${setAt}` : theme;
 }
@@ -53,8 +58,10 @@ function writeAppliedGeneration(storageKey: string, generation: string): void {
 }
 
 /**
- * Each environment theme set applies once, then user choices win until the next set. Wait for unresolved
- * published ids because palettes and preferences arrive independently.
+ * Applies the environment's theme (`t3 theme set <id>`). Each set switches this
+ * client once — live when connected, on the next connect otherwise — and then
+ * steps aside: a theme the user picks in Settings afterwards wins until the
+ * environment's theme is set again.
  */
 export function useDefaultThemeAdoption(): void {
   const environmentId = useAtomValue(primaryEnvironmentIdAtom);
@@ -76,8 +83,11 @@ export function useDefaultThemeAdoption(): void {
     });
     if (generation === null || definition === null) return;
 
-    // An environment set replaces the base and selects a single theme's appearance so adoption actually changes
-    // the UI.
+    // Deliberately not the card's rule. Clicking a card is a user choosing one
+    // half of their own mix; a set theme is the environment saying what this
+    // client opens on, so it takes the base preference and, for a
+    // single-appearance theme, the matching mode -- otherwise a dark-only
+    // theme on a light client is recorded as applied while nothing changes.
     if (!setTheme(defaultTheme)) return;
     const half = singleAppearanceOf(definition);
     // Recorded only once both land: marking the generation applied while the

@@ -6,16 +6,15 @@ import { describePreviewError } from "./errorCodeMessages";
 
 interface Props {
   url: string;
-  /** Chromium net error code, e.g. -105. */
   code: number;
-  /** Stringified Chromium error, e.g. "ERR_NAME_NOT_RESOLVED". */
   description: string;
   onReload: () => void;
-  /** Reopens the page in a browser that may reach it, such as the environment's. */
   move?: { readonly label: string; readonly onMove: () => void };
 }
 
-/** Server browsers download unsupported PDFs; offer the original URL or saved file. */
+/**
+ * A server tab's address was a file its browser cannot show (a PDF), so the browser downloaded it.
+ */
 export function PreviewFileNotShown({
   url,
   fileName,

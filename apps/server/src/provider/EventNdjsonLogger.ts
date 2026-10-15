@@ -1,5 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/** Native and canonical views share a writer per thread to avoid append/rotation/retention races. */
+/**
+ * Native and canonical views share batching, rotation, and retention state so
+ * they cannot race while appending to the same thread-scoped file.
+ */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 

@@ -38,7 +38,6 @@ import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
-  // A `t3code://new?…` prompt link. See usePromptLinkResolver.
   readonly prompt?: string | string[];
   readonly repo?: string | string[];
   readonly pr?: string | string[];
@@ -185,7 +184,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
-  // Scratch tasks require a connected supporting environment; the draft can switch machines later.
   const scratchEnvironments = connectedEnvironments.filter(
     (environment) =>
       availableScratchWorkspaceRoot(
@@ -265,7 +263,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       return;
     }
     if (!isFocused) {
-      // Clear the latch on return so project rows can resume the reserved draft again.
+      // Returning from the reserved draft is a fresh resume attempt. Keeping
+      // this latch set would leave every project row disabled with no route.
       resumedDestinationKeyRef.current = null;
       return;
     }

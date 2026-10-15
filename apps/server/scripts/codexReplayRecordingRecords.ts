@@ -55,8 +55,14 @@ function withoutMachineIdentity(
   );
 }
 
-/** Keeps native fork request ids intact and replaces the cwd with <workspace>.
- * With machine, also scrubs account and installation identity from every frame. */
+/**
+ * Codex supports multiple provider threads in one app-server session, so native
+ * fork recording keeps the request ids emitted by that single client. Outbound
+ * frames name the recording cwd `<workspace>`, which replay swaps for its own
+ * checkpoint workspace. With `machine`, every frame also swaps the checkout
+ * path, home directory, hostname, installation id and plan type for neutral
+ * values so fixtures carry no local identity; the adapter reads none of them.
+ */
 export function codexReplayRecordingOutputRecords(
   records: ReadonlyArray<Record<string, unknown>>,
   options: {

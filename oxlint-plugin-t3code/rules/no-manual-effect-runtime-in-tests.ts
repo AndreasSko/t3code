@@ -19,7 +19,6 @@ const EFFECT_RUNTIME_METHODS = new Set([
   "runSyncWith",
 ]);
 
-// Per-file maxOccurrences permits existing manual runners but forbids new occurrences.
 const readMaxOccurrences = (options: ReadonlyArray<unknown>): number => {
   const [first] = options;
   return typeof first === "object" &&

@@ -192,11 +192,13 @@ export interface MeasuredWsClient {
   readonly recorder: WebSocketTransferRecorder;
   /** Fork subscription consumers here so they stop before the socket closes. */
   readonly scope: Scope.Scope;
-  /** Closes the socket now. The enclosing scope closes it otherwise. */
   readonly close: Effect.Effect<void>;
 }
 
-/** Uses a child scope so clients can disconnect independently during reconnect measurements. */
+/**
+ * Several clients can share one test scope and still disconnect independently,
+ * which a reconnect measurement needs.
+ */
 export const openMeasuredWsClient = Effect.fn("TransferBudget.openMeasuredWsClient")(
   function* (input: { readonly url: string; readonly cookie: string }) {
     const recorder = makeWebSocketTransferRecorder();

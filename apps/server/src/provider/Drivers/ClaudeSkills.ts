@@ -1,6 +1,3 @@
-/** SDK init reports slash commands without paths, so discover native skill roots on disk.
- * Claude reads config/skills and cwd/.claude/skills, preferring user roots; it ignores .agents/skills. */
-
 import type { ClaudeSettings, ServerProviderSkill } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -26,8 +23,13 @@ type SkillFrontmatter =
       readonly userInvocable?: boolean;
     };
 
-/** Claude accepts YAML 1.1 booleans that this YAML 1.2 parser leaves as strings/numbers.
- * Normalize them so user-invocable: no cannot appear as an invocable skill. */
+/**
+ * Claude Code accepts the YAML 1.1 boolean spellings (`yes`/`no`, `on`/`off`,
+ * `1`/`0`), which the 1.2 core schema this parser uses leaves as strings and
+ * numbers. Verified against the CLI: a skill carrying `user-invocable: no` is
+ * absent from its published slash commands, so a strict `=== false` here would
+ * offer a command the CLI rejects.
+ */
 function parseFrontmatterBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -97,7 +99,6 @@ function parseSkillFrontmatter(contents: string): SkillFrontmatter {
   };
 }
 
-/** Managed policy outranks user/project settings; a missing policy file is normal. */
 function claudeManagedSettingsPath(
   path: Path.Path,
   platform: NodeJS.Platform,
@@ -113,8 +114,13 @@ function claudeManagedSettingsPath(
   return "/etc/claude-code/managed-settings.json";
 }
 
-/** CLI precedence is user, project, project-local, repository-root local, then managed policy.
- * A root above cwd contributes only settings.local.json; disabled skills stay visible for the picker. */
+/**
+ * Settings files Claude Code merges for `skillOverrides`, in increasing
+ * precedence: user, project, project-local, then the administrator's managed
+ * policy, which wins outright. When the workspace sits inside a git repository,
+ * the repository root's `settings.local.json` is read too and outranks the
+ * workspace's own local file.
+ */
 export function skillOverrideSettingsPaths(
   path: Path.Path,
   configDirPath: string,
@@ -138,7 +144,6 @@ export function skillOverrideSettingsPaths(
   ];
 }
 
-/** Claude's settings walk stops at the nearest .git entry, including cwd. */
 const findRepositoryRoot = Effect.fn("findRepositoryRoot")(function* (
   cwd: string,
 ): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
@@ -160,10 +165,16 @@ const findRepositoryRoot = Effect.fn("findRepositoryRoot")(function* (
   }
 });
 
-/** Claude drops the whole override map if any value is invalid, including booleans. */
+/**
+ * The CLI validates the whole map, not each entry: verified against it, one
+ * entry with an unknown value (or a boolean) makes it drop every override in
+ * that file, so this schema does the same rather than applying the valid
+ * siblings the CLI ignores.
+ */
 const SkillOverrideValue = Schema.Literals(["on", "name-only", "user-invocable-only", "off"]);
 
-// Claude tolerates comments and trailing commas in hand-edited settings.
+// Lenient because these settings files are hand-edited and Claude Code itself
+// tolerates comments and trailing commas in them.
 const SkillOverrideSettings = fromLenientJson(
   Schema.Struct({
     skillOverrides: Schema.optional(Schema.Record(Schema.String, SkillOverrideValue)),
@@ -171,7 +182,11 @@ const SkillOverrideSettings = fromLenientJson(
 );
 const decodeSkillOverrideSettings = Schema.decodeUnknownEffect(SkillOverrideSettings);
 
-/** user-invocable-only disables agent invocation separately from the skill's enabled state. */
+/**
+ * `"user-invocable-only"` hides it from the agent exactly as
+ * `disable-model-invocation` does, so it is kept apart from a plain on/off
+ * decision rather than collapsed into one.
+ */
 type SkillOverride = {
   readonly enabled: boolean;
   readonly userInvocationOnly: boolean;
@@ -237,6 +252,12 @@ const readSkillOverrides = Effect.fn("readSkillOverrides")(function* (
   return overridesByName;
 });
 
+/**
+ * Resolve the Claude config directory the CLI would use, matching the
+ * precedence the spawned CLI sees: the instance's `homePath` (exported as
+ * `CLAUDE_CONFIG_DIR` by `makeClaudeEnvironment`), then a `CLAUDE_CONFIG_DIR`
+ * already present in the process environment, then `~/.claude`.
+ */
 const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(function* (
   config: Pick<ClaudeSettings, "homePath">,
   environment: NodeJS.ProcessEnv,
@@ -248,7 +269,11 @@ const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(funct
   if (homePath.length > 0) {
     return path.resolve(expandHomePath(homePath, home));
   }
-  // Match the CLI's literal CLAUDE_CONFIG_DIR; resolve relative values against its workspace cwd.
+  // No tilde expansion here: the spawned CLI receives this env var verbatim
+  // (env vars are never shell-expanded), so a literal `~` must stay literal
+  // for discovery to scan the same directory the runtime would. A relative
+  // value is resolved against the workspace cwd — the subprocess's own cwd —
+  // for the same reason.
   const environmentConfigDir = environment.CLAUDE_CONFIG_DIR?.trim() ?? "";
   if (environmentConfigDir.length > 0) {
     return cwd ? path.resolve(cwd, environmentConfigDir) : path.resolve(environmentConfigDir);
@@ -256,7 +281,11 @@ const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(funct
   return path.join(home, ".claude");
 });
 
-/** Skip unreadable/malformed skills; user roots win collisions so metadata matches the command Claude runs. */
+/**
+ * Roots are listed highest precedence first and the first hit for a name wins,
+ * matching Claude Code: verified against the CLI with the same skill name in
+ * both scopes, the user copy is the one that runs.
+ */
 export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* (
   config: Pick<ClaudeSettings, "homePath">,
   cwd?: string,
@@ -288,12 +317,19 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
       }
 
       const frontmatter = parseSkillFrontmatter(contents);
-      // Malformed frontmatter also prevents Claude Code from loading this skill.
+      // Malformed frontmatter means the skill won't load in Claude Code
+      // either — skip it rather than surfacing a broken entry under its
+      // directory name.
       if (frontmatter.kind === "malformed") {
         continue;
       }
 
-      // Claude uses directory names for commands and skillOverrides, regardless of frontmatter name.
+      // Claude Code identifies a skill by its directory, not by the
+      // frontmatter `name`: verified against the CLI, a skill in `probe-alias/`
+      // declaring `name: probe-alias-frontmatter` is published as
+      // `probe-alias`, and only `skillOverrides["probe-alias"]` switches it
+      // off. Keying off the frontmatter name would report a command that does
+      // not exist and miss the override that disables it.
       const name = entry.trim();
       if (!name) {
         continue;

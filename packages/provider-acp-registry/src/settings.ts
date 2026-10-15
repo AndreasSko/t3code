@@ -1,4 +1,3 @@
-/** Shared with client settings forms; keep this module browser-safe. */
 import { TrimmedString, makeProviderSettingsSchema } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

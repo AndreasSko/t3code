@@ -539,7 +539,6 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
   );
 }
 
-/** Shared git menu for the thread and review screen native toolbars. */
 export function ThreadGitMenu(props: ThreadGitMenuProps) {
   const menu = useThreadGitMenuDefinition(props);
   return menu ? createNativeHeaderMenu(menu) : null;

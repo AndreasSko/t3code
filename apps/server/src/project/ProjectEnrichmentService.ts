@@ -19,7 +19,10 @@ const DEFAULT_CACHE_CAPACITY = 512;
 const DEFAULT_MAX_PENDING = 512;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_SUCCESS_TTL = Duration.minutes(1);
-// Favicon scans cost about 20 probes and icons rarely change, so cache longer than repository identity.
+// A favicon scan checks about 20 files. Shell reads (and PR sync through them) ask for every
+// linked project about once a minute, and icons rarely change, so a resolved favicon is kept
+// longer than the identity, which is only a hit on RepositoryIdentityResolver's own cache.
+// Moving a project's workspace root, and deleting it, invalidate both at once.
 const DEFAULT_FAVICON_TTL = Duration.minutes(15);
 const DEFAULT_FAILURE_TTL = Duration.seconds(5);
 
@@ -40,7 +43,6 @@ export interface ProjectEnrichmentServiceOptions {
   readonly cacheCapacity?: number;
   /** Maximum active and queued roots for each enrichment field. */
   readonly maxPending?: number;
-  /** Worker concurrency for each enrichment field. */
   readonly concurrency?: number;
   readonly successTtl?: Duration.Input;
   readonly faviconTtl?: Duration.Input;
@@ -52,7 +54,6 @@ export class ProjectEnrichmentService extends Context.Service<
   {
     /** Read resolved metadata without starting or awaiting filesystem work. */
     readonly peek: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;
-    /** Schedule missing metadata for bounded background resolution. */
     readonly request: (workspaceRoot: string) => Effect.Effect<void>;
     /** Read immediately available metadata and schedule anything missing. */
     readonly getAvailable: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;

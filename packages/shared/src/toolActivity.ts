@@ -45,7 +45,6 @@ export function dynamicToolSurface(toolName: string | null | undefined, input: u
     : undefined;
 }
 
-/** Heading from a REPL's title or the skill loaded by a Claude Skill call. */
 export function dynamicToolTitle(
   toolName: string | null | undefined,
   input: unknown,
@@ -197,7 +196,10 @@ function extractPrimaryPath(data: Record<string, unknown> | undefined): string |
   return collectToolFilePaths(data)[0];
 }
 
-/** Preserve useful rawInput when ACP resends an empty object. */
+/**
+ * Later ACP updates often resend `rawInput: {}`. Keep the first object that
+ * actually carried keys so a parsed path is not wiped out.
+ */
 export function mergeToolActivityData(
   previous: unknown,
   next: unknown,
@@ -362,7 +364,6 @@ function searchTargetName(value: string | undefined): string | undefined {
   return value.split(/[\\/]/u).findLast((part) => part.length > 0 && part !== ".");
 }
 
-/** Cursor-style row: "Searched files *.{ts,tsx} in t3chat-new". */
 export function formatSearchToolLabel(
   data: Record<string, unknown> | undefined,
 ): string | undefined {
@@ -388,7 +389,6 @@ export function formatSearchToolLabel(
   return undefined;
 }
 
-/** Work-log heading for a file read: verb plus the structured path, never the path alone. */
 export function formatReadToolLabel(path: string, extraCount = 0): string {
   const trimmed = path.trim();
   const suffix = extraCount > 0 ? ` +${extraCount} more` : "";

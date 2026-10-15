@@ -95,8 +95,10 @@ export function isAllowedEndpointOrigin(input: {
   return input.origin.localHttpPort === endpointRequestPort(url);
 }
 
-// Managed endpoints must target loopback; manual and publish-only links
-// are reached out of band and do not require managed-tunnel scope.
+// A managed (Cloudflare tunnel) endpoint is provisioned by the relay and must
+// point at a loopback origin. A manual endpoint is reached out of band (e.g.
+// Tailscale) or not advertised at all for publish-only links, so it is not
+// tied to the managed-tunnel scope.
 export function isSupportedLinkProviderKind(request: RelayLinkProofRequest): boolean {
   return (
     request.endpoint.providerKind === "cloudflare_tunnel" ||

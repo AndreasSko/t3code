@@ -207,9 +207,11 @@ const VcsStatusChangeRequest = Schema.Struct({
   baseRef: TrimmedNonEmptyStringSchema,
   headRef: TrimmedNonEmptyStringSchema,
   state: VcsStatusChangeRequestState,
-  /** Optional for compatibility with older servers and providers. */
   isDraft: Schema.optional(Schema.Boolean),
-  /** Provider activity time (ISO), including metadata/comments, distinct from close/merge time. */
+  /**
+   * Last provider-side activity (ISO), including comments and metadata edits.
+   * This is not the time a change request closed or merged.
+   */
   updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
@@ -231,7 +233,10 @@ const VcsStatusLocalShape = {
     insertions: NonNegativeInt,
     deletions: NonNegativeInt,
   }),
-  /** Merge-base-to-working-tree totals include untracked files; optional on older servers. */
+  /**
+   * Totals for the diff panel's Changes view: merge-base with the base branch to the
+   * working tree, untracked files included. Absent on older servers.
+   */
   branchChanges: Schema.optional(
     Schema.Struct({
       baseRef: Schema.NullOr(TrimmedNonEmptyStringSchema),
@@ -298,7 +303,11 @@ export const GitPreparePullRequestThreadResult = Schema.Struct({
   pullRequest: GitResolvedPullRequest,
   branch: TrimmedNonEmptyStringSchema,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
-  /** False means local changes prevented a reused worktree from matching the PR head. */
+  /**
+   * False when the checkout could not be brought to the pull request head — a reused worktree
+   * holding local commits or uncommitted changes keeps its own state, so the code being handed
+   * over is older than the pull request.
+   */
   isOnPullRequestHead: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
@@ -344,7 +353,9 @@ export const VcsPullResult = Schema.Struct({
 });
 export type VcsPullResult = typeof VcsPullResult.Type;
 
-// Carry diagnostic tags, never raw stderr: Git echoes argv and remote URLs that may hold credentials.
+// Git's stderr itself stays off the error: it echoes argv and remote URLs,
+// which can hold credentials. The tag names the cause for logs and callers; it
+// does not select a message.
 export const GitCommandFailureReason = Schema.Literals([
   "authentication_failed",
   "branch_already_exists",

@@ -7,7 +7,6 @@ export type PullRequestEnvironmentTarget = {
   readonly host?: string;
 };
 
-/** Finds a connected repository copy when the original environment is unreachable. */
 export function pullRequestFallbackEnvironment(
   target: PullRequestEnvironmentTarget,
   projects: ReadonlyArray<EnvironmentProject>,

@@ -28,8 +28,6 @@ function useColorDrag(
     onInteractionEnd?.();
   };
   return {
-    // The thumb stays inside the control at its extremes, and only animates
-    // keyboard adjustments, never continuous pointer movement.
     thumbTransition: isDragging
       ? undefined
       : "left 80ms linear, top 80ms linear, background-color 80ms linear",
@@ -56,7 +54,6 @@ type ColorControlProps<T> = {
   label: string;
   value: T;
   onChange: (value: T) => void;
-  /** Flush pending consumer updates when pointer interaction finishes. */
   onInteractionEnd?: () => void;
   className?: string;
 };

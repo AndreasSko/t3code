@@ -158,33 +158,18 @@ function ModelListSeparator() {
 
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
   environmentId: EnvironmentId | null;
-  /** The instance currently selected in the composer (combobox "value"). */
   activeInstanceId: ProviderInstanceId;
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
   /**
-   * When set, the picker is locked to the given driver kind — typically
-   * because the user is editing a previously-sent message and can't change
-   * which driver served the turn. Multiple instances of the same kind
-   * remain selectable (e.g. locked to `codex` still lets the user switch
-   * between the default Codex and a custom Codex Personal).
+   * When set, the picker is locked to the given driver kind — typically because the user is
+   * editing a previously-sent message and can't change which driver served the turn.
    */
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
-  /**
-   * All configured provider instances in display order. Used to render
-   * the sidebar (one button per instance) and to resolve display names
-   * for the locked-mode header.
-   */
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   keybindings?: ResolvedKeybindingsConfig;
-  /**
-   * Model options per instance. Keyed by `ProviderInstanceId` so the
-   * default Codex instance and any custom Codex instances each have their
-   * own list (custom instances typically start with the same built-in
-   * model set but are free to diverge via customModels).
-   */
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   terminalOpen: boolean;
   onRequestClose?: () => void;
@@ -263,7 +248,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         activeInstanceHasSelectableUnavailableModel ||
         activeInstanceNeedsSetup
       ) {
-        // Keep the active instance visible when it is locked or needs setup.
         return props.activeInstanceId;
       }
       return favorites.length > 0 ? "favorites" : props.activeInstanceId;
@@ -312,11 +296,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     };
   }, [focusSearchInput]);
 
-  // Create a Set for efficient lookup. Favorites are keyed by
-  // `${instanceId}:${slug}`; the storage schema widened from ProviderDriverKind
-  // to ProviderInstanceId so pre-migration favorites keyed by driver slugs
-  // (e.g. `"codex:gpt-5"`) still resolve — the default instance id equals
-  // the driver slug.
+  // Favorites are keyed by `${instanceId}:${slug}`; the storage schema widened from
+  // ProviderDriverKind to ProviderInstanceId so pre-migration favorites keyed by driver slugs
+  // (e.g. `"codex:gpt-5"`) still resolve — the default instance id equals the driver slug.
   const favoritesSet = useMemo(() => {
     return new Set(favorites.map((fav) => providerModelKey(fav.provider, fav.model)));
   }, [favorites]);
@@ -363,8 +345,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     for (const [instanceId, models] of modelOptionsByInstance) {
       const entry = entryByInstanceId.get(instanceId);
       if (!entry) {
-        // Instance disappeared between renders (configuration change). Skip
-        // its models — stale options shouldn't appear in the picker.
         continue;
       }
       for (const model of models) {
@@ -585,10 +565,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         )
       : [];
 
-  // Models the manifest announces that this provider's installed CLI is too
-  // old to run. Without this, a new model just seems missing until the user
-  // happens to update the CLI.
-  // A search spans every instance, so it can explain gated matches from any of them.
+  // Models the manifest announces that this provider's installed CLI is too old to run. Without
+  // this, a new model just seems missing until the user happens to update the CLI.
   const updateRequiredNotices = (
     isSearching
       ? instanceEntries.filter(matchesLockedProvider)
@@ -828,7 +806,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <div
         ref={pickerContentRef}
         className="relative flex max-h-86.5 w-screen max-w-90 flex-row overflow-hidden"
-        // Hold the height from when the search started; results scroll instead of resizing.
         style={isSearching ? { height: searchHeight } : undefined}
         data-model-picker-content="true"
       >

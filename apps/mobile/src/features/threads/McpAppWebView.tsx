@@ -42,9 +42,17 @@ import { MCP_APP_INLINE_MAX_HEIGHT, mcpAppInlineHeight } from "./mcpAppSizing";
 
 const ROW_BOTTOM_MARGIN = 8;
 
-// The SDK requires real parent/source windows, so host the app in an opaque-origin iframe.
-// Android exposes the bridge to every frame: authenticate outer-page relays and stop after app navigation.
-// This authenticates the document; it cannot prevent the app from carrying data in a navigation URL.
+// The WebView loads a tiny outer page that hosts the app in a real
+// opaque-origin iframe, as web does, so the app's `window.parent` and the
+// `event.source` of host replies are a real window, which the MCP Apps SDK
+// requires. Android exposes `ReactNativeWebView` to every frame, so a frame
+// nested in the app could post to React Native directly. The outer page
+// therefore wraps what it relays with a secret only it holds, and React Native
+// drops anything else. The bridge belongs to the captured document: once the
+// app frame loads a second time (it navigated itself), the outer page stops
+// relaying and says so, rather than letting a page T3 never served pose as the
+// app. This is not a confidentiality boundary: a frame can always navigate
+// itself, so the app could carry anything it read out in a URL either way.
 function outerDocument(src: string, allow: string, secret: string) {
   const attribute = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -77,15 +85,19 @@ const confirm = (title: string, message: string, action: string) =>
         { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
         { text: action, onPress: () => resolve(true) },
       ],
-      // Android dismisses an earlier alert when another opens; release its pending request slot.
+      // Android dismisses an open alert when the next one shows; a dismissed
+      // request is declined rather than left holding an in-flight slot.
       { cancelable: true, onDismiss: () => resolve(false) },
     );
   });
 
-/** Largest file an app may hand the user through `ui/download-file`. */
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
-/** Inline and fullscreen require separate WebViews, so switching tears down the inline document. */
+/**
+ * A WebView cannot move between the two without reloading, so each is its own
+ * view of the app: the inline one is torn down before full screen opens, and
+ * comes back when it closes.
+ */
 export function ThreadMcpApp(props: {
   readonly environmentId: EnvironmentId;
   /** The thread that produced the app, which its requests run against. */
@@ -98,7 +110,6 @@ export function ThreadMcpApp(props: {
   readonly width: number;
   readonly displayMode?: "inline" | "fullscreen";
   readonly onExitFullscreen?: () => void;
-  /** Full screen only: the screen's height, which the app is told it fills. */
   readonly height?: number;
 }) {
   // One reference per app: a new object with the same content (a refetch, a
@@ -114,7 +125,6 @@ export function ThreadMcpApp(props: {
   const insets = useSafeAreaInsets();
   const [closed, setClosed] = useState(false);
   const [presentedFullscreen, setPresentedFullscreen] = useState(false);
-  // Reopened documents need a fresh WebView and host.
   const [documentKey, setDocumentKeyState] = useState(0);
 
   const { themeId, themeAppearance, themeVariables, systemColorsActive } =
@@ -147,7 +157,9 @@ export function ThreadMcpApp(props: {
   if (uri === null && asset._tag === "Success") setUri(asset.url);
   const [loaded, setLoaded] = useState(false);
   const [navigatedAway, setNavigatedAway] = useState(false);
-  // Reclaimed web processes need fresh initialization and replay; retry only once to avoid crash loops.
+  // Bumped when the OS reclaims the web process: a fresh view, document and
+  // host, so the reloaded app is initialized and replayed again. Once only, so
+  // an app that keeps crashing its process is not reloaded forever.
   const [generation, setGeneration] = useState(0);
   const [crashed, setCrashed] = useState(false);
   const restart = () => {
@@ -157,13 +169,13 @@ export function ThreadMcpApp(props: {
     }
     setLoaded(false);
     setHeight(MCP_APP_INLINE_MAX_HEIGHT);
-    // The initial token may have expired; use the asset query's refreshed URL.
+    // The first URL's token may have expired by now; the asset query keeps
+    // a refreshed one, which this new view can load.
     if (asset._tag === "Success") setUri(asset.url);
     setGeneration(1);
   };
   // Minted per view, so only this view's outer page can speak for its app.
   const [secret] = useState(uuidv4);
-  // Reopened documents use the refreshed URL because the first token may have expired.
   const setDocumentKey = (next: (value: number) => number) => {
     setLoaded(false);
     setHeight(MCP_APP_INLINE_MAX_HEIGHT);
@@ -171,7 +183,6 @@ export function ThreadMcpApp(props: {
     if (asset._tag === "Success") setUri(asset.url);
     setDocumentKeyState(next);
   };
-  // The focus listener needs the latest helper and refreshed asset URL.
   const openNewDocument = useRef(setDocumentKey);
   useEffect(() => {
     openNewDocument.current = setDocumentKey;
@@ -208,8 +219,8 @@ export function ThreadMcpApp(props: {
     reportFailure: false,
   });
   const [toolDefinition, setToolDefinition] = useState<unknown>(undefined);
-  // Read current context without rebuilding the host and dropping the app session.
-  // A fullscreen app must step aside for this conversation's pending approval or question.
+  // Read by the host on every message, so it always sees current values
+  // without being rebuilt (which would drop the app's session).
   const conversation = useThreadShell(
     scopeThreadRef(props.environmentId, props.conversationThreadId),
   );
@@ -275,7 +286,6 @@ export function ThreadMcpApp(props: {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         userAgent: `t3-code/${Constants.expoConfig?.version ?? "0.0.0"}`,
         deviceCapabilities: { touch: true, hover: false },
-        // The modal reserves top/bottom insets for its header and home indicator.
         safeAreaInsets: isFullscreen
           ? { top: 0, right: current.insets.right, bottom: 0, left: current.insets.left }
           : { top: 0, right: 0, bottom: 0, left: 0 },
@@ -324,7 +334,8 @@ export function ThreadMcpApp(props: {
         return result.value;
       },
       openLink: async (url) => {
-        // WebViews cannot verify a user tap, so ask before opening external links.
+        // A WebView cannot tell whether the reader just tapped the app, so it
+        // asks, rather than letting an app leave T3 on a timer.
         if (!(await confirm(`Open a link from ${app.server}?`, url, "Open"))) {
           throw new McpAppHostRefusal("Declined by the user.");
         }
@@ -336,7 +347,8 @@ export function ThreadMcpApp(props: {
         if (!(await confirm(`Send this message from ${app.server}?`, text, "Send"))) {
           throw new McpAppHostRefusal("Declined by the user.");
         }
-        // The outbox survives dropped connections and uses thread settings when the message sends.
+        // Through the outbox like a typed message, so it survives a dropped
+        // connection; the thread's own settings fill in when it sends.
         await enqueueThreadOutboxMessage({
           environmentId: latest.current.props.environmentId,
           threadId: latest.current.props.conversationThreadId,
@@ -371,9 +383,9 @@ export function ThreadMcpApp(props: {
           return current.displayMode ?? "inline";
         }
         if (mode === "fullscreen" && current.displayMode !== "fullscreen") {
-          // Finish inline teardown before opening the separate fullscreen document.
           await hostRef.current?.teardown();
-          // Recheck after teardown: an approval or navigation change may have arrived while awaiting it.
+          // The wait may have let an approval arrive, or the user moved to
+          // another screen; either way the view reloads inline.
           if (latest.current.awaitingUser || !latest.current.navigation.isFocused()) {
             openNewDocument.current((value) => value + 1);
             return "inline";
@@ -452,7 +464,6 @@ export function ThreadMcpApp(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A restarted view needs a new host.
   }, [uri, app, generation, documentKey]);
 
-  // The host reads the context through `latest`; these only say when to resend.
   useEffect(() => {
     hostRef.current?.updateHostContext();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Context changes trigger a resend.
@@ -522,8 +533,11 @@ export function ThreadMcpApp(props: {
           style={{ flex: 1, backgroundColor: "transparent" }}
           nestedScrollEnabled
           originWhitelist={["*"]}
-          // Android labels nested-frame navigations as top-frame; rely on the iframe sandbox there.
-          // On iOS, allow only the outer page at the top; app links use the bridge.
+          // Only the outer page loads at the top; the app opens links through
+          // the bridge. Android reports every navigation as top-frame, frames
+          // the app nests included, so it has no gate to apply: there the
+          // outer page never navigates, and the app frame's sandbox already
+          // forbids top navigation and popups.
           onShouldStartLoadWithRequest={(request) =>
             Platform.OS === "android" ||
             request.isTopFrame === false ||
@@ -531,7 +545,8 @@ export function ThreadMcpApp(props: {
           }
           setSupportMultipleWindows={false}
           onLoadEnd={() => setLoaded(true)}
-          // These errors concern the outer view, so render a failure instead of a blank box.
+          // The outer page is inline HTML, so these report a broken view, not
+          // an app page; the row shows the failure instead of a blank box.
           onError={() => setCrashed(true)}
           onHttpError={() => setCrashed(true)}
           onMessage={(event: WebViewMessageEvent) => {

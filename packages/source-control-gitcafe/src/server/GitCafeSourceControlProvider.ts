@@ -166,6 +166,7 @@ const cloneUrls = (target: Target) => ({
   sshUrl: `ssh@${target.host}:${target.repository}.git`,
 });
 
+/** An scp-like `user@host:path` or `ssh://` remote; HTTPS remotes may carry userinfo too. */
 const isSshRemote = (remoteUrl: string | undefined) =>
   remoteUrl !== undefined && (/^ssh:\/\//iu.test(remoteUrl) || /^[^/:]+@[^/:]+:/u.test(remoteUrl));
 
@@ -424,7 +425,8 @@ export const make = Effect.gen(function* () {
           error("createRepository", input.cwd, "GitCafe returned an unreadable response.", cause),
         ),
       );
-      // Repository admission is asynchronous; wait until complete or blocked before returning it.
+      // GitCafe admits a repository asynchronously: `cafe repo create` answers while admission is
+      // still running, so wait for it to settle the way `cafe repo create --clone` does.
       const settled = (state: string) => state === "complete" || state === "blocked";
       const pending = created.data.resource;
       const resource = settled(pending.state)

@@ -60,7 +60,10 @@ export interface ComposerDocumentAttachment {
   readonly sizeBytes: number;
 }
 
-/** Exclude image, video, and PDF chips: they use native viewers rather than the file screen. */
+/**
+ * The attachment behind a chip when it is a document rather than a picture, video or PDF.
+ * Those three open in native viewers; documents open in the file screen.
+ */
 export function composerDocumentAttachment(
   source: string,
   context?: OrchestrationMessageContext,
@@ -101,7 +104,7 @@ export function createComposerContextHistory() {
   };
 }
 
-/** One identity per thread lets re-attaching reuse its chip. */
+/** Same identity as web: one record per thread, so re-attaching reuses the chip. */
 export function threadComposerContext(ref: ScopedThreadRef, title: string): ThreadContextRecord {
   const label = sanitizeComposerContextLabel(title, "thread");
   return {
@@ -236,7 +239,11 @@ export function reidentifyComposerContext(
   };
 }
 
-/** Choose the wire format at dispatch so queued context stays canonical; image-only messages still need a prompt to the agent. */
+/**
+ * Keep queued records canonical; choose the wire format against the host at dispatch time.
+ * An image-only prompt goes out as the attachment-only prompt web sends, so the agent is still
+ * asked to respond. The images stay in the message's attachments and context records.
+ */
 export function serializeComposerMessageForServer(
   composerText: string,
   context: OrchestrationMessageContext | undefined,

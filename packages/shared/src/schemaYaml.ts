@@ -50,12 +50,13 @@ function stringifyYaml(options?: YamlStringifyOptions): SchemaGetter.Getter<stri
   );
 }
 
-/** Decodes YAML and encodes YAML text; failures become `InvalidValue` schema issues. */
+/**
+ * Decode and encode failures become `InvalidValue` schema issues.
+ */
 export const fromYamlString = new SchemaTransformation.Transformation<unknown, string>(
   parseYaml(),
   stringifyYaml(),
 );
 
-/** Like `Schema.fromJsonString(schema)`, but decodes and encodes YAML. */
 export const fromYaml = <S extends Schema.Top>(schema: S) =>
   Schema.String.pipe(Schema.decodeTo(schema, fromYamlString));

@@ -8,8 +8,12 @@ import * as NodeNet from "node:net";
 import * as Effect from "effect/Effect";
 import { Argument, Command } from "effect/cli";
 
-// Remote archive runtimes have no Node; executable helpers supply output
-// and exit codes the SSH shell script parses.
+/**
+ * Small helpers the SSH launch script needs on the remote host. The script used to run these as
+ * inline `node -` snippets; archive-distributed runtimes have no Node on the remote, so the
+ * executable provides them instead. Output and exit codes match the snippets exactly because
+ * the shell script parses them.
+ */
 
 const canBind = (port: number) =>
   new Promise<boolean>((resolve) => {
@@ -38,6 +42,7 @@ const answersOnLoopback = (port: number) =>
     socket.once("error", () => resolve(false));
   });
 
+/** Prints the first free loopback port from the preferred one, scanning `window` ports. */
 const pickPort = Command.make("pick-port", {
   portFile: Argument.String("port-file"),
   defaultPort: Argument.Int("default-port"),
@@ -96,6 +101,7 @@ const waitReady = Command.make("wait-ready", {
   ),
 );
 
+/** Prints `<pid> <port>` for a live default-home server, or exits 1. */
 const runtimePort = Command.make("runtime-port", {
   runtimeFile: Argument.String("runtime-file"),
 }).pipe(

@@ -1,4 +1,7 @@
-/** PostHog deduplicates retries by the event uuid. */
+/**
+ * Each event carries a uuid, so PostHog can tell a retried copy from a new
+ * event.
+ */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { ClientOs } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -30,12 +33,10 @@ interface BufferedAnalyticsEvent {
 }
 
 interface DeliveryState {
-  /** Batch that failed last. It is sent again before newer events. */
   readonly failedBatch: ReadonlyArray<BufferedAnalyticsEvent>;
   readonly batchAttempts: number;
   /** Failed sends since the last success. Sets the backoff delay. */
   readonly failures: number;
-  /** The background flush does not send before this time (epoch ms). */
   readonly retryAt: number;
 }
 
@@ -46,7 +47,7 @@ const MAX_BATCH_ATTEMPTS = 5;
 const RETRY_BASE_DELAY_MS = 2_000;
 const RETRY_MAX_DELAY_MS = 300_000;
 
-/** The retry ceiling doubles from 2s to 5min; jitter stays in its upper half, with random in [0, 1). */
+/** `random` is in [0, 1). */
 export function retryDelayMs(failures: number, random: number): number {
   const ceiling = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (failures - 1));
   return Math.round(ceiling / 2 + (ceiling / 2) * random);
@@ -70,7 +71,6 @@ const TelemetryEnvConfig = Config.all({
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
-    /** Record an anonymous event for best-effort buffered delivery. */
     readonly record: (
       event: string,
       properties?: Readonly<Record<string, unknown>>,

@@ -117,7 +117,8 @@ export function ProviderUpdatePrimaryNotification() {
   const { dismissedNotificationKeys, dismissNotificationKey } =
     useDismissedProviderUpdateNotificationKeys();
 
-  // Close this flow's prompt when switching to the per-environment flow.
+  // If this flow unmounts (e.g. a WSL backend appears and we switch to the
+  // per-environment popover), close any prompt it owns so it does not linger.
   useEffect(() => {
     return () => {
       const activeToast = activeToastRef.current;

@@ -164,7 +164,10 @@ function isNotFoundError(error: PlatformError.PlatformError): boolean {
   return error.reason._tag === "NotFound";
 }
 
-// Maintain stable sort/slice semantics with bounded memory as items stream in.
+/**
+ * Same result as a stable sort and slice over every item, but memory stays bounded however many
+ * items stream in.
+ */
 function insertBounded<A>(
   items: A[],
   item: A,
@@ -197,7 +200,6 @@ const latestSeenFirst = (
   right: ServerTraceDiagnosticsLogEvent,
 ) => DateTime.toEpochMillis(right.seenAt) - DateTime.toEpochMillis(left.seenAt);
 
-/** Add lines from rotated files in order, then call finish. */
 export function makeTraceDiagnosticsAggregator(
   slowSpanThresholdMs = DEFAULT_SLOW_SPAN_THRESHOLD_MS,
 ) {
@@ -379,7 +381,9 @@ export function makeTraceDiagnosticsAggregator(
   return { addLine, finish };
 }
 
-/** Stream bounded chunks; false means the file does not exist. */
+/**
+ * Succeeds with false when the file does not exist.
+ */
 export function streamTraceFileLines(
   fileSystem: FileSystem.FileSystem,
   path: string,

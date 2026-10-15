@@ -528,7 +528,6 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(open);
         }}
       >
-        {/* Block background focus calls for the entire time the palette is open. */}
         <div className="contents" inert={state.open}>
           {children}
         </div>
@@ -607,7 +606,9 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
-  // Base UI auto-highlights the first row; hide it after typing until keyboard navigation resumes.
+  // Typing or entering a submenu clears the highlight. Base UI keeps its own on the
+  // first row, but the palette shows none until the user navigates, and the first
+  // ArrowDown lands on it.
   const highlightClearedRef = useRef(false);
   function clearTypedHighlight(): void {
     highlightClearedRef.current = true;
@@ -730,7 +731,11 @@ function OpenCommandPaletteDialog(props: {
         serverConfig?.providers ??
         (environment.environmentId === primaryEnvironmentId ? providers : []);
       const derived = deriveProviderInstanceEntries(environmentProviders);
-      // Enrich ACP identity from settings; machine-scoped entries serve all projects on this environment.
+      // Settings fill the ACP registry identity (agent id, icon URL) the
+      // derived entries alone do not carry. This map is keyed by environment,
+      // not project, because it backs thread rows across every project on
+      // that environment; `enabled` stays machine-scoped (`null`) since no
+      // single project applies.
       const entries = serverConfig
         ? applyProviderInstanceSettings(derived, serverConfig.settings, null)
         : derived;
@@ -781,7 +786,6 @@ function OpenCommandPaletteDialog(props: {
     readonly sourcesEnvironmentId: EnvironmentId | null;
   } | null>(null);
   const [newProjectPublishes, setNewProjectPublishes] = useState(false);
-  // The host picked beside the publish toggle; null takes the first ready host, GitHub when ready.
   const [newProjectPublishKind, setNewProjectPublishKind] =
     useState<SourceControlProviderKind | null>(null);
   const [newProjectHostPickerOpen, setNewProjectHostPickerOpen] = useState(false);
@@ -951,10 +955,13 @@ function OpenCommandPaletteDialog(props: {
   const canCreateProject = useEnvironmentScope(browseEnvironmentId, AuthOrchestrationOperateScope);
   const browseEnvironment =
     environments.find((environment) => environment.environmentId === browseEnvironmentId) ?? null;
-  // Desktop-local backends route pickFolder into their own filesystem by pool instance id.
   const browseEnvironmentIsDesktopLocal =
     browseEnvironment !== null && isDesktopLocalConnectionTarget(browseEnvironment.entry.target);
-  // pickFolder recognizes pool ids, not catalog environment ids; match bootstrap entries by backend URL.
+  // Map the browsed desktop-local env to its desktop pool instance id (e.g.
+  // "wsl:ubuntu"). The catalog environmentId is descriptor-derived and won't
+  // route on the desktop side; pickFolder only recognizes the pool id, which
+  // the bootstrap list exposes. Match on backend URL, exactly as Sidebar's
+  // LocalSecondaryStatus does (environment.displayUrl === bootstrap.httpBaseUrl).
   const browseDesktopInstanceId = useMemo(() => {
     if (!browseEnvironmentIsDesktopLocal || browseEnvironment === null) {
       return null;
@@ -1226,7 +1233,6 @@ function OpenCommandPaletteDialog(props: {
       isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
     const projectItems = enumerateCommandPaletteItems(
       buildProjectActionItems({
-        // The no-project home shows once, as the "No project" item below.
         projects: pickerProjects.filter((project) => !isScratch(project)),
         valuePrefix: "new-thread-in",
         searchTerms: (project) => {
@@ -1281,7 +1287,6 @@ function OpenCommandPaletteDialog(props: {
     );
     if (scratchTargetEnvironmentId === null) return projectItems;
 
-    // Keep No project visible after the current project without changing Enter or project mod+1..9 shortcuts.
     const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;
     return [
       ...projectItems.slice(0, noProjectIndex),
@@ -1707,8 +1712,6 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
-    // With no connected environment there is nothing to browse, so the only
-    // useful next step is connecting one.
     if (addProjectEnvironmentOptions.length === 0) {
       setOpen(false);
       void navigate({ to: "/settings/connections" });
@@ -1945,7 +1948,9 @@ function OpenCommandPaletteDialog(props: {
       searchTerms: ["restart", "reset", "reload", "agent", "session", "skills", "plugins", "mcp"],
       title: "Restart agent session",
       icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
-      // A fresh provider process resumes this conversation and reloads skills/plugins/MCP; scan updates the slash menu.
+      // Stopping the provider process keeps the conversation: the next message
+      // spawns a fresh one that resumes it and reloads skills, plugins, and MCP
+      // servers. The fresh workspace scan updates the composer's slash menu.
       run: async () => {
         const { environmentId } = thread;
         if (thread.runtime !== null) {
@@ -2669,7 +2674,8 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    // Clone progress lives outside the palette; only failures before git starts return here.
+    // Only problems found before git runs (bad destination, unknown repository)
+    // come back here.
     const projectId = newProjectId();
     setIsRemoteProjectCloning(true);
     const startResult = await startProjectClone({
@@ -2760,6 +2766,10 @@ function OpenCommandPaletteDialog(props: {
     );
   }, [browseNavigation, browsePath.parentPath, pinnedCloneDirectoryName, prefetchBrowsePath]);
 
+  // Resolve the add-project path from browse data when available. When the
+  // query has a trailing separator (e.g. "~/projects/foo/"), parentPath is the
+  // directory itself. Otherwise the user typed a partial leaf name, so we need
+  // the exact browse entry's fullPath or fall back to the raw query.
   const resolvedAddProjectPath = hasTrailingPathSeparator(query)
     ? (browseResult?.parentPath ?? query.trim())
     : (exactBrowseEntry?.fullPath ?? query.trim());
@@ -2799,7 +2809,6 @@ function OpenCommandPaletteDialog(props: {
   const newProjectPathPreview =
     newProjectsRoot === null ? null : getNewProjectPathPreview(newProjectsRoot, newProjectName);
   const newProjectPublishToggleValue = "new-project:publish";
-  // Replace the name step and any other machine's sources view so Back reaches the original entry point.
   const showExistingProjectSources = (environmentId: EnvironmentId) => {
     const sourcesEnvironmentId = newProjectFlow?.sourcesEnvironmentId ?? null;
     if (sourcesEnvironmentId === environmentId) {
@@ -2845,7 +2854,6 @@ function OpenCommandPaletteDialog(props: {
               `new-project:environment:${option.environmentId}`,
               switchNewProjectEnvironment,
             ),
-            // The create in flight keeps the machine it started on.
             ...(isCreatingNewProject ? { disabled: true } : {}),
             ...(option.environmentId === newProjectFlow.environmentId
               ? {
@@ -2905,7 +2913,9 @@ function OpenCommandPaletteDialog(props: {
                 titleTrailingContent: (
                   <span className="ms-auto flex items-center gap-2">
                     {newProjectPublishTargets.length > 1 ? (
-                      // Row pointerdown cancellation suppresses Select's mousedown; open on click without toggling the row.
+                      // The row toggles on click, so the picker keeps its clicks to itself. The
+                      // row also cancels pointerdown to keep focus in the input, which drops the
+                      // mousedown Select opens on, so the picker opens on click instead.
                       <span
                         className="flex"
                         onClick={(event) => {
@@ -3045,7 +3055,6 @@ function OpenCommandPaletteDialog(props: {
   const canOpenProjectFromFileManager =
     isBrowsing &&
     browseEnvironmentId !== null &&
-    // Without the WSL pool id, pickFolder opens Windows paths against the WSL environment; wait for mapping.
     (browseEnvironmentId === primaryEnvironmentId ||
       (browseEnvironmentIsDesktopLocal && browseDesktopInstanceId !== null)) &&
     typeof window !== "undefined" &&
@@ -3233,8 +3242,13 @@ function OpenCommandPaletteDialog(props: {
         browseEnvironmentId === primaryEnvironmentId && browseEnvironmentPlatform === "Linux"
           ? ((await window.desktopBridge?.getWslState().catch(() => null)) ?? null)
           : null;
-      // WSL pickers require pool ids; WSL-only primaries resolve theirs from desktop settings.
-      // Native primaries omit the target, and WSL UNC selections return as Linux paths.
+      // Route the picker to the browsed env's backend filesystem. The desktop
+      // only resolves a "wsl:*" pool instance id, so for a desktop-local env we
+      // pass the bootstrap-mapped instance id (not the catalog environmentId).
+      // A WSL-only primary has no secondary bootstrap, so resolve its instance
+      // id from desktop settings. Windows and combo-mode primaries still omit
+      // the target to preserve the native primary picker. The desktop converts
+      // a WSL UNC selection back to a Linux path before returning.
       const pickerTargetEnvironmentId = resolveProjectPickerTarget({
         browseEnvironmentId,
         primaryEnvironmentId,
@@ -3458,8 +3472,6 @@ function OpenCommandPaletteDialog(props: {
       footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}
       inputProps={{
-        // The submit button is absolutely positioned over the field, so the
-        // inner input must reserve enough room for the full action label.
         className: hasHighlightedNewProjectItem
           ? "*:data-[slot=autocomplete-input]:pe-38!"
           : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null

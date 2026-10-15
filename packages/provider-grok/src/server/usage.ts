@@ -68,7 +68,6 @@ function grokTotalsToUsage(totals: GrokUsageTotals): UsageTokenTotals {
   };
 }
 
-/** Reads turn_completed usage from updates.jsonl, emitting one record per reported model. */
 export function parseGrokLine(line: string): readonly UsageRecord[] {
   let parsed: unknown;
   try {
@@ -99,7 +98,6 @@ function parseGrokRecord(parsed: unknown): readonly UsageRecord[] {
   const sessionId = typeof paramsRecord["sessionId"] === "string" ? paramsRecord["sessionId"] : "";
   const promptId = typeof updateRecord["prompt_id"] === "string" ? updateRecord["prompt_id"] : null;
 
-  // Prefer the high-resolution agent clock; fall back to the outer unix seconds.
   const meta = paramsRecord["_meta"];
   let timestampMs: number | null = null;
   if (typeof meta === "object" && meta !== null) {
@@ -147,8 +145,6 @@ function parseGrokRecord(parsed: unknown): readonly UsageRecord[] {
     ];
   }
 
-  // Preserve per-model costs and prorate only the remaining aggregate across unticked models.
-  // Exclude zero-token rows from emitted costs and allocation weights.
   const topLevelCostUsd = grokCostTicksToUsd(topLevel.costUsdTicks);
   let usedTickedCostUsd = 0;
   let untickedTokenDenominator = 0;

@@ -44,8 +44,10 @@ export function grokUsageResponseToLimits(
 ) {
   const usedPercent = response.config?.creditUsagePercent;
   if (usedPercent === undefined || !Number.isFinite(usedPercent)) {
-    // xAI omits percentage until first usage. Treating that as unsupported would hide the account
-    // and block runtime updates that could recover its limits.
+    // A billing read that succeeded but carries no percentage is an account
+    // with nothing metered yet, not one that can never report: xAI omits the
+    // field entirely (rather than sending 0) until usage registers, then fills
+    // it in.
     return makeUsageLimits({ checkedAt, windows: [] });
   }
   const period = response.config?.currentPeriod;
@@ -154,7 +156,6 @@ export const readGrokAccount = Effect.fn("readGrokAccount")(function* (
   if (!token) {
     return { email, usageLimits: makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }) };
   }
-  // A failed quota request still knows which account it asked about.
   const usageLimits = yield* Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
     const response = yield* client.execute(

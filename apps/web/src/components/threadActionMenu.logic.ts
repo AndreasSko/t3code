@@ -1,7 +1,6 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
-/** Snooze presets dispatch as snooze:<presetId> so the union stays closed while presets stay data-driven. */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
@@ -67,7 +66,10 @@ export function buildDraftActionMenuItems(options: {
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly branch: string | null;
-  /** Null where no scoped thread list exists, such as the chat header. */
+  /**
+   * Project scoping for the thread list. Null on surfaces with no scoped
+   * list behind the menu (the chat header), where the item must not show.
+   */
   readonly projectFilter: {
     readonly label: string;
     readonly isActive: boolean;
@@ -175,8 +177,6 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    // Keep automatic settlement among settings; disabling it keeps long-running threads out of the settled
-    // shelf.
     ...(state.supports.autoSettleOptOut
       ? [
           {
@@ -212,7 +212,6 @@ export function buildThreadActionMenuItems(
       ],
     },
     { id: "project-settings", label: "Project settings", icon: "settings" },
-    // Archive preserves conversation under Settings > Archived threads, so it does not use Delete's styling.
     {
       id: "archive",
       label: "Archive thread",

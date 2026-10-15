@@ -141,11 +141,10 @@ export const AgentRpcs = RpcGroup.make(
   SetSessionConfigOptionRpc,
 );
 
-// Accept both ACP generations on the wire; the public client normalizes
-// them after initialize negotiates the generation.
 const CompatInitializeRpc = Rpc.make(AGENT_METHODS.initialize, {
-  // Use Unknown so initialize sends both generations' capability names;
-  // a union encoder would discard the other branch's fields.
+  // The negotiation request intentionally carries both v1 and v2 capability
+  // field names. A union encoder would select one branch and discard the
+  // other generation's fields before they reach the agent.
   payload: Schema.Unknown,
   success: Schema.Union([AcpSchema.InitializeResponse, AcpSchemaV1.InitializeResponse]),
   error: AcpSchema.Error,

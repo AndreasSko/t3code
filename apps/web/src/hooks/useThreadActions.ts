@@ -205,7 +205,11 @@ export async function navigateAfterThreadDeletion(navigate: () => Promise<void>)
   }
 }
 
-/** Visited-capable servers own unread watermarks across devices; other servers use browser-local markers. */
+/**
+ * Marks a thread unread. Servers with visited tracking own the unread marker
+ * (thread.mark-unread rewinds the server-side visited watermark, syncing the
+ * marker to every device); older servers keep the browser-local marker.
+ */
 function useMarkThreadUnread() {
   const markThreadUnreadMutation = useAtomCommand(threadEnvironment.markUnread, {
     reportFailure: false,
@@ -227,7 +231,12 @@ function useMarkThreadUnread() {
   );
 }
 
-/** Record a visit at wake time; server max(stored,supplied) preserves newer visits across devices. */
+/**
+ * Clears a thread's Woke marker by recording a visit at the wake time.
+ * Servers with visited tracking own the watermark (thread.visit keeps the
+ * later of the stored and supplied values, so this syncs to every device);
+ * older servers keep the browser-local watermark.
+ */
 export function useAcknowledgeThreadWoke() {
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
@@ -318,7 +327,10 @@ export function useThreadActions() {
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
-  // Use a ref because unstable handleNewThread dependencies would cascade through every sidebar row.
+  // Keep a ref so archiveThread can call handleNewThread without appearing in
+  // its dependency array — handleNewThread is inherently unstable (depends on
+  // the projects list) and would otherwise cascade new references into every
+  // sidebar row via archiveThread → attemptArchiveThread.
   const handleNewThreadRef = useRef(handleNewThread);
   handleNewThreadRef.current = handleNewThread;
 
@@ -686,7 +698,6 @@ export function useThreadActions() {
 
   const pinThread = useCallback(
     async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
-      // Version skew: never send the command to a server that predates it.
       if (!readEnvironmentSupportsPinning(target.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
@@ -697,7 +708,8 @@ export function useThreadActions() {
           ),
         );
       }
-      // Place pins at the run's top unless callers supply a better anchor; send orderKey only to capable servers.
+      // orderKey rides only to servers that decode it; pre-reorder servers get the bare pin they
+      // understand and the thread stays keyless.
       const orderKey = readEnvironmentSupportsPinReorder(target.environmentId)
         ? (opts.orderKey ?? topOfPinnedRunOrderKey())
         : undefined;
@@ -749,8 +761,6 @@ export function useThreadActions() {
 
   const settleThread = useCallback(
     async (target: ScopedThreadRef) => {
-      // Version skew: never send the command to a server that predates it —
-      // the raw protocol rejection would read as a random failure.
       if (!readEnvironmentSupportsSettlement(target.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
@@ -910,7 +920,6 @@ export function useThreadActions() {
 
   const snoozeThread = useCallback(
     async (target: ScopedThreadRef, snoozedUntil: string) => {
-      // Version skew: never send the command to a server that predates it.
       if (!readEnvironmentSupportsSnooze(target.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
@@ -944,6 +953,7 @@ export function useThreadActions() {
         action.finish();
         return result;
       }
+      // Snooze hides the row, so keep its confirmation in the sidebar.
       showThreadUndoNotice({
         action: "Snoozed",
         claim: action,

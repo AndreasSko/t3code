@@ -30,7 +30,9 @@ const UA_PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
   win32: "Windows",
 };
 
-/** Sites reject mismatched user agents and `Sec-CH-UA` brands, so both change together. */
+/**
+ * Sites block a user agent that disagrees with `Sec-CH-UA`, so both change together.
+ */
 const chromeIdentity = (
   headlessUserAgent: string,
   host: { readonly platform: NodeJS.Platform; readonly arch: string; readonly release: string },

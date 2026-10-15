@@ -40,7 +40,6 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly lookupRepository: (
       input: SourceControlRepositoryLookupInput,
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
-    /** Validates the clone destination and remote so callers can create the project before cloning. */
     readonly prepareClone: (
       input: SourceControlCloneRepositoryInput,
     ) => Effect.Effect<SourceControlPreparedClone, SourceControlRepositoryError>;
@@ -48,7 +47,6 @@ export class SourceControlRepositoryService extends Context.Service<
       input: SourceControlCloneRepositoryInput,
       options?: SourceControlCloneOptions,
     ) => Effect.Effect<SourceControlCloneRepositoryResult, SourceControlRepositoryError>;
-    /** Removes a partial or failed clone so the destination is empty again. */
     readonly discardClone: (
       destinationPath: string,
     ) => Effect.Effect<void, SourceControlRepositoryError>;
@@ -73,10 +71,14 @@ export interface SourceControlCloneOptions {
   readonly timeoutMs?: number | null;
 }
 
-// Synchronous clients need a deadline to detect stalls; tracked clones have progress and cancellation.
+// The synchronous RPC (older clients, mobile) keeps a deadline: nothing else
+// tells the user a clone stalled. The tracked path passes null and relies on
+// progress and Cancel instead.
 const CLONE_TIMEOUT_MS = 120_000;
 const CLONE_ENV = {
-  // Start progress immediately and disable credential prompts that would hang without a tty.
+  // `--progress` forces the transfer counters through the pipe; the delay env
+  // makes the checkout counter start immediately. No tty means a credential
+  // prompt would hang forever, so tell git to fail instead.
   GIT_PROGRESS_DELAY: "0",
   GIT_TERMINAL_PROMPT: "0",
   LC_ALL: "C",
@@ -112,7 +114,11 @@ function toRepositoryInfo(
   };
 }
 
-/** Redacts credentials before clone URLs reach every reader through project snapshots. */
+/**
+ * The URL clients see. A pasted `https://user:token@host/…` must not travel
+ * back over `subscribeProjectClones` to every reader; git still gets the
+ * original.
+ */
 function redactRemoteUrl(remoteUrl: string): string {
   try {
     const url = new URL(remoteUrl);
@@ -150,7 +156,6 @@ function selectRemoteUrl(
   }
 }
 
-/** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -282,7 +287,9 @@ export const make = Effect.gen(function* () {
   ) {
     const prepared = yield* prepareClone(input);
     const onProgress = options?.onProgress;
-    // Git mixes progress redraws with diagnostics; retain the last non-progress lines for errors.
+    // Git interleaves progress redraws with its real messages on stderr. The
+    // last non-progress lines are what explain a failure ("Repository not
+    // found", "Permission denied"), so keep them for the error detail.
     const stderrTail: Array<string> = [];
     const onStderrLine = (line: string) => {
       const parsed = parseGitCloneProgressLine(line);
@@ -307,7 +314,9 @@ export const make = Effect.gen(function* () {
           path.basename(prepared.destinationPath),
         ],
         timeoutMs: options?.timeoutMs === undefined ? CLONE_TIMEOUT_MS : options.timeoutMs,
-        // Slow clones produce large progress output; only the callbacks and retained stderr tail are needed.
+        // Progress redraws add up on a slow multi-GB clone. The buffered copy
+        // is never read (the tail is kept by hand above), so keep it small
+        // and let the line callbacks keep flowing past the cap.
         maxOutputBytes: 256 * 1024,
         appendTruncationMarker: true,
         keepLineCallbacksAfterTruncation: true,
@@ -340,7 +349,11 @@ export const make = Effect.gen(function* () {
     destinationPath: string,
   ) {
     const normalized = yield* normalizeDestinationPath(destinationPath);
-    // Only remove a destination containing git's partial clone; unrelated files and read failures must block cleanup.
+    // Only what git left behind may go. The destination was empty when the
+    // clone started, so anything without a `.git` inside was put there by
+    // someone else since; refuse rather than delete their files.
+    // A missing destination is already discarded; any other read failure
+    // (a file in its place, permissions) is not something to remove through.
     const entries = yield* fileSystem.readDirectory(normalized).pipe(
       Effect.catchIf(
         (cause) => cause.reason._tag === "NotFound",
@@ -363,7 +376,9 @@ export const make = Effect.gen(function* () {
         detail: "Destination path contains files that are not from the clone.",
       });
     }
-    // Recreate the project root after cleanup; retry while interrupted git releases its files.
+    // The directory itself is the project's workspace root and must stay;
+    // only git's partial contents go. An interrupted git may still be closing
+    // files, so removal retries briefly.
     yield* fileSystem.remove(normalized, { recursive: true, force: true }).pipe(
       Effect.andThen(fileSystem.makeDirectory(normalized, { recursive: true })),
       Effect.retry({ schedule: Schedule.spaced("200 millis"), times: 5 }),
@@ -398,7 +413,10 @@ export const make = Effect.gen(function* () {
         url: remoteUrl,
       });
 
-      // An empty local repository cannot push HEAD; keep the newly created remote as a partial success.
+      // An empty local repo (no commits) would make `git push HEAD:...` fail
+      // with an opaque "src refspec HEAD does not match any". Treat this as a
+      // partial success: the remote was created and wired up, but there is
+      // nothing to push yet.
       const hasCommits = yield* git
         .execute({
           operation: "SourceControlRepositoryService.publishRepository.headCheck",

@@ -1,13 +1,13 @@
-/** Archive names are shared by workflows and installers; changing them breaks release downloads. */
-
 const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
-/** Overrides the download origin for mirrors and air-gapped installs. */
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
 
 /**
- * Keep these keys aligned with the CLI archive build matrix in .github/workflows/release.yml;
- * missing builds produce 404s, and missing keys leave built archives unreachable.
+ * The archives a release attaches. Kept in step with the build_linux_cli
+ * matrix, build_windows_arm64_cli, and the `cli_archive` rows in
+ * .github/workflows/release.yml: a key here without a build there produces
+ * download URLs that 404, and a build there without a key here is
+ * unreachable from every installer.
  */
 // No darwin-x64: Node single-executables are unsupported on x64 macOS (the
 // SEA docs list macOS as arm64 only) and the binary segfaults on start.
@@ -77,15 +77,13 @@ export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
   "preview",
 ];
 
-/** The release train a version was published on, derived from its prerelease tag. */
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
 }
 
 /**
- * One page of GitHub's list-releases endpoint, newest first. Callers walk pages
- * until a channel match turns up; a busy nightly train can push the newest
+ * Callers walk pages until a channel match turns up; a busy nightly train can push the newest
  * preview or stable release past any single page.
  */
 export function cliReleaseIndexPageUrl(page: number): string {
@@ -93,8 +91,7 @@ export function cliReleaseIndexPageUrl(page: number): string {
 }
 
 /**
- * Expects newest-first release-index entries. Skip drafts because their assets
- * cannot be downloaded, and match the channel using the runtime's prerelease rule.
+ * Drafts are skipped because their assets are not downloadable.
  */
 export function newestCliReleaseVersion(
   releases: ReadonlyArray<{

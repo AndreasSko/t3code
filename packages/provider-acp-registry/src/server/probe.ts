@@ -95,7 +95,6 @@ function normalizeModels(
   return models;
 }
 
-/** Agent spawn recipe used to compose runnable terminal-auth command lines. */
 export interface AcpRegistryAuthSpawnContext {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
@@ -173,7 +172,6 @@ export interface AcpRegistryLiveConfiguration {
   readonly configOptions: AcpRegistryProbeResult["configOptions"];
 }
 
-/** Normalizes volatile session configuration using the same bounds as discovery probes. */
 export function normalizeAcpRegistryLiveConfiguration(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
   modeState?: Parameters<typeof acpProviderOptionDescriptors>[0]["modeState"],
@@ -200,7 +198,6 @@ const emptyAcpRegistryAvailableCommands = (): AcpRegistryAvailableCommands => ({
   skills: [],
 });
 
-/** Splits the latest ACP command advertisement into T3's `/` and `$` menus. */
 export function normalizeAcpRegistryCommands(
   commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
 ): AcpRegistryAvailableCommands {
@@ -320,7 +317,9 @@ export const probeAcpRegistryConfiguration = Effect.fn("AcpRegistryProbe.probeCo
     const pty = yield* Effect.serviceOption(PtyAdapter.PtyAdapter);
 
     const result = yield* Effect.gen(function* () {
-      // Include package installation in the probe deadline to bound provider refreshes.
+      // Resolution may install a missing registry package. Keep it inside the
+      // probe deadline so a provider refresh cannot inherit the installer's
+      // much longer timeout.
       const resolved = yield* catalog
         .resolve(input.settings, input.cwd, input.environment)
         .pipe(Effect.mapError(AcpRegistrySupport.toAcpRegistryOperationError));

@@ -225,7 +225,6 @@ export const make = Effect.fn("MobileStorage.make")(function* () {
     }),
   );
 
-  // Newest-first device history feeds the launcher's dynamic recent-thread shortcuts.
   const loadRecentThreadShortcuts = readJson<{
     readonly threads?: ReadonlyArray<RecentThreadShortcut>;
   }>(RECENT_THREAD_SHORTCUTS_KEY).pipe(

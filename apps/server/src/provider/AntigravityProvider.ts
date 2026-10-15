@@ -128,11 +128,9 @@ interface AntigravityProviderOptions {
   readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
   readonly clearUsage?: Effect.Effect<void>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
-  /** Auth type and label published once a session authenticates. */
   readonly auth?: { readonly type: string; readonly label: string };
 }
 
-/** Health only initializes; session callbacks supply account metadata, hidden for disabled instances. */
 export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(function* (
   settings: AntigravitySettings,
   options: AntigravityProviderOptions,
@@ -165,7 +163,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     draft: initialDraft,
     authRevision: 0,
   });
-  // Preserve filesystem-discovered skills when native session callbacks rewrite workspace entries.
+  // Skills the driver discovered on disk per workspace. Session callbacks
+  // rewrite the workspace entry with native commands and must keep these, or
+  // the registry drops the suggestions and never re-reads the workspace.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
   const getSnapshot = SubscriptionRef.get(metadata).pipe(
     Effect.flatMap((state) => options.stampIdentity(state.draft)),

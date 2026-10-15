@@ -104,7 +104,10 @@ import {
 } from "./thread-settings-sheet-state";
 import { formatProviderUpdateRequiredNotice } from "@t3tools/client-runtime/providerUpdateRequiredModels";
 
-/** Fold secondary catalogs initially so large provider catalogs do not bury the list. */
+/**
+ * Everyday harnesses start expanded; every other provider (OpenRouter catalogs and friends)
+ * starts folded so a 300-model catalog cannot bury the list.
+ */
 const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([
   "claudeAgent",
   "codex",
@@ -513,7 +516,6 @@ function ThreadSettingsSessionProvider(
     [isApplied, pendingModel],
   );
 
-  // Save applies staged model options with the model; otherwise option edits apply immediately.
   const displayedDescriptors = useMemo(
     () =>
       pendingModel
@@ -821,7 +823,9 @@ function useThreadSettingsCatalogItems(
           return [];
         }
         const isPrimary = driver !== undefined && PRIMARY_PROVIDER_DRIVERS.has(driver);
-        // Model staging must not alter disclosure state; initialize expansion from the stable applied selection.
+        // Staging a model must not change disclosure state. The applied model
+        // stays stable for the lifetime of this picker (Save closes it), so it
+        // is safe to use as the initial selected-provider default.
         const containsAppliedSelection = group.models.some(session.isApplied);
         const isNarrowed = session.providerFilter !== null || session.searchQuery.trim().length > 0;
         const collapsible = !isNarrowed;
@@ -1577,7 +1581,10 @@ export function ExistingThreadSettingsRouteScreen() {
   return <ThreadSettingsPickerScreen {...settings} onClose={() => navigation.goBack()} />;
 }
 
-/** RNS owns nested UIKit sheet dismissal; option screens stay regular pushes in its native stack. */
+/**
+ * Keeping the sheet presentation in RNS gives UIKit ownership of nested dismissal, while
+ * Reasoning and Runtime remain regular pushes inside this navigator.
+ */
 export function NewTaskThreadSettingsRouteScreen() {
   const flow = useNewTaskFlow();
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();

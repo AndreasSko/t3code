@@ -7,7 +7,6 @@ import {
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
 
-/** Reads user-message sender labels, including scheduled attribution embedded in legacy prompts. */
 export function resolveUserMessagePresentation(message: {
   readonly id?: string;
   readonly role: string;
@@ -17,7 +16,6 @@ export function resolveUserMessagePresentation(message: {
   readonly scheduledTaskId?: ScheduledTaskId;
 }): {
   readonly text: string;
-  /** Who sent a user-role message the user did not type. */
   readonly attribution: "automation" | "agent" | "t3code" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
 } {
@@ -44,7 +42,6 @@ export function resolveUserMessagePresentation(message: {
   }
   return {
     text: message.text,
-    // Legacy restart continuations retain agent attribution.
     attribution:
       message.createdBy !== "agent"
         ? null

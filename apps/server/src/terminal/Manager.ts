@@ -141,12 +141,19 @@ class TerminalProcessSignalError extends Schema.TaggedError<TerminalProcessSigna
 export class TerminalManager extends Context.Service<
   TerminalManager,
   {
-    /** Reuses sessions by thread/terminal id and restores persisted history on first open. */
+    /**
+     * Reuses an existing session for the same thread/terminal id and restores
+     * persisted history on first open.
+     */
     readonly open: (
       input: TerminalOpenInput,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
-    /** Streams an initial snapshot followed by live events. */
+    /**
+     * Attach to a terminal and stream its initial snapshot followed by live events.
+     *
+     * Returns an unsubscribe function.
+     */
     readonly attachStream: (
       input: TerminalAttachInput,
       listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
@@ -164,15 +171,24 @@ export class TerminalManager extends Context.Service<
 
     readonly clear: (input: TerminalClearInput) => Effect.Effect<void, TerminalError>;
 
-    /** Always clears history before spawning the replacement process. */
+    /**
+     * Always resets history before spawning the new process.
+     */
     readonly restart: (
       input: TerminalRestartInput,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
-    /** Omitting `terminalId` closes every terminal in the thread. */
+    /**
+     * When `terminalId` is omitted, closes all sessions for the thread.
+     */
     readonly close: (input: TerminalCloseInput) => Effect.Effect<void, TerminalError>;
 
-    /** Closes only terminals at idle shell prompts; a supplied `terminalId` limits the scope. */
+    /**
+     * Close a thread's terminals that wait at an idle shell prompt. A terminal
+     * that runs a command stays open. When `terminalId` is set, only that
+     * terminal is considered. Used when a thread settles and when a setup
+     * script finishes.
+     */
     readonly closeIdle: (input: {
       readonly threadId: string;
       readonly terminalId?: string;
@@ -182,7 +198,11 @@ export class TerminalManager extends Context.Service<
       listener: (event: TerminalEvent) => Effect.Effect<void>,
     ) => Effect.Effect<() => void>;
 
-    /** Starts with a full metadata snapshot before live updates. */
+    /**
+     * Subscribe to lightweight terminal metadata with an initial full snapshot.
+     *
+     * Returns an unsubscribe function.
+     */
     readonly subscribeMetadata: (
       listener: (event: TerminalMetadataStreamEvent) => Effect.Effect<void>,
     ) => Effect.Effect<() => void>;
@@ -254,7 +274,6 @@ interface TerminalSessionState {
   unsubscribeData: (() => void) | null;
   unsubscribeExit: (() => void) | null;
   hasRunningSubprocess: boolean;
-  /** Normalized child command name when `hasRunningSubprocess`; cleared when idle. */
   childCommandLabel: string | null;
   runtimeEnv: Record<string, string> | null;
 }
@@ -700,7 +719,9 @@ function deriveSubprocessInspectResult(
 
 const POSIX_PS_ABSOLUTE_PATHS = ["/bin/ps", "/usr/bin/ps"] as const;
 
-// Resolve ps once: bare-name spawning walks PATH on every one-second poll.
+// Resolve `ps` to an absolute path once at startup. Spawning by bare name
+// walks every PATH entry per spawn (one failed posix_spawn per directory
+// until the hit), which is measurable at a 1s poll cadence on long PATHs.
 const resolvePosixPsCommand = Effect.fn("terminal.resolvePosixPsCommand")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   for (const candidate of POSIX_PS_ABSOLUTE_PATHS) {
@@ -930,14 +951,12 @@ export class BoundedTerminalHistory {
         continue;
       }
       if (first.byteLength === first.data.length && first.lineBreaks === 0) {
-        // ASCII without newlines needs no scan to find the byte cutoff.
         this.trimChunk(bytesToDrop, bytesToDrop, 0);
         continue;
       }
       let offset = 0;
       let bytes = 0;
       let lineBreaks = 0;
-      // Scan only the discarded prefix of one small chunk, never all history.
       while (bytes < bytesToDrop) {
         const codePoint = first.data.codePointAt(offset)!;
         bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
@@ -989,8 +1008,10 @@ function shouldStripCsiSequence(body: string, finalByte: string): boolean {
   if (finalByte === "c" && /^[>0-9;?]*$/.test(body)) {
     return true;
   }
-  // Replaying DECRQM ($p) queries produces echoed reply junk; also strip DECRPM ($y) replies.
-  // The $ guard preserves DECSTR (!p) and DECSCL ("p) setters.
+  // DECRQM mode queries (…$p) and DECRPM replies (…$y): replaying a stored
+  // query makes the terminal answer again, and the shell echoes the answer as
+  // junk at the prompt. The `$` guard keeps setters like DECSTR (!p) and
+  // DECSCL ("p) intact.
   if ((finalByte === "p" || finalByte === "y") && /^[0-9;?]*\$$/.test(body)) {
     return true;
   }
@@ -1005,7 +1026,9 @@ function shouldStripCsiSequence(body: string, finalByte: string): boolean {
   return false;
 }
 
-// Replayed DECRQSS ($q) and XTGETTCAP (+q) queries trigger replies; strip their non-visual [01]$r/[01]+r traffic.
+// DECRQSS ($q) and XTGETTCAP (+q) queries plus their replies ([01]$r / [01]+r):
+// pure request/response traffic with no visual value, and replaying a stored
+// query triggers a fresh reply.
 function shouldStripDcsSequence(content: string): boolean {
   return /^[01]?[$+][qr]/.test(content);
 }
@@ -1209,10 +1232,14 @@ function shouldExcludeTerminalEnvKey(key: string): boolean {
   return TERMINAL_ENV_BLOCKLIST.has(normalizedKey);
 }
 
-// AppImage markers describe the app mount rather than the user's session and must not reach terminals.
 const APPIMAGE_RUNTIME_ENV_KEYS = ["APPIMAGE", "APPDIR", "ARGV0", "OWD"] as const;
-// Remove AppImage mount segments, preserving user entries; omit empty variables to restore platform defaults.
-// See issues #1699 and #5059.
+// Colon-separated search-path variables the AppImage runtime points at its
+// temporary mount (e.g. /tmp/.mount_T3-XXXX/usr/bin, the bundled glib schemas,
+// and an $APPDIR/usr/share XDG data entry). Only the mount segments are
+// dropped; the user's real entries are preserved. When nothing but mount
+// segments remain the variable is removed entirely so consumers fall back to
+// their platform default (e.g. gsettings finds the host schemas instead of
+// reporting "No schemas installed"). See issues #1699 and #5059.
 const APPIMAGE_PATH_LIKE_ENV_KEYS = [
   "PATH",
   "LD_LIBRARY_PATH",
@@ -1224,7 +1251,13 @@ function isPathSegmentUnderAppDir(segment: string, appDir: string): boolean {
   return segment === appDir || segment.startsWith(`${appDir}/`);
 }
 
-// AppImage environment leaks make terminal tools resolve against the app mount instead of the host (#1699).
+// On Linux AppImage builds the runtime mounts the app under a temporary dir and
+// injects APPIMAGE/APPDIR/ARGV0/OWD plus mount entries on PATH/LD_LIBRARY_PATH.
+// The integrated terminal inherits the server process environment, so without
+// this scrub those leak into the PTY and tools resolve against the AppImage
+// mount instead of the user's real environment (e.g. `php` reporting
+// PHP_BINARY as the AppImage path). See issue #1699. The scrub is gated on an
+// actual AppImage launch so non-AppImage environments are left untouched.
 function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (env.APPIMAGE === undefined && env.APPDIR === undefined) return env;
 
@@ -1298,7 +1331,6 @@ interface TerminalManagerOptions {
   ptyAdapter: PtyAdapter.PtyAdapter["Service"];
   shellResolver?: () => string;
   env?: NodeJS.ProcessEnv;
-  /** Managed ACP Registry install directories are appended to PATH so agents can be run by name. */
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
   subprocessInspector?: TerminalSubprocessInspector;
@@ -1368,7 +1400,7 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
   );
 });
 
-/** @public */
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("TerminalManager.make")(function* () {
   const { terminalLogsDir, providerStatusCacheDir, baseDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
@@ -1416,7 +1448,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
   const agentScope = yield* AgentScope;
-  // Inherit the full environment minus blocked entries; allowlists strip user toolchain and session variables.
+  // Terminals must inherit the user's full environment (minus the blocklist
+  // applied in createTerminalSpawnEnv) — an allowlist here silently strips
+  // things like PSModulePath, DISPLAY, proxies, and toolchain variables.
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -1438,7 +1472,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return { ...input, env };
     },
   );
-  // Share one process table per tick; per-terminal spawns can exhaust PID space (#6332).
+  // One process-table snapshot per poll tick, shared across every terminal.
+  // Per-terminal `pgrep`/`ps` calls multiply spawn load by terminal count and
+  // can exhaust the PID space on hosts with many sessions (#6332).
   const fallbackProcessTableSnapshot = (
     platform === "win32"
       ? windowsProcessTableSnapshot()
@@ -1447,7 +1483,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const fetchProcessTableSnapshot: Effect.Effect<
     {
       readonly snapshot: TerminalProcessTableSnapshot;
-      /** A fallback table still counts as failure so polling backs off instead of repeatedly spawning. */
+      /**
+       * False when the sidecar snapshot failed and this table came from the
+       * spawned fallback. The data is still applied, but the tick counts as
+       * a failure so polling backs off instead of hot-looping the fallback.
+       */
       readonly snapshotSucceeded: boolean;
     },
     TerminalSubprocessCheckError
@@ -2185,7 +2225,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               platform,
               yield* HostProcess.HomeDirectory,
             );
-            // Append managed agent directories so they never shadow system or user tools.
+            // Append (never prepend) managed ACP agent install directories so
+            // `kimi login` and friends resolve by name without shadowing any
+            // system or user tool of the same name.
             if (
               options.managedBinaryCacheDir !== undefined &&
               options.managedBinaryToolsDir !== undefined
@@ -3078,7 +3120,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             (input.terminalId === undefined || session.terminalId === input.terminalId),
         );
         if (running.length === 0) return;
-        // Input or echo may arrive after the process snapshot; monotonic counters catch that activity.
+        // A command started during the process check can miss the snapshot,
+        // but its input or echo still lands. Both counters only grow, so the
+        // sum changes when either one does.
         const activityMark = (session: TerminalSessionState) =>
           session.eventSequence + session.inputCount;
         const marks = new Map(

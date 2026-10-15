@@ -15,7 +15,9 @@ import { shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
-// Rank every usage.* command or alphabetical fallback makes the comparator inconsistent.
+// Every usage.* command needs a rank. An unranked one falls back to the
+// alphabetical compare, which makes the comparator inconsistent and the order
+// depend on the input order.
 const usageCommandOrder = new Map<KeybindingCommand, number>(
   [
     "usage.open" as const,
@@ -25,7 +27,6 @@ const usageCommandOrder = new Map<KeybindingCommand, number>(
 
 const firstUsageCommand = METRIC_OPTIONS[0].command;
 
-/** Keep Usage commands in page order within a total order so unrelated bindings cannot reshuffle them. */
 function compareCommands(
   left: KeybindingCommand,
   right: KeybindingCommand,

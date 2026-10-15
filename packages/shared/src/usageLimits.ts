@@ -50,11 +50,6 @@ function cursorUsageWindowRank(id: string): number {
   return rank < 0 ? CURSOR_USAGE_WINDOWS.length : rank;
 }
 
-/**
- * Providers that belong on the Limits view: enabled, installed, and one whose
- * driver reports subscription usage at all. A driver with no notion of usage
- * never sets `usageLimits`, so it has no row rather than an empty one.
- */
 export function providersWithLimits(
   providers: readonly ServerProvider[],
 ): readonly ServerProvider[] {
@@ -78,7 +73,6 @@ export type LimitPresentations = ReadonlyMap<
   }
 >;
 
-/** One destination per service, even when several accounts or environments use it. */
 export function collectExternalUsageLinks(presentations: LimitPresentations) {
   const links = new Map<
     string,
@@ -131,8 +125,14 @@ const nativeReport = (provider: ServerProvider): AccountReport => ({
   usageLimits: provider.usageLimits,
 });
 
-/** Pass every enabled login, including failed reads. Workspace ids distinguish quotas for one email;
- * reports without one join only when the email identifies a single workspace. */
+/**
+ * Keys each report by the account it draws on. One email can belong to
+ * several workspaces, each with its own quota, so a report that names its
+ * workspace is keyed by it too. One that does not (a hub, an older server)
+ * joins the only workspace known for its email, and gets no key when there
+ * are several, since it cannot say which one it read. Pass every enabled
+ * login, read or not, so an unreadable workspace still counts as one.
+ */
 function accountKeyResolver(reports: Iterable<AccountReport>) {
   const workspaces = new Map<string, Set<string>>();
   for (const report of reports) {
@@ -151,23 +151,18 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
   };
 }
 
-/** Matching emails/credentials identify one quota across environments, except in distinct workspaces. */
 export interface LimitAccount {
   readonly key: string;
   readonly driver: ServerProvider["driver"];
-  /** The instance's configured name, which is not sensitive; null for hub accounts. */
   readonly displayName: string | null;
   readonly email: string | undefined;
   readonly plan: string | undefined;
   readonly accentColor: string | undefined;
-  /** Environments the account is signed in on; empty when only a hub reports it. */
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
   }>;
-  /** The hub that reported it, when no environment has it natively. */
   readonly sourceLabel: string | null;
-  /** Where the displayed reset credit can be redeemed. */
   readonly redeem: {
     readonly environmentId: EnvironmentId;
     readonly input: ProviderConsumeResetCreditInput;
@@ -175,14 +170,21 @@ export interface LimitAccount {
   readonly limits: ServerProviderUsageLimits;
 }
 
-/** Freshest snapshots supply quota and credits; native instances supply names and environment labels. */
+/**
+ * Every account with usable windows across the connected environments, one
+ * entry per distinct account. The freshest reads supply windows and credits;
+ * native instances supply names and environment labels.
+ */
 export function collectLimitAccounts(presentations: LimitPresentations): readonly LimitAccount[] {
   const accounts = new Map<string, LimitAccount>();
   const creditSources = new Map<string, LimitAccount>();
   const hubRedeems = new Map<string, LimitAccount>();
   const merge = (key: string, next: LimitAccount) => {
-    // Hub redemption also clears its routing cooldown; native redemption leaves that cooldown active.
-    // Prefer the hub target independently of which balance snapshot is freshest.
+    // Redeeming through a hub also clears the routing cooldown that hub holds
+    // for the account. Redeeming natively against the same subscription resets
+    // it upstream but leaves the hub refusing to route to the account until
+    // its own cooldown expires, so a hub target wins the redemption outright
+    // while the displayed balance still follows the freshest read.
     const previousHub = hubRedeems.get(key);
     if (
       next.redeem &&
@@ -260,7 +262,6 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       });
     }
   }
-  // A hub may hold a fresher snapshot even for accounts also known natively.
   const labelEnvironment = presentations.size > 1;
   for (const [environmentId, presentation] of presentations) {
     for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
@@ -297,7 +298,6 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
   return [...accounts.values()];
 }
 
-/** Notices omit API-key accounts, whose quotas cannot be reported and offer no user action. */
 export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
   const label = (environmentLabel: string, subject: string) =>
     presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
@@ -353,10 +353,8 @@ export interface LimitPool {
   readonly windows: readonly LimitPoolWindow[];
 }
 
-/** Show Cursor's two usable pools instead of a combined percentage when both are available. */
 export function displayLimitWindows(pool: LimitPool) {
   if (pool.driver === "antigravity") {
-    // Keep each model group's five-hour and weekly buckets next to one another.
     return [...pool.windows].sort(
       (left, right) =>
         Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
@@ -382,8 +380,6 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
   other: 3,
 };
 
-/** Pools use kind as well as id: Codex primary can mean five hours or a month.
- * Accounts sort by session reset (otherwise first window); each pool keeps its own reset order. */
 export function collectLimitPools(
   accounts: readonly LimitAccount[],
   now: number,
@@ -418,7 +414,11 @@ function accountSortName(account: LimitAccount): string {
   return (account.displayName ?? account.email ?? account.key).toLowerCase();
 }
 
-/** Codex primary/secondary are positional slots, so pool by kind; other drivers' ids name allowances. */
+/**
+ * Codex ids are slots, not allowances: a weekly-only plan reports its weekly
+ * window as `primary`, other plans as `secondary`. Its windows pool by kind;
+ * other drivers' ids name distinct allowances.
+ */
 function poolKey(driver: ServerProvider["driver"], window: ServerProviderUsageWindow): string {
   return driver === "codex" ? window.kind : `${window.kind}:${window.id}`;
 }
@@ -428,7 +428,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
   for (const account of accounts) {
     for (const window of account.limits.windows) {
       const pooled = poolKey(account.driver, window);
-      // An account with two windows of one kind keeps the second apart.
       const key = byKey.get(pooled)?.some((member) => member.account === account)
         ? `${window.kind}:${window.id}`
         : pooled;
@@ -444,7 +443,9 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     // whichever account sorts first.
     const id = members[0]!.account.driver === "codex" ? key : first.id;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    // Untimed members would count as spend with no elapsed time and skew the pace verdict.
+    // Pace compares spend against the clock, so it is judged only over the
+    // members that have a clock; a window with no reset would otherwise
+    // count as spend with no time elapsed and skew the verdict.
     const timed = members.flatMap((m) => {
       const share = elapsedShare(m.window, now);
       return share === null ? [] : [{ used: m.window.usedPercent, elapsed: share }];
@@ -493,7 +494,6 @@ export function limitsNotice(limits: ServerProviderUsageLimits): string | null {
   return limits.windows.length === 0 ? "No limits reported." : null;
 }
 
-/** Quota left in the window, 0..100. Bars and labels show what remains, as Codex does. */
 export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
@@ -515,7 +515,6 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
 
 export type LimitPace = "ahead" | "on" | "under";
 
-/** On pace means quota remaining is within five points of the time remaining in the window. */
 export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
   const elapsed = elapsedShare(window, now);
   return elapsed === null ? null : paceOfShares(window.usedPercent, elapsed);
@@ -528,7 +527,6 @@ function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
   return "on";
 }
 
-/** `2h 13m`, `3d 4h`, `12m`. */
 export function formatDuration(ms: number): string {
   const remaining = Math.max(0, ms);
   const days = Math.floor(remaining / DAY);
@@ -539,7 +537,6 @@ export function formatDuration(ms: number): string {
   return `${minutes}m`;
 }
 
-/** `resets in 2h 13m`, or null when the window has no reset. */
 export function formatResetsIn(window: ServerProviderUsageWindow, now: number): string | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null) return null;
@@ -553,12 +550,14 @@ export const USAGE_LIMITS_COMMAND = {
   description: "Show this provider's usage limits",
 } satisfies ServerProviderSlashCommand;
 
-/** Handled by the client without sending a turn; anything with arguments stays an ordinary prompt. */
 export function isUsageLimitsCommand(prompt: string): boolean {
   return prompt.trim().toLowerCase() === "/usage-limits";
 }
 
-/** Failed sources have no accounts to match, so their errors apply to every driver. */
+/**
+ * A source that failed to read keeps no accounts, so its error counts for every driver rather
+ * than disappearing until the next successful refresh.
+ */
 export function hasProviderUsageLimits(
   driver: ServerProvider["driver"],
   providers: readonly ServerProvider[],
@@ -574,7 +573,10 @@ export function hasProviderUsageLimits(
   );
 }
 
-/** Failed sources count for every driver; quota changes alone need no command catalog republish. */
+/**
+ * Two snapshots with the same coverage need no catalog republish, however much their quotas
+ * moved.
+ */
 export function sameUsageLimitCommandCoverage(
   previous: UsageLimitSourceSnapshots,
   next: UsageLimitSourceSnapshots,
@@ -660,8 +662,14 @@ export function collectProviderUsageLimits(
         (a, b) =>
           Date.parse(b.account.usageLimits.checkedAt) - Date.parse(a.account.usageLimits.checkedAt),
       )[0];
-    // Display the freshest balance, but redeem through the hub to clear its routing cooldown.
-    // A stale hub credit returns alreadyRedeemed, which also clears the cooldown.
+    // Two independent decisions. Which balance to *display* follows whichever
+    // snapshot is fresher. Which path to *redeem through* always prefers the
+    // hub, because only the hub path clears the routing cooldown it holds for
+    // that account; redeeming natively against the same account resets the
+    // subscription upstream but leaves the hub refusing to route to it until
+    // its own cooldown expires. A hub credit id that a fresher native redeem
+    // already spent comes back as `alreadyRedeemed`, which still clears the
+    // cooldown, so preferring it is safe even when the hub snapshot is stale.
     const hubCreditId = hubCredits?.account.usageLimits.resetCredits?.nextCreditId;
     const showHubCredits =
       hubCredits &&
@@ -714,8 +722,6 @@ export function collectProviderUsageLimits(
         limits: account.usageLimits,
       });
     }
-    // A source that failed to read has no accounts left to match on, so its
-    // error is reported to every provider rather than silently dropped.
     if (source.error && (matching.length > 0 || source.accounts.length === 0)) {
       notices.push(`${source.label}: ${source.error}`);
     }

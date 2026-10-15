@@ -21,8 +21,10 @@ import { tailwindPlugins } from "./vite/tailwind";
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
-// loadRepoEnv can restore URL overrides from .env; explicit single-origin mode
-// must suppress them or remote clients become pinned to localhost.
+// Single-origin dev is signalled positively, because it cannot be inferred from
+// the absence of VITE_HTTP_URL/VITE_WS_URL: the runner deletes those keys but
+// `loadRepoEnv` merges `.env`/`.env.local` *underneath* the process env, so a
+// developer with either URL in their `.env` gets it back here.
 const isSingleOriginDev = process.env.T3CODE_SINGLE_ORIGIN_DEV === "1";
 
 const port = Number(process.env.PORT ?? 5733);
@@ -54,7 +56,8 @@ const configuredHostedAppUrl = (() => {
 })();
 const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
 
-// Bundled dev reduces remote import waterfalls; T3CODE_BUNDLED_DEV overrides the --share default.
+// The dev runner defaults this on for --share runs (remote browsers pay a
+// round trip per import level in unbundled dev); T3CODE_BUNDLED_DEV=0 opts out.
 const bundledDevEnv = process.env.T3CODE_BUNDLED_DEV?.trim().toLowerCase();
 const bundledDev = bundledDevEnv === "1" || bundledDevEnv === "true";
 
@@ -70,7 +73,9 @@ const unitTestProject = {
   test: {
     name: "unit",
     include: ["src/**/*.test.{ts,tsx}"],
-    // Async web runtime lifecycles can exceed Vitest's default 5s budget.
+    // The web runtime suite exercises auth bootstrap, saved environments,
+    // and websocket subscription lifecycles. Under the full monorepo test
+    // run, those async tests can exceed Vitest's default 5s budget.
     hookTimeout: 15_000,
     testTimeout: 15_000,
     setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
@@ -81,7 +86,6 @@ function resolveDevProxyTarget(
   backendPort: string | undefined,
   wsUrl: string | undefined,
 ): string | undefined {
-  // Proxy the backend for single-origin browser dev; T3CODE_PORT comes from the dev runner.
   const port = Number(backendPort?.trim());
   if (Number.isInteger(port) && port > 0) {
     return `http://localhost:${port}/`;
@@ -111,8 +115,8 @@ function resolveDevProxyTarget(
 
 const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT, configuredWsUrl);
 
-// Bundled dev serves ~25 MB uncompressed, taking about a minute on a typical uplink.
-// Brotli quality 5 encodes in hundreds of ms; default quality 11 trades the transfer stall for an encode stall.
+// Brotli quality 5 keeps encode time in the hundreds of ms; the default
+// (quality 11) would trade the transfer stall for an equally long encode stall.
 function devCompressionPlugin(): Plugin {
   return {
     name: "t3code:dev-compression",
@@ -129,7 +133,10 @@ function devCompressionPlugin(): Plugin {
   };
 }
 
-// Allow tailnet names because Tailscale controls DNS; other shared hosts require explicit configuration.
+// Vite rejects requests whose Host header isn't localhost, which blocks sharing
+// a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
+// the DNS is controlled by tailscale, so they can't be rebound by an attacker.
+// Anything else (ngrok, a LAN IP alias) goes through the env var.
 const configuredAllowedHosts = (process.env.T3CODE_DEV_ALLOWED_HOSTS ?? "")
   .split(",")
   .map((entry) => entry.trim())
@@ -150,13 +157,12 @@ export default defineConfig(() => {
           { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
         ],
       }),
-      // Route components load as split chunks so settings, pull-request, and
-      // usage code stay out of the cold-start payload; the router prefetches
-      // them on navigation intent (see getRouter's defaultPreload).
       tanstackRouter({ autoCodeSplitting: true }),
       react(),
       babel({
-        // With @vitejs/plugin-react v6, Babel's parser detection uses relative paths and misses packages outside the CWD.
+        // This is because the babel plugin only automatically parses typescript and jsx based on relative paths (e.g. "**/*.ts")
+        // whereas the previous version of the plugin parsed all files with a .ts extension.
+        // This is causing our packages/ directory to fail to parse, as they are not relative to the CWD.
         parserOpts: { plugins: ["typescript", "jsx"] },
         presets: [reactCompilerPreset()],
       }),
@@ -208,14 +214,17 @@ export default defineConfig(() => {
       port,
       strictPort: true,
       allowedHosts,
-      // Warm the graph up front to avoid import-by-import transformation waterfalls over a tailnet.
+      // Transform the whole module graph at server start instead of on the
+      // first request. Without this, a cold worktree discovers and transforms
+      // modules one import-level at a time while the browser waits — which
+      // over a tailnet origin turns into minutes of waterfall.
       warmup: {
         clientFiles: ["./src/main.tsx"],
       },
       ...(devProxyTarget
         ? {
-            // Shared proxy prefixes keep server and client routing aligned; Vite HMR
-            // uses its exact path and subprotocol so upgrade handlers do not collide.
+            // One entry per shared prefix; the server's dev catch-all 404s the
+            // same list, so the two sides cannot drift.
             proxy: Object.fromEntries(
               DEV_PROXIED_PATH_PREFIXES.map((prefix) => [
                 prefix,
@@ -228,7 +237,11 @@ export default defineConfig(() => {
             ),
           }
         : {}),
-      // Electron needs an explicit HMR host; other clients derive their page origin to support remote access.
+      // Electron's BrowserWindow needs the HMR socket pinned to an explicit
+      // host to connect reliably; dev:desktop is the only mode that sets HOST.
+      // Everywhere else, leaving this unset lets the client derive it from the
+      // page origin, which is what makes HMR work over Tailscale/LAN instead of
+      // failing an attempt against the wrong machine's localhost first.
       ...(explicitHost
         ? {
             hmr: {

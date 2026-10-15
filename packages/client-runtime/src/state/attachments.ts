@@ -17,7 +17,6 @@ import {
   type AtomCommand,
 } from "./runtime.ts";
 
-/** Instantiate with each client's connection runtime for pending attachment uploads. */
 export function createAttachmentEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -33,7 +32,11 @@ export function createAttachmentEnvironmentAtoms<R, E>(
   };
 }
 
-/** Missing uploads need new bytes; structural _tag checks accept squashed RPC errors without class identity. */
+/**
+ * Pending uploads expire, so this is the signal to upload the bytes again rather than retry the
+ * lookup. A structural `_tag` check rather than a schema check: the squashed cause of a failed
+ * RPC is not guaranteed to be a decoded error class instance, only a tagged value.
+ */
 export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -48,7 +51,10 @@ export type PersistedAttachmentVerification =
   | { readonly status: "missing" }
   | { readonly status: "failed"; readonly error: unknown };
 
-/** Verified bytes can be reused; missing bytes must be uploaded again; failed means existence could not be verified. */
+/**
+ * `verified` means the send can reuse the stored bytes, `missing` means the upload expired and
+ * the bytes must be uploaded again, `failed` means the server could not be asked.
+ */
 export async function verifyPersistedAttachmentUpload<A, E>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly createAssetUrl: (query: {
@@ -66,7 +72,9 @@ export async function verifyPersistedAttachmentUpload<A, E>(input: {
       environmentId: input.environmentId,
       input: { resource: { _tag: "attachment", attachmentId: input.attachmentId } },
     }),
-    // Force a round trip so retries do not reuse a cached SWR failure.
+    // `refresh` forces a server round trip: the asset URL query atom caches
+    // results (SWR), so a retry right after a transient failure would
+    // otherwise re-observe the cached failure and never ask the server.
     { reportFailure: false, reportDefect: false, refresh: true },
   );
   if (result._tag === "Success") {
@@ -90,7 +98,6 @@ type AttachmentRemoveCommand<E> = AtomCommand<
   E
 >;
 
-/** Fire-and-forget delete of a pending upload the client no longer references. */
 export function deletePendingAttachmentUpload<E>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly remove: AttachmentRemoveCommand<E>;
@@ -121,8 +128,12 @@ export type AttachmentUploadCycleResult =
       readonly error: unknown;
     };
 
-/** Mint then transfer through the platform transport; callers own retry/release on failure.
- * onMinted="cancel" deletes the fresh mint before returning. */
+/**
+ * The cycle never deletes the minted pending upload on failure: callers keep the returned
+ * `attachmentId` and decide between retry and release. The one exception is `onMinted`
+ * returning `"cancel"`, where the caller already abandoned the upload and the fresh mint is
+ * deleted before returning.
+ */
 export async function runAttachmentUploadCycle<E, RE>(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly createUploadUrl: AttachmentCreateUploadUrlCommand<E>;
@@ -180,12 +191,14 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
   return { status: "uploaded", attachmentId };
 }
 
-/** Clamp advertised limits to the send contract so uploads cannot succeed only to fail dispatch. */
+/**
+ * The contract caps what a turn may reference, so a larger advertised value must not admit
+ * files the send would then refuse.
+ */
 export function clampFileAttachmentUploadBytes(advertisedMaxUploadBytes: number): number {
   return Math.min(advertisedMaxUploadBytes, PROVIDER_SEND_TURN_MAX_FILE_BYTES);
 }
 
-/** "3.2 MB" / "48 KB" label for attachment rows. Never shows "0 KB". */
 export function formatAttachmentSize(sizeBytes: number): string {
   return sizeBytes >= 1024 * 1024
     ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`

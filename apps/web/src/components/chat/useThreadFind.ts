@@ -186,8 +186,7 @@ export function useThreadFind({
     });
   };
 
-  // Refresh at most once per 300 ms while tokens continue arriving.
-  // Anchor selection by identity so newly inserted matches cannot shift it.
+  // An identity anchor keeps newly inserted matches from shifting the selection.
   const refreshLiveResultsRef = useRef(() => {});
   useLayoutEffect(() => {
     refreshLiveResultsRef.current = () => {

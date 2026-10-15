@@ -20,7 +20,6 @@ import {
   MenuSubTrigger,
 } from "../ui/menu";
 
-/** Lock reasons are ordered by what the user can address; null permits editing. */
 export function resolveEnvironmentIconPickerLock(input: {
   readonly serverConfig: ServerConfig | null;
   readonly operateAccess: "granted" | "denied" | "pending";
@@ -37,8 +36,6 @@ export function resolveEnvironmentIconPickerLock(input: {
   return null;
 }
 
-/** Choosing the detected kind clears overrides; locked menus show their
- * reason instead of hiding the current icon. */
 export function EnvironmentIconMenu({
   environmentId,
   serverConfig,

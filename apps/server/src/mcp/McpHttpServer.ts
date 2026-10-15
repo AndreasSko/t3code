@@ -59,14 +59,16 @@ import {
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
-/** Where an MCP client discovers how to sign in (RFC 9728), at this request's own origin. */
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   HttpServerRequest.toURL(request).pipe(
     Option.map((url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`),
   );
 
-// Never send provider tokens to OAuth: launched agents cannot open browsers
-// and OAuth credentials would outlive their provider session.
+/**
+ * Agents T3 Code launched carry a registry token and must never be sent into an
+ * OAuth flow when it dies: they cannot open a browser, and a sign-in would mint
+ * a credential that outlives their session.
+ */
 const unauthorized = (input: {
   readonly request: HttpServerRequest.HttpServerRequest;
   readonly presentedToken: boolean;
@@ -99,7 +101,10 @@ const unauthorized = (input: {
   );
 };
 
-/** Authenticate outside OAuth clients only; undefined means the token is not one. */
+/**
+ * Resolves a bearer token that is not a provider-session token: an OAuth
+ * client signed in from outside T3. Undefined when the token is not one.
+ */
 export class McpClientAuthenticator extends Context.Service<
   McpClientAuthenticator,
   {
@@ -154,7 +159,6 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         ? yield* clients.value.authenticate(request)
         : undefined);
     if (!invocation) {
-      // Log dead credentials so a lost t3-code toolkit is diagnosable during the session.
       yield* Effect.logWarning("rejected MCP request with an unusable credential", {
         reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
       });
@@ -175,8 +179,13 @@ const layerMcpAuthMiddleware = HttpRouter.middleware<{
   provides: McpInvocationContext.McpInvocationContext;
 }>()(makeMcpAuthMiddleware).layer;
 
-// Claude Code files oversized results, losing locators, and prefers
-// structuredContent over text; put the same ~20 KB snapshot in both.
+/**
+ * Claude Code moves an MCP result above its output limit to a file and hands
+ * the agent a notice instead, so a snapshot that carries the full accessibility
+ * tree and page text loses its locators too. Claude Code also shows the model
+ * `structuredContent` in place of the text blocks when a result has both, so
+ * both carry the same bounded snapshot.
+ */
 export const MAX_SNAPSHOT_TEXT_BYTES = 20_000;
 const MAX_SNAPSHOT_VISIBLE_TEXT_CHARS = 8_000;
 const MAX_SNAPSHOT_ELEMENT_NAME_CHARS = 200;
@@ -218,8 +227,6 @@ type SnapshotMetadata = {
   readonly [key: string]: unknown;
 };
 
-// Bound snapshot content while retaining ARIA refs; report omissions so
-// agents can use preview_evaluate for the missing details.
 const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
   const omitted: Array<string> = [];
   const { accessibilityTree, ...withoutTree } = metadata;
@@ -263,8 +270,8 @@ const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
     actionTimeline: tail(metadata.actionTimeline, "action timeline entries"),
   };
 
-  // Per-field character caps can still exceed the byte ceiling; shed logs,
-  // then text, then locators until the bounded identifiers fit.
+  // Per-field caps do not sum below the ceiling: three log arrays of 40 capped
+  // entries alone can pass 60 KB, and the caps count characters, not bytes.
   const shedOrder = [
     "actionTimeline",
     "networkEntries",
@@ -373,7 +380,6 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   const path = yield* Path.Path;
   const millis = yield* Clock.currentTimeMillis;
   const crypto = yield* Crypto.Crypto;
-  // Two saves in the same millisecond must not overwrite each other.
   const unique = (yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8);
   const fileName = `browser-screenshot-${screenshotSiteSlug(pageUrl)}-${millis.toString(36)}-${unique}.png`;
   const screenshotPath = path.join(config.browserArtifactsDir, fileName);
@@ -426,7 +432,6 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
   const server = yield* McpServer.McpServer;
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  // The MCP tool runner only supplies the client, so hand the save path its services here.
   const saveServices = yield* Effect.context<
     ServerConfig.ServerConfig | FileSystem.FileSystem | Path.Path | Crypto.Crypto
   >();
@@ -481,7 +486,6 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
               // later request, and some reject inline images outright.
               const includeImage = payload?.includeImage === true;
               if (screenshotPath !== undefined && !includeImage) {
-                // The agent only wants a file to show the user. The url keeps the site icon on the tool row.
                 const saved = {
                   url: cutText(snapshot.url, MAX_SNAPSHOT_IDENTIFIER_CHARS),
                   screenshotPath,
@@ -552,8 +556,11 @@ interface ImageToolResult {
   readonly [key: string]: unknown;
 }
 
-// Expose server-built descriptions or failure tags; remote renderer/device
-// messages may contain output the agent should not receive.
+/**
+ * Failures surface only their tag unless the tool describes them: the remote
+ * message may carry renderer or device output the agent should not see, and
+ * the tag is what it can act on. A describer returns a server-built message.
+ */
 const imageToolFailure =
   <E>(toolName: string, operation: string, failureText: string | ((error: E) => string)) =>
   (cause: Cause.Cause<E>) => {
@@ -598,8 +605,12 @@ const imageToolFailure =
     }).pipe(Effect.as(result));
   };
 
-// Toolkit JSON serialization cannot produce image blocks; register screenshot
-// tools directly to send PNGs as images alongside JSON metadata.
+/**
+ * `McpServer.toolkit` serializes every result as JSON text, which is the
+ * wrong shape for a screenshot: the model needs image content. Tools whose
+ * result carries a `screenshot` field are registered by hand so the PNG goes
+ * out as an image block and the rest of the payload as JSON metadata.
+ */
 const registerImageTool = <T extends Tool.Any, E, R>(
   tool: T,
   handle: (payload: Tool.Parameters<T>) => Effect.Effect<{ readonly encodedResult: unknown }, E, R>,
@@ -726,8 +737,15 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
   );
 });
 
-/** Register only access-declared handlers; never capture McpInvocationContext
- * at registration because auth supplies it per request. */
+/**
+ * `McpServer.toolkit` for handlers that declared their access (see
+ * `McpToolAccess`). Every toolkit on `/mcp` registers through this.
+ *
+ * `McpServer.toolkit` asks for every service its tools declare when it
+ * registers them, but the auth middleware provides `McpInvocationContext` to
+ * each request instead. Registration must not get one: the services it
+ * captures would replace the request's.
+ */
 export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, RX>(
   toolkit: Toolkit.Toolkit<Tools>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,

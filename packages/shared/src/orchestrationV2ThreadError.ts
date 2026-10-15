@@ -61,8 +61,10 @@ export function latestExecutedRun(
 }
 
 /**
- * Submission ordinals can disagree with execution order when held runs resume later.
- * Compare completion times first; unfinished runs count as latest.
+ * Ordinals follow submission, but a run can start ahead of a held queue (a
+ * restart continuation, or a message sent while the queue is held), so a queued
+ * run resumed later can have a lower ordinal than one that already ended. An
+ * unfinished run is the latest.
  */
 export function runRanAfter(
   run: Pick<OrchestrationV2Run, "ordinal" | "completedAt">,
@@ -75,7 +77,11 @@ export function runRanAfter(
   return end(run) === end(other) ? run.ordinal > other.ordinal : end(run) > end(other);
 }
 
-/** Block queued messages after a usage-limit failure so they do not hit the same limit. */
+/**
+ * The latest run that actually started, when it stopped because the
+ * subscription limit was reached. Queued messages after that run must stay
+ * queued instead of being sent into the same limit.
+ */
 export function usageLimitBlockedRun(
   runs: ReadonlyArray<OrchestrationV2Run>,
   turnItems: ReadonlyArray<OrchestrationV2TurnItem>,
@@ -87,7 +93,11 @@ export function usageLimitBlockedRun(
   return summary.lastErrorClass === "usage_limit" ? executed : null;
 }
 
-/** Expose a usage-limit failure even when higher-ordinal runs never started. */
+/**
+ * That limited run, when newer runs were queued or cancelled before starting.
+ * Callers that treat the highest-ordinal run as the thread outcome would
+ * otherwise hide the limit.
+ */
 export function usageLimitRunPresentedAsLatest(
   runs: ReadonlyArray<OrchestrationV2Run>,
   turnItems: ReadonlyArray<OrchestrationV2TurnItem>,
@@ -97,7 +107,11 @@ export function usageLimitRunPresentedAsLatest(
   return blocked !== null && runs.some((run) => run.ordinal > blocked.ordinal) ? blocked : null;
 }
 
-/** Held queue entries await the user and must not represent the thread's outcome. */
+/**
+ * The newest run that is not waiting in a held queue, or null when only held
+ * runs exist. A held queue waits for the user, so its runs never stand for the
+ * thread's outcome. The SQL thread shell selects the same run.
+ */
 export function latestUnheldRun(
   runs: ReadonlyArray<OrchestrationV2Run>,
 ): OrchestrationV2Run | null {

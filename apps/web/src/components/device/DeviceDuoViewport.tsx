@@ -10,7 +10,7 @@ import { observeResize } from "../../lib/observeResize";
 
 const loadDuoViewer = () => import("@t3tools/client-runtime/device/duo-viewer");
 
-/** DeviceStreamView retains ownership of the decoded screen and input connection. */
+/** The decoded screen and input connection remain owned by DeviceStreamView. */
 export function DeviceDuoViewport(props: {
   readonly model: DeviceModelSource;
   readonly source: RefObject<HTMLCanvasElement | null>;

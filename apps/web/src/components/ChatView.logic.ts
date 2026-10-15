@@ -95,7 +95,6 @@ export function agentControlledBrowserCloseConfirmation(
   ].join("\n");
 }
 
-/** The floating player hides only while the same source is rendered in the panel. */
 export function shouldRenderPreviewMiniPlayer(
   source: PreviewMiniPlayerSource | null,
   renderedRightPanelSurface: RightPanelSurface | null,
@@ -147,7 +146,6 @@ export function observeProactivePanelUserChoice(
   };
 }
 
-/** Follow a changed server link only when the panel still shows the previous linked PR. */
 export function shouldRetargetThreadPullRequestPanel(
   previous: ThreadLinkedPullRequest | null,
   current: ThreadLinkedPullRequest | null,
@@ -267,7 +265,6 @@ export {
   resolveVisibleWorktreeSetup,
 } from "@t3tools/client-runtime/worktree-setup";
 
-/** Keep setup visible across local dispatch, durable preparation, and the live stream. */
 export function resolveWorktreeSetupProgress(input: {
   threadId: ThreadId;
   localPreparing: boolean;
@@ -293,7 +290,6 @@ export function resolveDraftHeroState(input: {
   isWorking: boolean;
   draftHeroDockRequested: boolean;
   backgroundSubmissionPending: boolean;
-  /** A worktree setup card is on the timeline, so the timeline must stay visible. */
   hasWorktreeSetupCard?: boolean;
 }): boolean {
   if (input.hasWorktreeSetupCard) {
@@ -310,8 +306,14 @@ export function resolveDraftHeroState(input: {
   );
 }
 
-/** Hold snapshots at module scope across route remounts to avoid blank timeline frames;
- * retain them per thread so cached destinations never paint another thread's messages. */
+/**
+ * Remounting LegendList (or handing it an empty first paint) punches a hole
+ * through the chat pane — white in light mode — so cmd+1/2/3 spam flashes even
+ * when the destination is already cached.
+ *
+ * Stored at module scope because ChatView remounts when the thread route
+ * changes (same pattern as the thread-error banner session dismissals).
+ */
 export type HeldThreadTimeline<T extends readonly unknown[]> = {
   threadKey: string | null;
   entries: T;
@@ -443,7 +445,6 @@ export function resolveDraftPromotionNavigationTarget(input: {
     latestRun?.status === "failed" ||
     latestRun?.status === "interrupted" ||
     latestRun?.status === "cancelled";
-  // Keep the optimistic message and setup progress mounted through the route swap.
   const messagePersisted = input.serverThread?.latestUserMessageAt != null;
   return runStarted || startupStopped || messagePersisted ? input.serverThreadRef : null;
 }
@@ -555,7 +556,6 @@ export function shouldWriteThreadErrorToCurrentServerThread(input: {
   );
 }
 
-/** Use the same enabled instance for the composer, provider status, and chat actions. */
 export function resolveComposerProviderSelection(input: {
   entries: ReadonlyArray<ProviderInstanceEntry>;
   candidateInstanceIds: ReadonlyArray<ProviderInstanceId | null | undefined>;
@@ -611,7 +611,6 @@ export function resolveComposerProviderSelection(input: {
   };
 }
 
-/** Keep restored drafts and every plan control on the selected instance's supported mode. */
 export function resolveComposerInteractionMode(input: {
   planModeEnabled: boolean;
   provider: Pick<ServerProvider, "showInteractionModeToggle"> | null | undefined;
@@ -649,7 +648,10 @@ export function getAntigravitySendBlockReason(
   if (provider.models.length === 0) {
     return "Refresh Antigravity models in provider settings before sending.";
   }
-  // Unavailable models remain visible for history; block sends unless provider errors make a retry useful.
+  // A saved model that left the catalog is kept in the picker as unavailable
+  // so the user sees what the thread used. The server rejects it at turn
+  // start, so block here unless the provider is in an error state, where a
+  // retry with the same model is the right move.
   if (
     provider.status === "ready" &&
     slug !== ANTIGRAVITY_DEFAULT_MODEL &&
@@ -846,7 +848,6 @@ export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
-  /** Element chips alone are sendable content, like images and terminal context. */
   elementContextCount?: number;
 }): {
   trimmedPrompt: string;
@@ -899,7 +900,10 @@ export function branchMismatchKey(
   return `${threadId}:${mismatch.threadBranch}:${mismatch.currentBranch}`;
 }
 
-// Composer autofocus cannot signal send intent. Reveal on draft content and hold until the mismatch clears.
+// Draft content is the intent signal — composer focus is useless here because
+// ChatView autofocuses the composer on every thread open.
+// `wasShownForCurrentMismatch` keeps the banner mounted once revealed so it
+// doesn't flicker away when the draft is cleared.
 export function shouldShowBranchMismatchBanner(input: {
   hasMismatch: boolean;
   isDismissed: boolean;
@@ -928,7 +932,6 @@ export function shouldShowPlanFollowUpPrompt(input: {
   );
 }
 
-// Module scope preserves dismissals across ChatView route remounts.
 const sessionDismissedBranchMismatchKeys = new Set<string>();
 
 export function dismissBranchMismatchForSession(key: string): void {
@@ -939,7 +942,10 @@ export function isBranchMismatchDismissedForSession(key: string | null): boolean
   return key !== null && sessionDismissedBranchMismatchKeys.has(key);
 }
 
-// Remember repo status across visits: late Git status would otherwise mount then drop a non-Git strip.
+// Git status for a checkout arrives after the composer paints, and the branch
+// strip mounts on the assumption that a project is a Git repo. Without a
+// memory, a non-Git project would mount the strip and drop it on every visit.
+// Keyed by environment and checkout for the session; never persisted.
 const sessionCheckoutIsRepo = new Map<string, boolean>();
 
 function checkoutIsRepoKey(environmentId: EnvironmentId, cwd: string): string {
@@ -967,7 +973,11 @@ export function threadHasStarted(thread: Thread | null | undefined): boolean {
   return Boolean(thread && (thread.latestRun !== null || thread.itemCount > 0 || thread.runtime));
 }
 
-/** The shell's latestUserMessageAt survives cleared turns and detail loading, unlike message-based checks. */
+/**
+ * `threadHasStarted` needs the detail: a thread whose latest turn was cleared
+ * still has messages, and the loading shell carries none. The shell records
+ * when the last user message landed, which every started thread has.
+ */
 export function threadShellHasStarted(
   shell:
     | Pick<EnvironmentThreadShell, "latestRun" | "latestUserMessageAt" | "runtime">
@@ -1071,7 +1081,11 @@ export async function waitForStartedServerThread(
   });
 }
 
-/** Resolves after the message's run rolls back, or rejects as soon as the thread records rollback failure. */
+/**
+ * Runs `revert` (the rollback command `requestId`) and resolves once the
+ * message's run is rolled back. Rejects with the server's reason as soon as
+ * the thread records that this rollback failed.
+ */
 export async function waitForRevertedMessage(
   threadRef: ScopedThreadRef,
   messageId: MessageId,
@@ -1167,7 +1181,12 @@ export function createLocalDispatchSnapshot(
   };
 }
 
-/** Evict optimism using visible turn items: message.updated can precede turn-item.updated and leave steer rows in a gap. */
+/**
+ * The timeline renders committed user rows from `visibleTurnItems`, but
+ * `message.updated` can land in `projection.messages` one event earlier than
+ * the matching `turn-item.updated`. Basing optimistic eviction on visible user
+ * turn items avoids dropping steer rows in that gap.
+ */
 export function deriveCommittedServerUserMessageIds(
   visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
 ): ReadonlySet<ChatMessage["id"]> {
@@ -1238,7 +1257,6 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   );
 }
 
-// Preserve deliberate focus in text fields, terminals, dialogs and popups when returning to the window.
 export function shouldRefocusComposerOnWindowFocus(
   activeElement:
     | (Pick<Element, "tagName" | "closest" | "getAttribute"> & { isContentEditable?: boolean })
@@ -1271,7 +1289,11 @@ export interface PlanFollowUpComposerSnapshot {
   readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
 }
 
-/** Restore every composer field on failure: the caller clears them before awaiting the plan follow-up send. */
+/**
+ * The caller clears the composer before awaiting the send, so every field it
+ * held has to be written back here: a dropped field silently discards user
+ * context.
+ */
 export function restorePlanFollowUpComposer(input: {
   readonly snapshot: PlanFollowUpComposerSnapshot;
   readonly writePrompt: (prompt: string) => void;

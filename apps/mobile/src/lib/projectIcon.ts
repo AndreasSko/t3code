@@ -4,7 +4,10 @@ export type ProjectIconGlyph =
   | { readonly kind: "emoji"; readonly emoji: string }
   | { readonly kind: "monogram"; readonly text: string; readonly color: ProjectIconColor };
 
-/** Hermes lacks Intl.Segmenter; approximate glyph count by folding combining marks into their base. */
+/**
+ * Hermes has no Intl.Segmenter, so combining marks are folded into their base
+ * character instead of full grapheme segmentation.
+ */
 export function countGlyphs(text: string): number {
   return Array.from(text.replace(/\p{M}/gu, "")).length;
 }
@@ -27,7 +30,10 @@ export function projectMonogram(projectName: string): string {
   return Array.from(`${first}${second}`.toUpperCase()).slice(0, 2).join("");
 }
 
-/** Mobile lacks Lucide assets, so Lucide overrides keep their color and use the project's monogram. */
+/**
+ * Mobile does not bundle the Lucide set, so a Lucide override keeps its color
+ * and falls back to the project's monogram instead of the folder glyph.
+ */
 export function resolveProjectIconGlyph(
   projectIcon: ProjectIconOverride | null | undefined,
   projectTitle: string,

@@ -7,7 +7,6 @@ import type { MuseItem } from "./protocol.ts";
 const decodeToolArgs = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 );
-/** Muse's `web_search` tool output: the query and its hits, as JSON. */
 const decodeWebSearchOutput = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({

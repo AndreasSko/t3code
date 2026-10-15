@@ -372,8 +372,9 @@ function buildMacLauncher(electronBinaryPath) {
     JSON.stringify(currentMetadata) === JSON.stringify(expectedMetadata)
   ) {
     if (isDevelopment) {
-      // Protocol activations can bypass the dev runner; refresh fallback values without
-      // overriding the live dev-runner environment.
+      // The launcher also handles protocol activations outside the dev runner,
+      // so refresh its fallback environment on every launch. Never let a value
+      // captured by an older parent app override the live dev-runner environment.
       writeDevelopmentEnvironmentScript();
       if (writeDevelopmentLauncherScript(launcherBinaryPath, runtimeElectronBinaryPath)) {
         signMacLauncherBundle(targetAppBundlePath);
@@ -384,8 +385,10 @@ function buildMacLauncher(electronBinaryPath) {
   }
 
   NodeFS.rmSync(targetAppBundlePath, { recursive: true, force: true });
-  // Preserve relative framework symlinks; absolute node_modules targets escape the
-  // bundle and crash sandboxed helpers (icudtl.dat not found).
+  // verbatimSymlinks keeps the framework's relative symlinks intact
+  // (e.g. Resources -> Versions/Current/Resources). Without it cpSync
+  // rewrites them to absolute paths into node_modules, which escape the
+  // bundle and crash sandboxed helper processes (icudtl.dat not found).
   NodeFS.cpSync(sourceAppBundlePath, targetAppBundlePath, {
     recursive: true,
     verbatimSymlinks: true,
@@ -397,8 +400,10 @@ function buildMacLauncher(electronBinaryPath) {
   );
   patchHelperBundleInfoPlists(targetAppBundlePath);
   if (isDevelopment) {
-    // Use the branded bundle executable for the macOS Dock identity, retaining its
-    // conventional name so Electron keeps app.isPackaged false in development.
+    // Launching the node_modules copy makes macOS associate the process (and Dock label) with
+    // Electron.app even though this bundle's Info.plist has the T3 Code name. Its conventional
+    // executable name also keeps Electron's default-app runtime in development mode instead of
+    // making app.isPackaged report true.
     writeDevelopmentEnvironmentScript();
     writeDevelopmentLauncherScript(launcherBinaryPath, runtimeElectronBinaryPath);
   }

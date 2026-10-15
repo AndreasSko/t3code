@@ -1,8 +1,12 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestDiffSide } from "@t3tools/contracts";
 
-/** Lines outside rendered hunks belong in the off-diff conversation list,
- * even when their file is present. */
+/**
+ * A thread naming a file is not the same as a thread the diff can show: its line may have moved
+ * out of the change, or sit in a hunk the host withheld. Pinning it anyway would put the remark
+ * against whatever code now occupies that line number, and silently dropping it would lose the
+ * conversation, so the answer decides which of the two lists it belongs in.
+ */
 export function isLineInFileDiff(
   file: FileDiffMetadata,
   side: PullRequestDiffSide,
@@ -17,8 +21,13 @@ export function isLineInFileDiff(
 
 export type DiffFoldOverride = "expanded" | "folded" | null;
 
-/** Store individual folds relative to the toolbar override so newly loaded
- * files obey fold-all; the caller supplies the saved default until overridden. */
+/**
+ * A diff arrives a slice at a time, so the reader's own choices are kept as the difference from
+ * what the toolbar last said rather than as the set of folded files: a file that has not loaded
+ * yet cannot be in a set, and would otherwise land expanded moments after the reader folded
+ * everything. The caller supplies the saved default until the toolbar overrides it; individual
+ * files can still be toggled independently.
+ */
 export function isFileDiffCollapsed(
   fileKey: string,
   foldOverride: DiffFoldOverride,
@@ -28,7 +37,11 @@ export function isFileDiffCollapsed(
   return toggledFileKeys.has(fileKey) ? !foldedByDefault : foldedByDefault;
 }
 
-/** Viewed ticks toggle the individual fold difference so fold-all never changes viewed state. */
+/**
+ * Clearing a file puts it away and un-clearing brings it back, so the tick moves the fold as if
+ * the reader had pressed the chevron themselves, which keeps folding a difference from what the
+ * toolbar last asked, and so keeps "collapse all" from ticking anything off.
+ */
 export function toggleFileDiffFoldForViewed(
   fileKey: string,
   viewed: boolean,

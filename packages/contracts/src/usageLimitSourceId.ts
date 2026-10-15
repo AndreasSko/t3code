@@ -1,5 +1,8 @@
 import * as Schema from "effect/Schema";
 
-/** Separate module avoids a circular dependency between settings and usage-limit contracts. */
+/**
+ * Lives in its own module so both the settings and the usage-limit contracts
+ * can import it without importing each other.
+ */
 export const UsageLimitSourceId = Schema.String.pipe(Schema.brand("UsageLimitSourceId"));
 export type UsageLimitSourceId = typeof UsageLimitSourceId.Type;

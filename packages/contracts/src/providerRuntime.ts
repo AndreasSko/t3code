@@ -442,8 +442,9 @@ export const ItemLifecyclePayload = Schema.Struct({
   toolSource: Schema.optional(ToolActivitySource),
   data: Schema.optional(Schema.Unknown),
   /**
-   * Resolved from the SDK's parent_tool_use_id; clients move attributed items
-   * from the main timeline to the owning agent's row.
+   * Owning agent when this item ran inside a subagent (resolved from the
+   * SDK's parent_tool_use_id). Clients re-home attributed items out of the
+   * main timeline and into the owning agent's Agents-surface row.
    */
   agentId: Schema.optional(TrimmedNonEmptyStringSchema),
   parentToolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
@@ -507,8 +508,8 @@ const UserInputResolvedPayload = Schema.Struct({
 export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 
 /**
- * Claude reports per-activation deltas; Codex reports cumulative totals.
- * The provider-specific merge strategy lives in client-runtime.
+ * Claude reports per-activation deltas; Codex reports cumulative totals — the
+ * merge strategy is provider-specific and lives in client-runtime.
  */
 export const RuntimeTaskUsage = Schema.Struct({
   totalTokens: NonNegativeInt,
@@ -537,16 +538,22 @@ export const TaskRunHandles = Schema.Struct({
 export type TaskRunHandles = typeof TaskRunHandles.Type;
 
 /**
- * Repeat identity linkage on progress and terminal rows so folds can reconstruct
- * an agent after its start row expires from activity retention.
+ * Repeated on progress and terminal rows (not just start) so client folds can
+ * reconstruct an agent even when its start row aged out of activity retention.
  */
 const taskAgentLinkageFields = {
-  /** SDK task_type (subagent/shell/monitor/local_workflow/…), repeated on
-   * every row so folds can classify without the start row. */
   taskType: Schema.optional(TrimmedNonEmptyStringSchema),
-  /** Clients trust the server-stamped classification; unstamped rows use heuristics. */
+  /**
+   * Server-stamped classification, set at ingestion.
+   * Clients trust this stamp outright; rows without it (legacy, pre-stamp)
+   * fall back to client-side heuristics.
+   */
   agentKind: Schema.optional(Schema.Literals(["agent", "background"])),
-  /** Tasks owned by a subagent stay out of the parent work log. */
+  /**
+   * Owning agent when the task itself was launched from inside a subagent
+   * (e.g. a subagent's background shell). Clients treat such tasks as
+   * agent-internal and keep them out of the parent work log.
+   */
   agentId: Schema.optional(TrimmedNonEmptyStringSchema),
   title: Schema.optional(TrimmedNonEmptyStringSchema),
   role: Schema.optional(TrimmedNonEmptyStringSchema),
@@ -563,7 +570,6 @@ const taskAgentLinkageFields = {
   attempt: Schema.optional(NonNegativeInt),
   runHandles: Schema.optional(TaskRunHandles),
   outputFile: Schema.optional(TrimmedNonEmptyStringSchema),
-  /** Codex agent hierarchy path, e.g. "/root/marlow". */
   agentPath: Schema.optional(TrimmedNonEmptyStringSchema),
   /**
    * Set on provider-synthesized child-agent events (Codex) whose activity
@@ -607,7 +613,10 @@ const TaskProgressPayload = Schema.Struct({
 });
 export type TaskProgressPayload = typeof TaskProgressPayload.Type;
 
-/** Map Claude SDK task_updated statuses at the adapter: killed to cancelled, paused to idle. */
+/**
+ * killed→cancelled and paused→idle are mapped at the adapter so the wire only
+ * carries the shared vocabulary.
+ */
 const TaskUpdatedPayload = Schema.Struct({
   taskId: RuntimeTaskId,
   status: Schema.optional(RuntimeTaskStatus),
@@ -659,7 +668,6 @@ const ToolProgressPayload = Schema.Struct({
   toolName: Schema.optional(TrimmedNonEmptyStringSchema),
   summary: Schema.optional(TrimmedNonEmptyStringSchema),
   elapsedSeconds: Schema.optional(Schema.Number),
-  /** Owning task/agent when the tool ran inside a subagent. */
   taskId: Schema.optional(RuntimeTaskId),
   parentToolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
 });

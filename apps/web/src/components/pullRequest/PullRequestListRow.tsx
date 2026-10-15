@@ -16,14 +16,12 @@ import {
   PullRequestStateGlyph,
 } from "./pullRequestPresentation";
 
-/** Shared PR row slots; callers own the outer link or button wrapper. */
 export const PULL_REQUEST_ROW_CLASS =
   "group/pr-row flex w-full items-center gap-2 rounded-md py-1 pr-1 text-left";
 
 export const PULL_REQUEST_ROW_NUMBER_CLASS =
   "shrink-0 font-mono text-xs tabular-nums text-muted-foreground";
 
-/** Corner conflict badges preserve a one-icon leading column and title alignment. */
 export function PullRequestRowGlyph({
   state,
   isDraft,
@@ -36,7 +34,6 @@ export function PullRequestRowGlyph({
   isDraft: boolean;
   mergeability?: PullRequestMergeability | undefined;
   baseBranch?: string | undefined;
-  /** Under the lifecycle glyph, level with the second line: the checks glyph. */
   below?: ReactNode;
   className?: string;
 }) {
@@ -70,14 +67,10 @@ export function PullRequestRowLines({
   metaClassName,
   updatedAt,
 }: {
-  /** The `#n` reference, already wrapped in whatever tooltip or menu the caller wants on it. */
   number: ReactNode;
   title: ReactNode;
-  /** Right end of the first line: stack, diff counts. */
   status?: ReactNode;
-  /** Right after the title text: checks and review verdict glyphs. */
   signals?: ReactNode;
-  /** Left of the second line: author, then repository and labels or the branches. */
   meta?: ReactNode;
   metaClassName?: string;
   updatedAt?: string | null | undefined;
@@ -136,7 +129,6 @@ export function PullRequestRowAuthor({
   );
 }
 
-/** Preserve base-branch width so long heads cannot squeeze it out; keep the arrow visible. */
 export function PullRequestRowBranches({ head, base }: { head: string; base: string }) {
   return (
     <span className="flex min-w-0 items-center gap-1 font-mono">

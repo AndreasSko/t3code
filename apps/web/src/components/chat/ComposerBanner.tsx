@@ -50,7 +50,10 @@ function Surface({
         surfaceColors,
         "relative isolate border-0 bg-transparent shadow-none [--chat-composer-attached-tint:transparent]",
         variantColors[variant],
-        // Chromium drops off-grid backdrop edge pixels; bleed the mask 1px under the composer's own glass.
+        // The mask cut-off (1rem) bleeds one pixel past the seam (1rem + 1px): Chromium
+        // drops the last device-pixel row of a filtered backdrop when the cut-off lands
+        // off the device-pixel grid, and the composer's surface starts exactly there.
+        // The composer's own glass covers the extra row, so the overlap never shows.
         placement === "attached"
           ? "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-2xl before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4"
           : "[--chat-composer-attachment-overlap:0px] before:rounded-2xl",
@@ -66,7 +69,6 @@ function Surface({
   );
 }
 
-// A peeking notice uses the first hidden notice's severity, never the attached row's.
 const peekBorder: Record<ComposerBannerVariant, string> = {
   default: "border-(--chat-composer-attached-outline)",
   error: "border-destructive/24",
@@ -105,7 +107,6 @@ function Attachment({ className, ...props }: ComponentProps<"div">) {
       data-slot="composer-banner-attachment"
       className={cn(
         "mx-auto -mb-[calc(1rem+1px)] w-[calc(100%-2*var(--chat-composer-drawer-inset))]",
-        // Adjacent attachments share their outline, including notices outside the form.
         "[&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:rounded-none [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:border-t-0",
         "[&+*_[data-chat-composer-form]>[data-slot=composer-banner-attachment]:first-child_[data-composer-banner-surface=attached]]:before:rounded-none [&+*_[data-chat-composer-form]>[data-slot=composer-banner-attachment]:first-child_[data-composer-banner-surface=attached]]:before:border-t-0",
         className,
@@ -160,7 +161,7 @@ function Root({
         density === "comfortable" && "[--composer-banner-padding-block:--spacing(1.25)]",
         density === "spacious" && "px-3 [--composer-banner-padding-block:--spacing(3)]",
         width === "content" ? "w-fit max-w-full flex-none" : "@container",
-        // Corner actions follow the banner curve (2xl minus inset), including grouped action wrappers.
+        // Actions may also arrive grouped in one wrapper element (usage-limit recovery).
         "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
         "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>:last-child>[data-slot=button]:last-of-type]:rounded-se-xl",
         "[&>:first-child>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
@@ -179,7 +180,6 @@ function Root({
   );
 }
 
-/** The same row can be a status, a list item, or an entire disclosure button. */
 function Row({
   className,
   render,
@@ -193,7 +193,6 @@ function Row({
       "group/banner-row grid min-h-(--composer-banner-icon-column) w-full min-w-0 grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)_auto] items-center gap-x-1 text-start",
       "not-has-[>[data-slot=composer-banner-actions]]:grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)]",
       "[&:is(button)]:cursor-pointer [&:is(button)]:rounded-md [&:is(button)]:focus-visible:outline-2 [&:is(button)]:focus-visible:-outline-offset-2 [&:is(button)]:focus-visible:outline-ring",
-      // Cap title width beside the icon so wrap-actions moves controls instead of wrapping the title.
       layout === "wrap-actions" &&
         "flex flex-wrap *:data-[slot=composer-banner-content]:max-w-[calc(100%-var(--composer-banner-icon-column)-var(--spacing))] *:data-[slot=composer-banner-content]:grow",
       layout === "approval" && "items-start gap-x-2 gap-y-3",
@@ -286,7 +285,7 @@ function Scroll({ className, children, ...props }: ComponentProps<typeof ScrollA
       className={cn("h-auto max-h-[min(24rem,40dvh)]", className)}
       {...props}
     >
-      {/* Clears the overlay scrollbar only once there is something to scroll. */}
+      {}
       <div className="[[data-has-overflow-y]>&]:pe-2">{children}</div>
     </ScrollArea>
   );

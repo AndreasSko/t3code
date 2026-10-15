@@ -1,5 +1,10 @@
-/** Provider packages must not import the server; settings, process and git access use this port.
- * HTTP, filesystem, and paths use Effect platform services directly. */
+/**
+ * Providers run inside a T3 server but must not import it. The server provides this one
+ * service; everything a provider needs from its environment (settings, the process runner)
+ * goes through it, so a provider package depends only on `@t3tools/source-control-core` and
+ * its own API and CLI code. HTTP, the filesystem, and paths come from Effect's platform
+ * services directly.
+ */
 import type {
   GitCommandError,
   ServerSettings,
@@ -13,7 +18,6 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-/** One CLI invocation. The server bounds concurrency, output, and time for every run. */
 export interface SourceControlProcessInput {
   readonly operation: string;
   readonly command: string;
@@ -76,7 +80,10 @@ export class SourceControlHost extends Context.Service<
         readonly cwd: string;
         readonly revision: string;
       }) => Effect.Effect<{ readonly commitSha: string }, GitCommandError>;
-      /** The outer effect resolves the repository; the inner effect lists its remotes. */
+      /**
+       * The outer effect resolves the repository and fails when the server cannot drive
+       * one there; the inner one lists its remotes.
+       */
       readonly remotes: (
         cwd: string,
       ) => Effect.Effect<Effect.Effect<VcsListRemotesResult, VcsError>, VcsError>;

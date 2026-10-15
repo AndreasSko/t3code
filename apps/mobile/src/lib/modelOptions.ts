@@ -40,7 +40,6 @@ export type ProviderGroup = {
   readonly providerKey: string;
   readonly providerLabel: string;
   readonly models: ReadonlyArray<ModelOption>;
-  /** The provider fields that name announced models its CLI is too old to run. */
   readonly updateRequired?: ProviderUpdateRequired;
 };
 
@@ -56,7 +55,13 @@ function providerDisplayLabel(provider: {
   return provider.instanceId;
 }
 
-/** Resolve project enablement from settings: another project's keep-alive can make provider.enabled misleading. */
+/**
+ * `provider.enabled` reflects the machine plus any project's keep-alive
+ * override, so it alone can't tell this project apart from one that merely
+ * shares the instance. Settings carry the real per-project view the server
+ * itself enforces, so a project with no override of its own must resolve
+ * from there, not from a snapshot another project may be keeping alive.
+ */
 function isProviderEnabledForProject(
   config: T3ServerConfig | null | undefined,
   provider:
@@ -86,7 +91,6 @@ function isProjectDisabledOverride(
   );
 }
 
-/** Dispatch follows project enablement even when another project's keep-alive leaves the provider running. */
 function isDisabledForProject(
   config: T3ServerConfig | null | undefined,
   provider:
@@ -126,7 +130,11 @@ function normalizeSelectionOptions(
       };
 }
 
-/** Require projectId so project disables are checked; pass null explicitly outside a project. */
+/**
+ * `projectId` has no default: a caller that forgets it would silently check only the
+ * machine-wide state and miss a project that turned this instance off. Pass `null` explicitly
+ * outside a project's scope.
+ */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null | undefined,
@@ -172,8 +180,11 @@ export function describeUnavailableModelSelection(
       };
 }
 
-/** Preserve Antigravity choices through setup/catalog failures so recovery does not silently replace them.
- * Other providers may use defaults; without config, keep stored choices. Require projectId; see isModelSelectionUnavailable. */
+/**
+ * Keep Antigravity selections when setup or catalog changes make them unavailable. Other
+ * providers fall through to the server default when they are disabled, missing, or signed out.
+ * Without config, keep stored selections.
+ */
 export function resolveSelectableModelSelection(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null,
@@ -198,8 +209,10 @@ export function resolveSelectableModelSelection(
     : null;
 }
 
-/** Exclude legacy implicit defaults without silently replacing Antigravity selections; explicit settings picks remain valid.
- * projectId is required; see isModelSelectionUnavailable. */
+/**
+ * Reject legacy models for implicit defaults, except Antigravity selections, which must not
+ * silently change after a catalog update. Explicit picks in the settings sheet are unaffected.
+ */
 export function resolveDefaultableModelSelection(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null,
@@ -230,7 +243,6 @@ export function resolveNewTaskModelSelection(input: {
   );
 }
 
-/** projectId is required; see isModelSelectionUnavailable. */
 export function buildModelOptions(
   config: T3ServerConfig | null | undefined,
   fallbackModelSelection: ModelSelection | null,

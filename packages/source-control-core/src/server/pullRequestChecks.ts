@@ -6,8 +6,18 @@ function isAtLeastAsNew(candidate: string | null, kept: string | null): boolean 
   return kept === null || candidate >= kept;
 }
 
-/** Keep the newest run per workflow/name, ties going to the last occurrence.
- * Preserve first appearance order; qualify surviving duplicate names by workflow. */
+/**
+ * A host's rollup is a list of runs, not a list of checks: while a workflow is being re-run — or
+ * while a second run of it is already live — the same check arrives twice, and both copies reach
+ * the reader as what looks like a duplicate. Nothing in a check carries an id, so the name is what
+ * identifies it, qualified by the workflow it belongs to since two workflows are free to name a
+ * job the same thing.
+ *
+ * A tie goes to whichever came last, because a host lists a re-run after the run it repeats.
+ *
+ * The order is the host's own, held at the place each check first appeared, so a re-run landing
+ * mid-read replaces a row where it stands instead of reshuffling the list under the reader.
+ */
 export function dedupeChecks(
   entries: ReadonlyArray<{
     readonly check: PullRequestCheck;
@@ -19,7 +29,6 @@ export function dedupeChecks(
   for (const entry of entries) {
     const key = JSON.stringify([entry.workflowName ?? "", entry.check.name]);
     const kept = newestByCheck.get(key);
-    // Re-setting a key a Map already holds keeps its first position, which is the order wanted.
     if (kept === undefined || isAtLeastAsNew(entry.at, kept.at)) newestByCheck.set(key, entry);
   }
   const survivors = [...newestByCheck.values()];

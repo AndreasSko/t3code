@@ -35,7 +35,6 @@ export interface NetServiceShape {
   readonly isPortAvailableOnLoopback: (port: number) => Effect.Effect<boolean>;
 
   /**
-   * Returns true when something accepts TCP connections on {host, port}.
    * Unlike the bind-side checks this works for privileged ports (<1024).
    */
   readonly hasListenerOnHost: (port: number, host: string) => Effect.Effect<boolean>;
@@ -45,9 +44,6 @@ export interface NetServiceShape {
    */
   readonly reserveLoopbackPort: (host?: string) => Effect.Effect<number, NetError>;
 
-  /**
-   * Resolve an available listening port, preferring the provided port first.
-   */
   readonly findAvailablePort: (preferred: number) => Effect.Effect<number, NetError>;
 }
 
@@ -57,7 +53,10 @@ export class NetService extends Context.Service<NetService, NetServiceShape>()(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = () => {
-  /** Treat EADDRNOTAVAIL as available so hosts without IPv6 pass loopback checks. */
+  /**
+   * `EADDRNOTAVAIL` is treated as available so IPv6-absent hosts don't fail
+   * loopback availability checks.
+   */
   const canListenOnHost = (port: number, host: string): Effect.Effect<boolean> =>
     Effect.callback<boolean>((resume) => {
       const server = NodeNet.createServer();

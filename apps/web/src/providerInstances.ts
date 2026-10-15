@@ -19,7 +19,11 @@ import {
 
 export { normalizeProviderAccentColor, shouldShowInstanceBadge };
 
-/** Never persist or dispatch this placeholder; disable send until a live provider replaces it. */
+/**
+ * Local-only placeholder used while a draft has no provider it can safely
+ * target. It must never be persisted or dispatched; the composer disables
+ * send until a live provider replaces it.
+ */
 export const NO_PROVIDER_MODEL_SELECTION: ModelSelection = {
   instanceId: ProviderInstanceId.make("t3code_no_provider"),
   model: "",
@@ -30,7 +34,6 @@ export interface ProviderInstanceEntry {
   readonly driverKind: ProviderDriverKind;
   readonly displayName: string;
   readonly accentColor?: string | undefined;
-  /** Registry identity used to resolve the official icon for generic ACP instances. */
   readonly acpRegistryAgentId?: string | undefined;
   /** Catalog-advertised icon URL. The renderer still applies the official-CDN allowlist. */
   readonly acpRegistryIconUrl?: string | undefined;
@@ -38,7 +41,6 @@ export interface ProviderInstanceEntry {
   readonly enabled: boolean;
   readonly installed: boolean;
   readonly status: ServerProviderState;
-  /** Default instance ids equal defaultInstanceIdForDriver; pickers sort them before custom accounts. */
   readonly isDefault: boolean;
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
@@ -47,7 +49,12 @@ export interface ProviderInstanceEntry {
 
 export type ProviderCatalogAvailability = "loading" | "ready" | "unavailable" | "unconfigured";
 
-/** Null means the catalog has not arrived, not that no provider exists; do not strand recoverable threads. */
+/**
+ * Keep a provider catalogue that has not arrived yet distinct from a loaded
+ * catalogue with no usable entries. Environment config streams are reactive:
+ * treating their initial `null` as a final empty list strands otherwise
+ * recoverable threads behind a misleading "no providers" state.
+ */
 export function resolveProviderCatalogAvailability(input: {
   readonly catalogLoaded: boolean;
   readonly entries: ReadonlyArray<ProviderInstanceEntry>;
@@ -58,7 +65,10 @@ export function resolveProviderCatalogAvailability(input: {
   return input.entries.length === 0 ? "unconfigured" : "unavailable";
 }
 
-/** Enabled updates independently of probe status, which can still report ready after disabling. */
+/**
+ * Disabling an instance updates `enabled` independently, while its previous `ready` probe
+ * status can remain in the streamed snapshot until reconciliation.
+ */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
   return entry.enabled && entry.isAvailable && entry.status === "ready";
 }
@@ -67,7 +77,6 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
   return entry.enabled;
 }
 
-/** Preserve server order; call sortProviderInstanceEntries for default-first presentation. */
 export function deriveProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
@@ -97,8 +106,10 @@ export function deriveProviderInstanceEntries(
 }
 
 /**
- * Instance ids repeat across environments; keep nested lookups scoped to the thread's environment so
- * accounts and accent colors cannot clobber each other.
+ * Instance ids are per-environment routing keys, and `defaultInstanceIdForDriver` makes the
+ * default id literally the driver slug, so every environment running the same driver reports
+ * the same id. Flattening across environments would clobber entries and mis-resolve accent
+ * colors; lookups must stay scoped to the thread's own environment.
  */
 export function deriveProviderEntriesByEnvironment(
   providersByEnvironment: Iterable<
@@ -124,8 +135,16 @@ export function deriveProviderEntriesByEnvironment(
 }
 
 /**
- * Settings override lagging probes; missing non-default entries are disabled. Pass projectId for project
- * overrides or explicit null for machine settings so omission cannot silently ignore enablement.
+ * Provider probes can briefly retain their previous `enabled` value after a settings write, so
+ * picker visibility must follow settings rather than waiting for probe reconciliation. A
+ * built-in default instance without a `providerInstances` entry keeps its streamed state, since
+ * the server runs it with default config. Any other instance missing from `providerInstances`
+ * is stale (for example immediately after deletion) and is treated as disabled. `projectId`
+ * folds in that project's `providerInstances[id].enabled` override (enable or disable in either
+ * direction over the machine value); `null` resolves the machine value only. It has no default:
+ * a caller that renders for a single project but forgets to pass it would silently show the
+ * machine's enablement instead of that project's, so passing `null` for a surface that isn't
+ * project-aware must be a deliberate choice, not an omission.
  */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -162,7 +181,6 @@ export function applyProviderInstanceSettings(
   });
 }
 
-/** Defaults first within each driver; preserve server ordering among custom accounts and across drivers. */
 export function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ReadonlyArray<ProviderInstanceEntry> {
@@ -184,7 +202,9 @@ export function sortProviderInstanceEntries(
   return sorted;
 }
 
-/** Require exact instanceId; UI routing must not infer a missing instance from its driver kind. */
+/**
+ * Missing snapshots are not inferred from driver kind in UI routing code.
+ */
 export function getProviderInstanceEntry(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId,
@@ -193,8 +213,8 @@ export function getProviderInstanceEntry(
 }
 
 /**
- * Use the instance's own default/catalog before driver fallback because accounts can serve different
- * models.
+ * Custom instances can serve a different model list than the default instance of the same
+ * driver kind, so the lookup must be instance-scoped rather than kind-scoped.
  */
 export function getDefaultProviderInstanceModel(
   providers: ReadonlyArray<ServerProvider>,
@@ -213,7 +233,10 @@ export function getDefaultProviderInstanceModel(
 const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolean =>
   entry.enabled && entry.isAvailable;
 
-/** Fallback prefers ready/non-error entries; retain an errored provider only when explicitly requested. */
+/**
+ * An errored provider is retained only when it was explicitly requested; it is never invented
+ * as a new-user default.
+ */
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   instanceId: ProviderInstanceId | undefined,
@@ -230,10 +253,6 @@ export function resolveSelectableProviderInstanceEntry(
   );
 }
 
-/**
- * A deleted/unusable instance falls back to ready/non-error providers; undefined means no safe new
- * selection.
- */
 export function resolveSelectableProviderInstance(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId | undefined,
@@ -242,7 +261,10 @@ export function resolveSelectableProviderInstance(
   return resolveSelectableProviderInstanceEntry(entries, instanceId)?.instanceId;
 }
 
-/** Keep valid selections byte-for-byte; instance fallback resets its model to avoid cross-provider pairs. */
+/**
+ * Falling back to another instance also resets the model to that instance's own default,
+ * avoiding cross-provider instance/model pairs.
+ */
 export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,

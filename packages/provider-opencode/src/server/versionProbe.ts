@@ -109,7 +109,6 @@ const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
     ? `Basic ${Buffer.from(`opencode:${serverPassword}`, "utf8").toString("base64")}`
     : undefined;
   for (const path of ["/api/info", "/global/health"] as const) {
-    // A path prefix and query on the configured URL are kept: `/base/?x=1` → `/base/api/info?x=1`.
     const url = new URL(baseUrl);
     url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
     const request = HttpClientRequest.get(url.href);
@@ -162,7 +161,6 @@ const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
   });
 });
 
-/** Probes a configured server when `serverUrl` is set, otherwise the local binary. */
 export const probeOpenCodeRuntime = (
   settings: {
     readonly binaryPath: string;
@@ -180,9 +178,9 @@ export const probeOpenCodeRuntime = (
     : probeOpenCodeBinary(settings.binaryPath, environment);
 
 /**
- * One instance's runtime, remembered after the first successful probe. Settings changes rebuild
- * the driver; `refresh` re-probes (status checks use it, so an in-place upgrade re-routes). A
- * failed probe is never remembered. `lastSuccess` never probes, for calls too hot to wait on one.
+ * Settings changes rebuild the driver; `refresh` re-probes (status checks use it, so an in-place
+ * upgrade re-routes). A failed probe is never remembered. `lastSuccess` never probes, for calls
+ * too hot to wait on one.
  */
 export const makeOpenCodeRuntimeProbe = <E>(probe: Effect.Effect<ProbedOpenCode, E>) =>
   Effect.map(

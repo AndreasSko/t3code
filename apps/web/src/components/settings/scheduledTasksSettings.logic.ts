@@ -67,7 +67,10 @@ export interface DraftState {
   /** Not editable in the dialog, but preserved so editing an agent-created task keeps its modes. */
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
-  /** Keep the original selection so unchanged models retain provider options the picker does not edit. */
+  /**
+   * The picker only edits `instanceId:model`; keeping the source object preserves provider
+   * options (reasoning, temperature, …) when the model itself is left unchanged.
+   */
   readonly baseModelSelection: ModelSelection | null;
   readonly signatureEnabled: boolean;
   readonly signatureHeader: string;
@@ -165,7 +168,6 @@ export function taskToDraft(task: ScheduledTask): DraftState {
   };
 }
 
-/** Use configured defaults before the catalog's advertised default model. */
 export function scheduledTaskDefaultModel(
   settings: ServerSettings,
   project: (LegacyProjectSettingsFields & { readonly id: ProjectId }) | null,

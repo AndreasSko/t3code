@@ -13,14 +13,16 @@ export interface FileTreeDragStartEvent {
 }
 
 export interface FileTreeDragMentionHost {
-  /** Drop the tree's gesture-applied selection of the dragged row. */
   deselect(treePath: string): void;
 }
 
 export interface FileTreeDragMentionController {
-  /** Suppress file opens from gesture-driven selection changes while dragging. */
+  /**
+   * True from the moment a row drag starts until it ends. The tree selects
+   * the dragged row as part of the gesture; selection changes made while
+   * this is set are gesture side effects, not requests to open a file.
+   */
   isDragInProgress(): boolean;
-  /** Mirror of the tree's current selection, needed for multi-row drags. */
   handleSelectionChange(selectedPaths: ReadonlyArray<string>): void;
   handleDragStart(event: FileTreeDragStartEvent): void;
   handleDragEnd(): void;
@@ -34,8 +36,12 @@ const itemPathOf = (node: unknown): string | null => {
   return typeof element.getAttribute === "function" ? element.getAttribute("data-item-path") : null;
 };
 
-/** Tag mention drags without opening files; deselect dragged rows at the end
- * so later clicks still emit selection changes. */
+/**
+ * Tags file-tree drags with the composer mention payload and keeps the drag
+ * from acting like a click: while the drag runs, selection changes are
+ * suppressed, and when it ends the dragged rows are deselected so nothing is
+ * left highlighted and a later click on them still fires a selection change.
+ */
 export function createFileTreeDragMentionController(
   host: FileTreeDragMentionHost,
 ): FileTreeDragMentionController {

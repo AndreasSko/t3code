@@ -2,10 +2,16 @@ const PENDING_USER_INPUT_MAX_HEIGHT = 560;
 const PENDING_USER_INPUT_MIN_HEIGHT = 160;
 const PENDING_USER_INPUT_VERTICAL_GAP = 12;
 
-/** Until measured, reserve a portrait iPhone keyboard with QuickType; underestimating would let the card overshoot. */
+/**
+ * Overestimating only costs card height; an underestimate would let the card
+ * overshoot on the first keyboard open.
+ */
 export const ESTIMATED_KEYBOARD_HEIGHT = 336;
 
-/** Card and feed-inset motion must share a clock; 220ms is close to iOS keyboard motion's ~250ms. */
+/**
+ * One clock for the questionnaire expand/collapse choreography: the card's
+ * enter/exit and the feed-inset glide must share it or they visibly drift.
+ */
 export const USER_INPUT_TOGGLE_DURATION_MS = 220;
 
 export function derivePendingUserInputMaxHeight(input: {

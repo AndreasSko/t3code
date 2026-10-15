@@ -32,7 +32,8 @@ export const PRIMARY_INSTANCE_ID = DesktopBackendManager.PRIMARY_INSTANCE_ID;
 export type DesktopBackendInstance = DesktopBackendManager.DesktopBackendInstance;
 export type BackendInstanceSpec = DesktopBackendManager.BackendInstanceSpec;
 
-// Refuse replacement so concurrent registrants cannot silently overwrite each other.
+// The pool refuses overwrites so two independent orchestrators racing on the same id surface as a
+// typed failure instead of one silently winning.
 export class DesktopBackendPoolInstanceAlreadyRegisteredError extends Schema.TaggedError<DesktopBackendPoolInstanceAlreadyRegisteredError>()(
   "DesktopBackendPoolInstanceAlreadyRegisteredError",
   {
@@ -57,16 +58,22 @@ export class DesktopBackendPool extends Context.Service<
   DesktopBackendPool,
   {
     readonly get: (id: BackendInstanceId) => Effect.Effect<Option.Option<DesktopBackendInstance>>;
-    // Order is unspecified; callers needing primary first must sort.
+    // Snapshot of all currently-registered instances. Order is unspecified;
+    // callers that need a canonical "primary first" view should sort by id.
     readonly list: Effect.Effect<readonly DesktopBackendInstance[]>;
-    // Always registered for the pool's lifetime.
     readonly primary: Effect.Effect<DesktopBackendInstance>;
-    // The pool owns the new instance's scope; unregister or pool teardown stops it.
-    // Registration does not start the instance.
+    // The pool owns the instance's scope: unregister(id) or pool teardown closes it and runs the
+    // instance's auto-stop finalizer. The returned instance has not been started — callers decide
+    // when to start it (and can call start more than once if a retry-after-failure story makes
+    // sense for them).
     readonly register: (
       spec: BackendInstanceSpec,
     ) => Effect.Effect<DesktopBackendInstance, DesktopBackendPoolInstanceAlreadyRegisteredError>;
-    // Hide the instance from get/list before closing its scope so callers cannot reuse a stopping backend.
+    // Stop the named instance and remove it from the registry. Closing the
+    // instance's scope triggers its auto-stop finalizer; the registry is
+    // updated atomically with the scope close so subsequent get(id) calls
+    // observe the unregister before the underlying child process has fully
+    // exited.
     readonly unregister: (
       id: BackendInstanceId,
     ) => Effect.Effect<void, DesktopBackendPoolCannotUnregisterPrimaryError>;
@@ -85,7 +92,6 @@ export type BackendInstanceFactoryRequirements =
 interface ActiveRegisteredInstance {
   readonly _tag: "Active";
   readonly instance: DesktopBackendInstance;
-  // Only registered instances have their own closeable scope; the primary shares the pool scope.
   readonly scope: Option.Option<Scope.Closeable>;
 }
 
@@ -113,14 +119,17 @@ export const layer = Layer.effect(
     const electronDialog = yield* ElectronDialog.ElectronDialog;
     const electronApp = yield* ElectronApp.ElectronApp;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
-    // Fork instance scopes from the pool lifetime so app shutdown runs their
-    // graceful stop finalizers instead of leaving children to be hard-killed.
+    // Without this, instance scopes are orphaned: they only close via explicit unregister() calls,
+    // so on app shutdown the WSL backend child process gets hard-killed by the OS instead of
+    // receiving the graceful SIGTERM + grace period the instance's stop finalizer would otherwise
+    // run.
     const layerScope = yield* Scope.Scope;
-    // Reuse the pool's services when constructing instances in their own child scopes.
     const factoryContext = yield* Effect.context<BackendInstanceFactoryRequirements>();
 
-    // Fatal WSL failures persist Windows fallback; bounded transport failures use
-    // it only for this launch so the user's WSL preference survives.
+    // A WSL preflight failure on the primary only happens in wsl-only mode.
+    // Fatal configuration failures persist the Windows fallback. Bounded
+    // transport failures use an in-memory fallback for this launch so the app
+    // opens without overwriting the user's WSL preference.
     const handlePrimaryPreflightFailure = Effect.fn("desktop.backendPool.primaryPreflightFailed")(
       function* (failure: DesktopBackendManager.PreflightFailure) {
         const { reason, fatal } = failure;
@@ -144,8 +153,9 @@ export const layer = Layer.effect(
           "WSL backend couldn't start",
           `${reason}\n\nFalling back to the Windows backend so T3 Code can open. Re-enable the WSL backend from Settings > Connections once the WSL distro is fixed.`,
         );
-        // Clear both WSL flags so re-enabling cannot restore a broken WSL-only primary.
-        // Fall back in memory if persistence fails, keeping this launch recoverable.
+        // Clearing wslBackendEnabled alone would leave a stale wslOnly:true that silently re-traps
+        // the user in wsl-only mode the next time they enable WSL. If the persisted write fails,
+        // keep this process recoverable by applying the fallback to in-memory settings.
         yield* appSettings.applyWslWindowsFallback.pipe(
           Effect.catch((error) =>
             logBackendPoolWarning(
@@ -162,12 +172,14 @@ export const layer = Layer.effect(
 
     const primary = yield* DesktopBackendManager.makeBackendInstance({
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
-      // Resolve lazily: persisted settings load after this layer, so eager resolution
-      // would label WSL-only primaries using the Windows defaults.
+      // Keep this lazy. The pool layer is initialized before startup loads
+      // persisted desktop settings, so resolving the primary label here would
+      // permanently capture DEFAULT_DESKTOP_SETTINGS and mislabel WSL-only
+      // primaries as Windows.
       label: configuration.resolvePrimaryLabel,
       configResolve: configuration.resolvePrimary,
-      // Absorb window creation failures so backend readiness can reset restartAttempt.
-      // Log them here because the window service logs only successful creation.
+      // Window creation errors propagating out of handleBackendReady must not block the readiness
+      // callback (that would prevent restartAttempt from being reset), so we absorb them here.
       onReady: (httpBaseUrl) =>
         desktopWindow.handleBackendReady(httpBaseUrl).pipe(
           Effect.catch((error) =>
@@ -327,7 +339,6 @@ export const layer = Layer.effect(
   }),
 );
 
-/** Uses the first instance as primary; registration methods die if a test unexpectedly calls them. */
 export const layerTest = (
   instances: readonly DesktopBackendInstance[],
 ): Layer.Layer<DesktopBackendPool> =>

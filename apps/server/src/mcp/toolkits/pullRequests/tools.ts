@@ -34,7 +34,6 @@ const guideDependencies = [
 const REGISTER_EVERY_PR =
   "Register every pull request you open for this thread, including each layer of a stack, right after creating it.";
 
-/** Accept URL or repository/number; both resolve to the same host-level identity. */
 export const PullRequestTargetInput = Schema.Struct({
   threadId: Schema.optional(
     ThreadId.annotate({

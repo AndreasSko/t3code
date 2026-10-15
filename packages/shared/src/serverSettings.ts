@@ -90,13 +90,10 @@ const TEXT_GENERATION_FALLBACK_DRIVERS = [
 ].map((driver) => ProviderDriverKind.make(driver));
 
 /**
- * The text generation model on the first instance `isEnabled` accepts: the
- * built-in default instances in preference order, then, when
- * `includeConfiguredInstances` is set, configured instances of those
- * drivers. `null` when none is.
- *
- * Preserve a custom `defaultModelSelection` and its options: that backend may
- * reject the driver's built-in default.
+ * The model is the driver's cheap default, unless `defaultModelSelection`
+ * (the thread default) is one of that instance's custom models. A custom
+ * model usually means a backend that may refuse the built-in default, and
+ * the thread default, with its options, is known to work there.
  *
  * `includeConfiguredInstances` is for the project-scoped caller only: a
  * project that disabled every built-in instance should still be able to
@@ -144,7 +141,12 @@ export function fallbackTextGenerationModelSelection(
   };
 }
 
-/** Pass null explicitly outside project scope, so callers cannot accidentally ignore a project override. */
+/**
+ * `projectId` has no default: a caller that forgets it would otherwise fall
+ * back to the machine's own writer choice, silently ignoring a project that
+ * turned the writer's instance off. Pass `null` explicitly outside a
+ * project's scope.
+ */
 export function resolveSourceControlWriterModelSelection(
   settings: ServerSettings,
   providers: ReadonlyArray<ServerProvider> | undefined,
@@ -169,10 +171,6 @@ export function resolveSourceControlWriterModelSelection(
     : settings.textGenerationModelSelection;
 }
 
-/**
- * The model that writes review guides: its own setting when that provider can still run it,
- * otherwise whatever writes source control text.
- */
 export function resolveReviewGuideModelSelection(
   settings: ServerSettings,
   providers: ReadonlyArray<ServerProvider> | undefined,
@@ -257,7 +255,6 @@ function mergeModelSelectionOptionsById(input: {
   return [...merged.entries()].map(([id, value]) => ({ id, value }));
 }
 
-/** Upsert each patched entry; `null` removes it. Entries the patch omits are untouched. */
 function mergeSettingsEntries<Value>(
   current: Readonly<Record<string, Value>>,
   patch: Readonly<Record<string, Value | null>>,
@@ -273,7 +270,15 @@ function mergeSettingsEntries<Value>(
   return Object.fromEntries(next);
 }
 
-/** Preserve omitted providerInstances for older clients; an explicit {} clears the overrides. */
+/**
+ * `projectSettingsOverrides` entries otherwise replace whole (see the field's
+ * doc comment in contracts), but `providerInstances` was added after clients
+ * already round-trip a project's entry on every edit. A client built before
+ * that addition sends an entry that never mentions the key, and a whole
+ * replace would silently wipe it. When an incoming entry omits the key, keep
+ * what is stored; a client that means to clear every provider override for
+ * the project says so explicitly with `providerInstances: {}`.
+ */
 function mergeProjectSettingsOverridesPatch(
   current: Readonly<Record<string, ProjectSettingsOverrides>>,
   patch: Readonly<Record<string, ProjectSettingsOverrides | null>>,
@@ -324,10 +329,9 @@ export function deriveLegacyProjectOverrides(
 }
 
 /**
- * Rewrite a patch that still uses the legacy per-key project maps into
- * entries of `projectSettingsOverrides`, so older clients keep editing the
- * values the server actually reads. `null` in a legacy map clears that one
- * override.
+ * Rewrite a patch that still uses the legacy per-key project maps into entries
+ * of `projectSettingsOverrides`, so older clients keep editing the values the
+ * server actually reads.
  */
 function translateLegacyProjectOverridePatch(
   current: Pick<ServerSettings, "projectSettingsOverrides">,

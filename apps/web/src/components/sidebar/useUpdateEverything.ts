@@ -33,11 +33,8 @@ import {
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /**
- * The remote half of the sidebar update button: outdated providers on every
- * connected machine, and servers behind the version this client runs or is
- * about to install (`localUpdateVersion`). Servers that install from npm appear
- * only once npm confirms that version. `run` performs the whole pass, including
- * this app's own download and install when given.
+ * Servers that install from npm appear only once npm confirms that version.
+ * When this app installs, the summary waits for the relaunch.
  */
 export function useUpdateEverything(localUpdateVersion: string | null) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
@@ -104,9 +101,11 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
     summary,
     lines,
+    /** The servers this run restarts, which stops their running threads. */
     restarts,
     skipped,
-    /** `installLocal` resolves true when this app is relaunching. */
+    /** Runs the pass. `installLocal` resolves true when this app is relaunching.
+        Both report failures to the pass, which lists them in its summary. */
     run: async ({
       downloadLocal,
       installLocal,
@@ -152,7 +151,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             const runs = await providers.updateAll({ quiet: true });
             const outcomes = runs.map((run) => {
               const runOutcome = getProviderUpdateRunOutcome(run);
-              // An interrupted update did not finish either, so its row is not "done".
               if (runOutcome.status !== "updated") failedProviderMachines.add(run.environmentId);
               return runOutcome;
             });

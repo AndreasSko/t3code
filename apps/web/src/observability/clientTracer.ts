@@ -11,7 +11,10 @@ export function hasDelegate(): boolean {
   return delegate !== null;
 }
 
-/** Install before exporters exist so spans follow whichever exporter is configured later. */
+/**
+ * Installed once when the client runtime is built, before any exporter exists, so
+ * client spans keep flowing to whatever exporter is configured later on.
+ */
 export const layer = Layer.succeed(
   Tracer.Tracer,
   Tracer.make({

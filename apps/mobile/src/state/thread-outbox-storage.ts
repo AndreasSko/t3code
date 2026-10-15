@@ -18,7 +18,10 @@ function trackInFlightWrite(operation: Promise<void>): Promise<void> {
   return operation;
 }
 
-/** Await in-flight writes before an app-update restart tears down the runtime. */
+/**
+ * Awaits queued-message writes so an app update restart cannot tear down the
+ * runtime while one is mid-file.
+ */
 export async function flushThreadOutboxWrites(): Promise<void> {
   while (inFlightWrites.size > 0) {
     await Promise.allSettled(inFlightWrites);

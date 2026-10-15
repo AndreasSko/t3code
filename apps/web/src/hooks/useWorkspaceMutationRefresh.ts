@@ -7,7 +7,10 @@ export function workspaceMutationRefreshToken(
   return mutationId === null ? null : `${resourceKey}\u0000${mutationId}`;
 }
 
-/** Keep disabled mutations pending so a local save can finish before refreshing the resource. */
+/**
+ * Refreshes once per mutation and resource. Disabled mutations stay pending,
+ * which lets an editable file catch up after its local save finishes.
+ */
 export function useWorkspaceMutationRefresh(input: {
   readonly enabled?: boolean;
   readonly mutationId: string | null;

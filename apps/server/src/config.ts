@@ -25,12 +25,10 @@ export interface ServerDerivedPaths {
   readonly dbPath: string;
   readonly keybindingsConfigPath: string;
   readonly settingsPath: string;
-  /** Palettes this machine publishes for clients to follow, one file per theme. */
   readonly environmentThemesDir: string;
   readonly providerStatusCacheDir: string;
   readonly worktreesDir: string;
   readonly attachmentsDir: string;
-  /** Screenshots the agent asks the collaborative browser to keep for the user. */
   readonly browserArtifactsDir: string;
   readonly logsDir: string;
   readonly serverTracePath: string;
@@ -59,7 +57,10 @@ export class ServerConfig extends Context.Service<
     readonly otlpTracesUrl: string | undefined;
     readonly otlpMetricsUrl: string | undefined;
     readonly otlpLogsUrl: string | undefined;
-    /** Read per-signal export settings so format, credential, and schedule stay with their endpoint. */
+    /**
+     * Read instead of a process-wide setting so the wire format, credential,
+     * and schedule travel with the endpoint they were configured beside.
+     */
     readonly otlpTracesExport: SignalExport;
     readonly otlpMetricsExport: SignalExport;
     readonly otlpLogsExport: SignalExport;
@@ -98,7 +99,10 @@ export class ServerConfig extends Context.Service<
 
 export const make = (config: ServerConfig["Service"]) => ServerConfig.of(config);
 
-/** All OTLP signals must report the same service identity. */
+/**
+ * Resource attributes shared by every OTLP exporter, so traces, metrics, and
+ * logs report the same service identity to the collector.
+ */
 export const otlpResource = (config: ServerConfig["Service"]) => ({
   serviceName: "t3code-server",
   attributes: {

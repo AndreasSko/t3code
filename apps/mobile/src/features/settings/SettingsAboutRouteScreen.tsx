@@ -40,7 +40,8 @@ function AppSettingsSection() {
   const hiddenUpdateTapCount = useRef(0);
 
   const version = Constants.expoConfig?.version ?? "0.0.0";
-  // Match app.config.ts's production fallback to avoid mislabeling release builds.
+  // Fall back to "production" to match resolveAppVariant in app.config.ts, so a
+  // missing variant never mislabels a production build as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
   const variantLabel = variant === "production" ? "" : capitalize(variant);
   const versionLabel = variantLabel ? `${version} · ${variantLabel}` : version;
@@ -48,7 +49,6 @@ function AppSettingsSection() {
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
 
-  // "Up to date" is a transient acknowledgment.
   useEffect(() => {
     if (updateState !== "current") return;
     const timer = setTimeout(() => setUpdateState("idle"), 3000);
@@ -82,13 +82,14 @@ function AppSettingsSection() {
     }
   }, [checkForUpdate, updateCheckAvailable]);
 
-  // Joining a background-mode check can briefly report ready before this manual request restarts.
   const statusLabel =
     updateState === "checking"
       ? "Checking…"
       : updateState === "downloading"
         ? "Downloading…"
-        : updateState === "ready"
+        : // "ready" appears only when this check joined an in-flight background-mode
+          // check; that download installs at the next backgrounding.
+          updateState === "ready"
           ? "Update ready"
           : updateState === "restarting"
             ? "Restarting…"

@@ -16,6 +16,10 @@ import {
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
+/**
+ * Local secondaries connect over loopback with a `local:<backendInstanceId>`
+ * bearer connection id; everything else (SSH, relay, remote) is ignored.
+ */
 function useHasLocalSecondaryEnvironment(): boolean {
   const { environments } = useEnvironments();
   return useMemo(
@@ -54,7 +58,9 @@ function ProviderUpdateEnvironmentsNotification() {
     readonly key: string;
   } | null>(null);
   const notificationKeyRef = useRef<string | null>(null);
-  // Keep interacted prompts mounted so update rows survive changes to available updates.
+  // Whether the user has triggered an update from the current toast. Until they
+  // do, the prompt is replaced when the available updates change; afterward it
+  // is kept so in-progress rows are not torn down.
   const hasInteractedRef = useRef(false);
 
   useEffect(() => {
@@ -104,7 +110,6 @@ function ProviderUpdateEnvironmentsNotification() {
       !dismissedNotificationKeys.has(notificationKey) &&
       !seenProviderUpdateNotificationKeys.has(notificationKey);
 
-    // Preserve prompts during backend settling and active updates; otherwise replace them when offers change.
     const active = activeToastRef.current;
     if (
       active &&

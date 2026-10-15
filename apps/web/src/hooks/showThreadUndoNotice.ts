@@ -87,7 +87,6 @@ function refreshNotice() {
 
 ThreadUndo.subscribe(refreshNotice);
 
-/** Runs the group displayed in the sidebar; false when nothing is left to undo. */
 export function undoLatestThreadAction(): boolean {
   const notice = useThreadUndoNotice.getState().notice;
   if (!notice) return false;

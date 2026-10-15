@@ -1,4 +1,6 @@
-// Order must match GhosttyKey in ghostty/vt/key/event.h.
+// This order mirrors GhosttyKey in ghostty/vt/key/event.h. The values are
+// intentionally derived from the official W3C-aligned enum instead of
+// maintaining a second keyboard protocol.
 const ghosttyKeyboardCodes = [
   "Unidentified",
   "Backquote",

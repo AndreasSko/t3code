@@ -12,7 +12,6 @@ import {
 
 const THREAD_LINK_KEYS = ["prompt"];
 
-/** Applies a t3code://threads link's prompt to its composer draft once per link. */
 export function useThreadPromptLink(
   params: Readonly<Record<string, unknown>> | undefined,
   threadDraftKey: string | null,

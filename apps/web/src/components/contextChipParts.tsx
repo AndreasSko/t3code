@@ -27,7 +27,6 @@ export const PULL_REQUEST_CHIP_KINDS = {
   unknown: "pull-request",
 } as const satisfies Record<PullRequestContextDisplayState | "unknown", ContextChipKind>;
 
-/** A static chip with an optional tooltip; each surface keeps ownership of payload lookup. */
 export function ContextChipShell({
   icon,
   label,
@@ -36,7 +35,6 @@ export function ContextChipShell({
 }: Omit<ComponentProps<typeof ContextChip>, "className" | "render"> & {
   icon: ReactNode;
   label: string;
-  /** Newlines in the tooltip are kept. */
   tooltip?: ReactNode;
 }) {
   const chip = (

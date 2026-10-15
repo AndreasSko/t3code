@@ -2,7 +2,6 @@ import type { ContextMenuItem } from "@t3tools/contracts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// Inline Lucide-style icon paths (stroke-based, viewBox 0 0 24 24, strokeWidth 2).
 const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<string, string> }>> = {
   archive: [
     { tag: "rect", attrs: { width: "20", height: "5", x: "2", y: "3", rx: "1" } },
@@ -197,20 +196,24 @@ function isNodeWithinMenuStack(target: EventTarget | null, menuStack: readonly H
   return false;
 }
 
-// Track the single fallback menu so state changes can dismiss it like an outside click or Escape.
 let activeContextMenuDismiss: (() => void) | null = null;
 
 export function isContextMenuOpen(): boolean {
   return activeContextMenuDismiss !== null;
 }
 
-/** Dismiss resolves show() with null, like Escape or an outside click; no-op when closed. */
+/**
+ * Closes the currently open fallback context menu, resolving its show() with
+ * null (the same result as dismissing by outside click or Escape).
+ */
 export function dismissContextMenu(): void {
   activeContextMenuDismiss?.();
   activeContextMenuDismiss = null;
 }
 
-/** For non-Electron callers; resolves with the clicked leaf item id. */
+/**
+ * Supports nested submenus and resolves with the clicked leaf item id.
+ */
 export function showContextMenuFallback<T extends string>(
   items: readonly ContextMenuItem<T>[],
   position?: { x: number; y: number },
@@ -294,8 +297,6 @@ export function showContextMenuFallback<T extends string>(
       menu.dataset.level = String(level);
 
       const inner = document.createElement("div");
-      // Fit the viewport (minus clampMenuPosition's 4px margins) so menus only
-      // scroll when the window is shorter than the menu itself.
       inner.className =
         "max-h-[calc(100vh-0.5rem)] min-w-0 max-w-sm overflow-y-auto overflow-x-hidden p-1";
       inner.style.cssText =
@@ -347,8 +348,6 @@ export function showContextMenuFallback<T extends string>(
         }
 
         if (typeof item.checked === "boolean") {
-          // Option rows use the icon slot for the check so labels line up
-          // with icon rows. The unselected option keeps the slot empty.
           button.setAttribute("role", "menuitemradio");
           button.setAttribute("aria-checked", item.checked ? "true" : "false");
           const check = item.checked ? createIconElement("check", "neutral") : null;

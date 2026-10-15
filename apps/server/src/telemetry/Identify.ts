@@ -11,7 +11,11 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-/** Codex omits `tokens` for API-key, agent-identity, and personal-access-token logins. */
+/**
+ * Codex writes `tokens` only for ChatGPT logins and omits the key for API-key,
+ * agent-identity, and personal-access-token logins, so its absence is a
+ * supported install and not a malformed file.
+ */
 const CodexAuthJsonSchema = Schema.Struct({
   tokens: Schema.optionalKey(
     Schema.Struct({
@@ -251,7 +255,6 @@ const upsertAnonymousId = Effect.gen(function* () {
   return anonymousId;
 });
 
-/** Missing files and non-ChatGPT Codex logins fall through quietly; unreadable or malformed files warn. */
 export const getTelemetryIdentifierForHome = Effect.fn("getTelemetryIdentifierForHome")(
   function* (homeDirectory: string) {
     const codexAccountId = yield* getCodexAccountId(homeDirectory).pipe(

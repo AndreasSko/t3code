@@ -1,7 +1,3 @@
-/**
- * Live server-settings reads require an environment id; explicitly named primary access prevents
- * wrong-server reads.
- */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, use } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
@@ -214,8 +210,10 @@ export function persistClientSettingsPatch(
 }
 
 /**
- * Persist before publishing; reapply to a newer snapshot if a concurrent write lands so neither change is
- * lost.
+ * Persists a client-settings update before publishing it to the in-memory
+ * snapshot. If another settings write lands while persistence is pending, the
+ * updater is reapplied to that newer snapshot and persisted again so neither
+ * change is lost.
  */
 export async function persistClientSettingsUpdate(
   update: (current: ClientSettings) => ClientSettings,
@@ -263,8 +261,10 @@ export function getClientSettings(): ClientSettings {
 }
 
 /**
- * Await hydration before imperative mutations or preview creation; defaults must not overwrite saved
- * preferences or become a tab's permanent viewport/theme. Failed reads remain retryable.
+ * Failed reads reject and remain retryable. They must not allow defaults to overwrite saved
+ * preferences. The pre-hydration snapshot is just the schema defaults, so imperative paths that
+ * open a preview must await this or they bake the built-in viewport, zoom and appearance into a
+ * tab that never picks up the user's saved values.
  */
 export function ensureClientSettingsHydrated(): Promise<void> {
   return hydrateClientSettings();
@@ -309,7 +309,6 @@ export function mergeEnvironmentSettings(
 
 const pendingModelPreferencesMigrations = new Set<EnvironmentId>();
 
-/** Seed saved client preferences once without overwriting another client's edits. */
 export function useMigrateModelPreferences(
   environmentId: EnvironmentId | null,
   settings: ServerSettings | null,
@@ -389,7 +388,12 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
   });
 }
 
-/** Wait for client hydration before choosing the sidebar to avoid mounting and replacing the entire tree. */
+/**
+ * Held at the default sidebar until client settings hydrate: the pre-hydration snapshot is just
+ * the schema defaults, so resolving against it could mount one sidebar and then swap it out
+ * once persisted settings land — remounting the whole tree for everyone instead of only for
+ * legacy opt-ins.
+ */
 export function useLegacySidebarEnabled(): boolean {
   const settingsHydrated = useClientSettingsHydrated();
   const legacySidebarEnabled = useClientSettingsValue().legacySidebarEnabled;
@@ -505,7 +509,6 @@ export function useToggleEnvironmentModelFavorite(environmentId: EnvironmentId |
 
 const noEnvironmentSettingsAtom = Atom.make<ServerSettings | null>(null);
 
-/** Model pickers may render before a settings target has been selected. */
 export function useEnvironmentModelPreferences(environmentId: EnvironmentId | null) {
   const settings = useAtomValue(
     environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
@@ -518,7 +521,6 @@ export function useEnvironmentModelPreferences(environmentId: EnvironmentId | nu
   );
 }
 
-/** Read current settings for one environment, merged with client-local preferences. */
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,
   selector?: (settings: UnifiedSettings) => T,
@@ -558,13 +560,17 @@ export function usePrimarySettings<T = UnifiedSettings>(
 export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
   "This setting is saved on a server, and the hosted app is not anchored to one. Change it from the desktop app or from the server's own address.";
 
-/** Hosted clients have no primary: primary settings reads use defaults and writes have no destination. */
+/**
+ * Whether primary-scoped server settings have a server to live on. The
+ * hosted app connects to every environment as a remote, so it has no primary:
+ * `usePrimarySettings` reads schema defaults there and writes have nowhere
+ * to go. Desktop and server-served web always have one.
+ */
 export function usePrimarySettingsAvailable(): boolean {
   const primaryEnvironment = usePrimaryEnvironment();
   return primaryEnvironment !== null || !isHostedStaticApp();
 }
 
-/** Connected sync targets, excluding grants already known to forbid settings writes. */
 function useSharedSettingsSyncTargetIds(includePending = false): ReadonlyArray<EnvironmentId> {
   const { environments } = useEnvironments();
   const writableTargetsAtom = useMemo(
@@ -590,11 +596,11 @@ function useSharedSettingsSyncTargetIds(includePending = false): ReadonlyArray<E
 }
 
 /**
- * Write shared server preferences to every eligible sync target to avoid drift; persist client keys
- * locally.
+ * Shared server keys (see `SHARED_SERVER_SETTING_KEYS`) are written to every eligible sync
+ * target, not only the selected target, so a user preference does not silently drift between
+ * machines.
  */
 function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
-  // Mount this session even on pages without a visible permission-gated control.
   useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const persist = useAtomCommand(serverEnvironment.updateSettings, {
     label: "server settings update",

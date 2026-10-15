@@ -1,19 +1,3 @@
-/**
- * Downscale + re-encode for image attachments that are too big for where
- * they're headed. Two consumers share the same pipeline:
- *
- * - The prompt stash persists images as base64 in localStorage (~5MB origin
- *   quota), so `compressImageForStash` targets a per-image character budget.
- * - The composer accepts pasted/dropped images larger than the provider's
- *   `PROVIDER_SEND_TURN_MAX_IMAGE_BYTES` wire cap and shrinks them to fit
- *   via `compressImageToByteLimit` instead of rejecting the paste.
- *
- * Supported images already within budget pass through untouched, except that
- * a PNG or JPEG longer than `IMAGE_ATTACHMENT_MAX_EDGE` on a side is scaled down
- * to it in its own format before upload. HEIC/HEIF photos are decoded to JPEG
- * first because providers cannot consume them.
- */
-
 import {
   downscalableImageMimeType,
   fitImageAttachmentSize,
@@ -25,13 +9,19 @@ import {
 } from "@t3tools/shared/imageDimensions";
 
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
-/** Base64 budget for a single stashed image (~975KB of binary). */
 export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
-/** Cap source size before decode because full RGBA buffers can OOM the tab regardless of the output budget. */
+/**
+ * Ceiling on the *source* file handed to the re-encoder. File size is a
+ * proxy for pixel count, and decoding hundreds of megapixels into an
+ * ImageBitmap can OOM the tab — beyond this we refuse rather than risk it.
+ */
 export const MAX_COMPRESSIBLE_SOURCE_BYTES = 50 * 1024 * 1024;
 const MAX_HEIC_DECODE_PIXELS = 64_000_000;
 const MAX_HEIC_METADATA_BYTES = 1024 * 1024;
-/** Keep quality high enough for UI text; if the floor overflows, reduce resolution instead. */
+/**
+ * The floor stays high enough to avoid visible blocking on UI screenshots; if even that overflows
+ * we drop resolution instead of quality.
+ */
 const QUALITY_STEPS = [0.92, 0.85, 0.78, 0.68] as const;
 const FALLBACK_SCALE_STEPS = [0.75, 0.55] as const;
 const HEIC_IMAGE_MIME_TYPE = /^image\/hei(?:c|f)$/i;
@@ -170,7 +160,6 @@ export function dataUrlToFile(dataUrl: string, name: string, mimeType: string): 
   return new File([bytes], name, { type: mimeType });
 }
 
-/** Reencoding changes the container, so change the extension to match its MIME type. */
 function fileNameForMimeType(name: string, mimeType: string): string {
   const extension = mimeType === "image/webp" ? ".webp" : ".jpg";
   const dotIndex = name.lastIndexOf(".");
@@ -206,8 +195,12 @@ function createCanvas(width: number, height: number): Canvas2D | null {
   return { canvas, context };
 }
 
-/** Prefer WebP: roughly 25-35% smaller than JPEG at comparable quality, with alpha preserved.
- * Unsupported encoders fall back to JPEG. */
+/**
+ * WebP is preferred: at matched visual quality it lands roughly 25-35%
+ * smaller than JPEG, so the same budget buys more resolution and detail —
+ * and it keeps alpha, so screenshots with transparency survive intact.
+ * Browsers that can't encode it silently fall back to JPEG.
+ */
 async function encodeCanvas(
   canvas: OffscreenCanvas | HTMLCanvasElement,
   quality: number,
@@ -318,11 +311,11 @@ async function reencodeWithinBudget(
   }
 
   try {
-    // Scale from the source-capped base dimension; scaling MAX_DIMENSION alone would not shrink smaller sources.
+    // Each pass shrinks relative to the *previous target*, capped by
+    // MAX_DIMENSION. Scaling a fixed ceiling instead would be a no-op for
+    // images already smaller than that ceiling — the fallback passes would
+    // all resolve to the source size and never actually reduce resolution.
     const baseDimension = Math.min(MAX_DIMENSION, Math.max(bitmap.width, bitmap.height));
-    // Tracks whether the *last* attempt threw, so a run of encoder failures
-    // is reported as unreadable while a run of merely-too-big results is
-    // reported as too-large.
     let encodeFailed = false;
     for (const dimensionScale of [1, ...FALLBACK_SCALE_STEPS]) {
       const targetDimension = Math.max(1, Math.round(baseDimension * dimensionScale));
@@ -330,8 +323,12 @@ async function reencodeWithinBudget(
       try {
         encoded = await encodeWithinBudget(bitmap, targetDimension, budgetChars, preferredMimeType);
       } catch {
-        // Retry smaller scales after allocation/codec failures. Never throw: callers finalize pending state after
-        // return.
+        // Canvas allocation, drawing, or the codec itself can throw — often
+        // precisely *because* the target is too big (OOM on a large bitmap).
+        // Keep trying the smaller fallback scales rather than giving up: a
+        // reduced pass may well succeed. The exception must never escape,
+        // though, since callers finalize state after this returns and a
+        // throw would strand it (e.g. a stash entry stuck "still saving").
         encodeFailed = true;
         continue;
       }
@@ -351,10 +348,6 @@ async function reencodeWithinBudget(
   }
 }
 
-/**
- * Within-budget images stay verbatim; oversized images reencode, with failure reported for callers to mark
- * dropped.
- */
 export async function compressImageForStash(
   file: File,
   budgetChars: number = MAX_STASH_IMAGE_DATA_URL_CHARS,
@@ -390,10 +383,6 @@ export async function compressImageForStash(
   }
 }
 
-/**
- * Preserves PNG transparency by resizing in the source format.
- * Returns null when the image fits, is unsupported, or cannot be decoded or encoded.
- */
 async function fitImageToMaxEdge(file: File): Promise<{ file: File; imageSize: ImageSize } | null> {
   const mimeType = downscalableImageMimeType(file.type);
   if (!mimeType || !canRecompress() || file.size > MAX_COMPRESSIBLE_SOURCE_BYTES) return null;
@@ -425,14 +414,10 @@ async function fitImageToMaxEdge(file: File): Promise<{ file: File; imageSize: I
 }
 
 /**
- * Shrinks `file` until its binary size fits `maxBytes`, returning a new
- * `File` (WebP or JPEG). A PNG or JPEG over `IMAGE_ATTACHMENT_MAX_EDGE` is
- * first scaled to that edge in its own format. Other files already within the
- * limit pass through untouched, preserving their exact bytes and format. Sources above
- * `MAX_COMPRESSIBLE_SOURCE_BYTES` are refused outright — decoding them is
- * the risk, so no amount of output budget makes them safe. An internally
- * converted image can provide its original source size when the intermediate
- * format expands beyond that ceiling.
+ * Other files already within the limit pass through untouched, preserving their exact bytes and
+ * format. Sources above `MAX_COMPRESSIBLE_SOURCE_BYTES` are refused outright — decoding them is the
+ * risk, so no amount of output budget makes them safe. An internally converted image can provide
+ * its original source size when the intermediate format expands beyond that ceiling.
  */
 export async function compressImageToByteLimit(
   file: File,
@@ -473,7 +458,10 @@ export async function compressImageToByteLimit(
   };
 }
 
-/** Decode HEIC/HEIF to provider-compatible JPEG; load the decoder only when needed. */
+/**
+ * Converts HEIC/HEIF photos to provider-compatible JPEG before applying the
+ * attachment size limit. The decoder is loaded only when such a photo arrives.
+ */
 export async function prepareImageForAttachment(
   file: File,
   maxBytes: number,

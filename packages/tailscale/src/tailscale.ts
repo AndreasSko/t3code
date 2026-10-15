@@ -23,7 +23,11 @@ const TailscaleCommandContext = {
   argumentCount: Schema.Number,
 };
 
-/** Unknown stderr stays unknown; raw CLI output may expose auth keys and node names in logs. */
+/**
+ * Failure kinds we can name without quoting the CLI. Anything unrecognized
+ * becomes "unknown" rather than falling back to raw text — stderr can contain
+ * auth keys (`tskey-…`) and node names, and these labels are logged.
+ */
 export const TailscaleStderrDiagnostic = Schema.Literals([
   "no-existing-handler",
   "not-logged-in",
@@ -32,8 +36,6 @@ export const TailscaleStderrDiagnostic = Schema.Literals([
 ]);
 export type TailscaleStderrDiagnostic = typeof TailscaleStderrDiagnostic.Type;
 
-// Matched against stderr, most specific first. Patterns are deliberately short
-// and anchored on tailscale's own wording.
 const STDERR_DIAGNOSTIC_PATTERNS: ReadonlyArray<
   readonly [RegExp, Exclude<TailscaleStderrDiagnostic, "unknown">]
 > = [
@@ -80,7 +82,6 @@ export class TailscaleCommandExitError extends Schema.TaggedError<TailscaleComma
     exitCode: Schema.Number,
     stdoutLength: Schema.optional(Schema.Number),
     stderrLength: Schema.Number,
-    // Only classified labels reach logs; stderr can contain auth keys and node identifiers.
     stderrDiagnostic: Schema.optional(TailscaleStderrDiagnostic),
   },
 ) {

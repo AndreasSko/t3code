@@ -27,14 +27,11 @@ import {
 
 const CONTINUE_PROMPT = "Continue where you left off.";
 
-/** Consecutive automatic continuations allowed before a person has to step in. */
 const MAX_CONTINUATION_CHAIN = 3;
 
 /**
- * Whether a restart must leave this run for the user: the thread is put away,
- * the provider turn already ended, or the user owes an answer. Checked when
- * intent is recorded and again when the continuation is delivered. A
- * `settled` run is woken for the awaited work it lost, so its ended provider
+ * Checked when intent is recorded and again when the continuation is delivered.
+ * A `settled` run is woken for the awaited work it lost, so its ended provider
  * turn does not block it.
  */
 function restartContinuationBlocked(
@@ -118,9 +115,8 @@ function hasOpenAwaitedWork(
 }
 
 /**
- * Continue an unfinished root turn or a settled run that lost awaited work.
- * Settled runs require a live session so stale crash records cannot wake them;
- * other leftover work is reported on the next user turn.
+ * A settled run needs a live session, so stale records from an older crash
+ * never wake it.
  */
 export function restartContinuationRun(
   projection: Pick<
@@ -306,8 +302,11 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         restartContinuationOfRunId: input.sourceRunId,
       })
       .pipe(
-        // A disabled instance cannot resume; still recover the delegated child's result
-        // immediately instead of retrying the same refusal.
+        // The project turned this instance off since the restart. No turn
+        // resumes, and the success path below still runs so a delegated
+        // child waiting on this run is recovered immediately instead of
+        // after EffectWorker exhausts its retries on a refusal that will
+        // not change.
         Effect.catchTags({
           ThreadManagementProviderInstanceDisabledError: (error) =>
             Effect.logInfo("orchestration-v2.restart-continuation.instance-disabled", {

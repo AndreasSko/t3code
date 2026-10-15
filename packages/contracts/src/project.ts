@@ -109,8 +109,9 @@ export const ProjectIconOverride = Schema.Union([
 export type ProjectIconOverride = typeof ProjectIconOverride.Type;
 
 /**
- * Stored and older-server monograms can arrive as lucide icons with monogramText.
- * Decode that shape without writing it.
+ * Before v2, servers sent a monogram as a lucide icon carrying its text, so
+ * older clients showed a folder. Icons stored then, and v2 servers released
+ * before this change, still use that shape; it is read here, never written.
  */
 const ProjectLucideIconWithLegacyMonogram = Schema.Struct({
   ...ProjectLucideIcon.fields,
@@ -516,13 +517,11 @@ export const ProjectWriteFileResult = Schema.Struct({
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
 
-/** The environment's Scratch project, created on first request. */
 export const ProjectEnsureScratchResult = Schema.Struct({
   projectId: ProjectId,
 });
 export type ProjectEnsureScratchResult = typeof ProjectEnsureScratchResult.Type;
 
-/** A project started from just a name, in a new folder the server makes. */
 export const ProjectCreateNewInput = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
 });

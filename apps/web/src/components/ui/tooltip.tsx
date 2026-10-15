@@ -16,7 +16,6 @@ const TooltipScrollContext = createContext<RefObject<{
   actionsRef: TooltipActionsRef;
 } | null> | null>(null);
 
-/** Dismisses hovered descendants on real scroll events without rerendering the timeline. */
 function TooltipScrollDismissArea({ onScrollCapture, ...props }: ComponentProps<"div">) {
   const hovered = useRef<{ trigger: HTMLElement; actionsRef: TooltipActionsRef } | null>(null);
   return (
@@ -85,8 +84,7 @@ function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
 }
 
 /**
- * Exclude the native titlebar from tooltip placement; keep tracking inside the portal so only open tooltips
- * subscribe.
+ * Rendered inside the portal so only open tooltips track the titlebar.
  */
 function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
@@ -118,7 +116,6 @@ function TooltipPopup({
   align?: TooltipPrimitive.Positioner.Props["align"];
   side?: TooltipPrimitive.Positioner.Props["side"];
   sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
-  /** `code` renders monospace content that breaks anywhere, for paths and commands. */
   variant?: "default" | "glass" | "code";
   anchor?: TooltipPrimitive.Positioner.Props["anchor"];
 }) {

@@ -153,7 +153,6 @@ type AppScreenOptions = NativeStackNavigationOptions & {
   readonly unstable_navigationItemStyle?: "editor";
 };
 
-// Pre-glass iOS uses a solid material so content sits below the bar instead of underlapping it.
 const GLASS_HEADER_OPTIONS: AppScreenOptions = {
   headerBackButtonDisplayMode: "minimal",
   headerBackTitle: "",
@@ -212,7 +211,6 @@ const SettingsContentStack = createV5SheetStackNavigator({
   initialRouteName: "Settings",
   screenOptions: {
     ...GLASS_HEADER_OPTIONS,
-    // Sheets read better with the iOS-default centered title (no editor style).
     unstable_navigationItemStyle: undefined,
   },
   screens: {
@@ -341,7 +339,6 @@ const SettingsContentStack = createV5SheetStackNavigator({
       linking: "scheduled-tasks",
       options: {
         title: "Scheduled Tasks",
-        // Leave room to center UIKit's title beside the two trailing actions.
         headerTitleStyle: { fontSize: 16, fontWeight: "800" },
       },
     }),
@@ -385,8 +382,11 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Diagnostics",
       },
     }),
-    // These params are a tap-time usage snapshot; URL round-tripping would preserve
-    // stale timestamps and filters. Deep links go through settings/usage instead.
+    // Its params are a tap-time snapshot, not a stable resource address: `now` is the wall-clock
+    // of the tap, `environmentIds` is the usage screen's local filter selection, and the window
+    // id/kind identify freshly aggregated pools. React Navigation round-trips non-path params
+    // through the URL as query strings, so a path here would bake in a permanently stale
+    // timestamp and filter.
     SettingsUsageAccount: createNativeStackScreen({
       screen: UsageLimitAccountScreen,
       options: { title: "Account" },
@@ -445,8 +445,9 @@ const SettingsSheetStack = createV5SheetStackNavigator({
   },
 });
 
-// A nested thread stack adds a second UINavigationBar, breaking iOS 26's
-// shared-header morphing between Home and Thread.
+// A nested stack means a second UINavigationController with its own UINavigationBar, which breaks
+// iOS 26's shared-header morphing between Home and Thread (each pair inside one bar morphs;
+// across two bars the whole screen slides).
 const THREAD_LINKING_PREFIX = "threads/:environmentId/:threadId";
 
 const NewTaskSheetStack = createNativeStackNavigator({
@@ -838,8 +839,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
       linking: `${THREAD_LINKING_PREFIX}/attachments/:attachmentId`,
       options: SOLID_HEADER_OPTIONS,
     }),
-    // This sheet requires a live session supplied by the thread composer; a URL
-    // cannot reconstruct it, so deep links must go through the thread instead.
+    // The route carries zero params: its content is a session object (staged model, provider
+    // groups, and live update callbacks) that the active ThreadComposer presents into
+    // ExistingThreadSettingsRouteProvider before pushing this screen — state no URL can
+    // reconstruct.
     ThreadSettingsSheet: createNativeStackScreen({
       screen: ExistingThreadSettingsRouteScreen,
       options: {
@@ -944,8 +947,6 @@ const RootStackConfig = createWorkspaceStackNavigator({
       linking: "connections",
       options: {
         title: "Environments",
-        // Android: full page; the screen renders its own AndroidScreenHeader,
-        // so the native bar stays hidden. iOS keeps the sheet.
         ...(Platform.OS === "android"
           ? { presentation: "card" as const, headerShown: false }
           : {
@@ -971,8 +972,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     NewTaskSheet: createNativeStackScreen({
       screen: NewTaskSheetStack,
       linking: "new",
-      // Share one draft across the new-task flow. A screen's layout replaces the
-      // navigator's screenLayout, so retain GuardedScreenLayout here.
+      // A screen's layout replaces the navigator's screenLayout.
       layout: ({ children, route }) => (
         <GuardedScreenLayout route={route}>
           <NewTaskFlowProvider>
@@ -1034,7 +1034,6 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
           return {};
         }
 
-        // Follow the workspace viewport as it resizes; compact iOS keeps sheets.
         return usesWorkspaceFlowScreens
           ? { presentation: "card" }
           : {

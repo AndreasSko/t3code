@@ -1,4 +1,3 @@
-// Serve copies of the canonical install scripts so the site and CLI cannot drift.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";

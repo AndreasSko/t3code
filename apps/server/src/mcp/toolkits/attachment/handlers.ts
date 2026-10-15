@@ -34,8 +34,10 @@ export function resolveAttachmentReferences(
   });
 }
 
-// The pending upload's 24h lifetime starts on completion, up to one URL lifetime
-// after issuance; retain ownership for both windows.
+/**
+ * As long as the pending file can live. The sweep counts its 24 hours from when
+ * the upload finishes, which can be up to the upload URL's lifetime after issue.
+ */
 const UPLOAD_OWNER_TTL_MS = 24 * 60 * 60 * 1000 + ATTACHMENT_UPLOAD_URL_TTL_MS;
 
 /** A thread owns its uploads across provider sessions; an outside client per MCP session. */

@@ -8,8 +8,10 @@ import {
 } from "./sourceControl.ts";
 
 /**
- * Clone progress is memory-only: success expires after a grace period, failure stays
- * until retry or project removal, and restart forgets in-flight clones.
+ * The server keeps this in memory only: a finished clone is dropped after a
+ * short grace period, a failed one stays until it is retried or the project is
+ * removed, and a server restart forgets in-flight clones (the project keeps its
+ * empty workspace root and can be removed like any other project).
  */
 /** Producers clamp free text to these before publishing so encoding never fails. */
 export const PROJECT_CLONE_DETAIL_MAX_LENGTH = 200;
@@ -106,7 +108,6 @@ export function projectCloneDisplayName(
   return segments[segments.length - 1] ?? snapshot.destinationPath;
 }
 
-/** One-line progress summary: `Receiving objects · 45% · 12.3 MiB | 5.0 MiB/s`. */
 export function projectCloneProgressSummary(
   snapshot: Pick<ProjectCloneSnapshot, "stage" | "percent" | "detail">,
 ): string {

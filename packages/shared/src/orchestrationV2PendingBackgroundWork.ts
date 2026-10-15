@@ -17,8 +17,7 @@ const BACKGROUND_TURN_ITEM_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
 ]);
 
 /**
- * True terminal run statuses (includes `rolled_back`). Retained as the
- * canonical terminal set for this module; do not widen or reuse it as the
+ * Retained as the canonical terminal set for this module; do not widen or reuse it as the
  * background-wait gate — that gate intentionally excludes `rolled_back`.
  */
 const TERMINAL_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
@@ -30,8 +29,10 @@ const TERMINAL_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
 ]);
 
 /**
- * waiting includes successful turns awaiting checkpoint capture.
- * Exclude rolled_back: the provider-thread roster is not tied to a run.
+ * Includes `waiting`: a successful turn persists as waiting until checkpoint capture flips it to
+ * completed, and waiting is only set from completed. Excludes `rolled_back`: the provider-thread
+ * roster is not run-tied, so a rolled-back latest run must fail the gate entirely (not only item
+ * filter).
  */
 const SETTLED_FOR_BACKGROUND_WAIT_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
   "cancelled",
@@ -41,8 +42,6 @@ const SETTLED_FOR_BACKGROUND_WAIT_RUN_STATUSES = new Set<OrchestrationV2Run["sta
   "waiting",
 ]);
 
-// Keep TERMINAL_RUN_STATUSES referenced so the true-terminal set stays defined
-// next to the background-wait subset (rolled_back is terminal, not wait-settled).
 void TERMINAL_RUN_STATUSES;
 
 export type PendingBackgroundWorkTask = OrchestrationV2PendingBackgroundTask;
@@ -54,8 +53,10 @@ export function turnItemUpdateCanEndBackgroundWork(
 }
 
 /**
- * Long-lived commands do not delay completion alerts; subagents and monitors can wake the agent (#13625).
- * Unknown adapter work delays completion conservatively.
+ * Commands, such as dev servers and other long-lived shells, do not: the agent is done and may
+ * leave them running for hours. Subagents and monitors do, because they wake the agent and it
+ * continues (#13625). Work the adapter cannot name, including kinds this build does not know,
+ * holds as the conservative choice.
  */
 export function backgroundWorkHoldsCompletion(
   tasks: ReadonlyArray<Pick<PendingBackgroundWorkTask, "kind">>,
@@ -189,8 +190,12 @@ export function pendingBackgroundTurnItems<Item extends PendingBackgroundWorkTur
 }
 
 /**
- * Watches keep settled threads working between wakes; omit pullRequests when choosing a run to interrupt.
- * Subagent entities are excluded because their turn items already represent the same work.
+ * - Pull request watches, as monitors: a watch wakes the agent, so the thread stays working
+ * between wakes instead of returning to the inbox. Callers that pick a run to interrupt leave
+ * `pullRequests` out; Stop ends watches on its own. Excludes Grok persistent monitors
+ * (`dynamic_tool` input with `persistent: true`). Excludes turn items whose run resolves to
+ * `rolled_back` (abandoned work); items with a null or absent run id stay eligible (matches SQL
+ * shell path). Does not consult subagent entities (those double-count turn items).
  */
 export function derivePendingBackgroundWork(input: {
   readonly latestRun: PendingBackgroundWorkRun | null | undefined;
@@ -198,7 +203,11 @@ export function derivePendingBackgroundWork(input: {
   readonly turnItems: ReadonlyArray<PendingBackgroundWorkTurnItem>;
   readonly activeProviderThreadId?: string | null;
   readonly hasActiveRun?: boolean;
-  /** Pass projection runs unless the caller already excluded rolled-back items in SQL. */
+  /**
+   * Run rows used to exclude items owned by rolled_back runs. Optional for
+   * callers that already filtered (SQL shell path); in-memory callers should
+   * pass projection runs so policy cannot drift.
+   */
   readonly runs?: ReadonlyArray<PendingBackgroundWorkRun>;
   readonly pullRequests?: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined;
 }): ReadonlyArray<PendingBackgroundWorkTask> {

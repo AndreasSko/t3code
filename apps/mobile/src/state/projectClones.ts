@@ -7,7 +7,11 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { serverEnvironment } from "./server";
 import { sourceControlEnvironment } from "./sourceControl";
 
-/** Treat the first-list gap as pending so a just-started clone cannot briefly enable Start. */
+/**
+ * `"pending"` while the environment's clone stream has not delivered its
+ * first list yet: the draft opens right after a clone starts, and a caller
+ * that treated the gap as "no clone" would enable Start for a moment.
+ */
 export type ProjectCloneState = ProjectCloneSnapshot | "pending" | null;
 
 const EMPTY_CLONES: ReadonlyArray<ProjectCloneSnapshot> = [];
@@ -20,13 +24,14 @@ const environmentProjectClonesAtom = Atom.family((environmentId: EnvironmentId) 
     const config = get(serverEnvironment.configValueAtom(environmentId));
     if (config?.environment.capabilities.projectCloneTracking !== true) return EMPTY_CLONES;
     const result = get(sourceControlEnvironment.projectClones({ environmentId, input: {} }));
-    // A failed stream must not block Start forever; the server guards dispatch and reconnect restores the stream.
+    // A failed subscription must not hold Start forever. Treating it as
+    // "no clone tracked" lets the server's own dispatch guard decide; the
+    // registry re-establishes the stream on reconnect.
     if (result._tag === "Failure") return EMPTY_CLONES;
     return Option.getOrElse(AsyncResult.value(result), () => "pending" as const);
   }).pipe(Atom.withLabel(`mobile-project-clones:${environmentId}`)),
 );
 
-/** The environment's tracked clones, empty until the stream's first list. */
 export const environmentProjectCloneListAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): ReadonlyArray<ProjectCloneSnapshot> => {
     const clones = get(environmentProjectClonesAtom(environmentId));
@@ -44,7 +49,6 @@ const projectCloneAtom = Atom.family((key: string) => {
   }).pipe(Atom.withLabel(`mobile-project-clone:${key}`));
 });
 
-/** Pending until the first clone list; null when finished or never started. */
 export function useProjectClone(ref: ScopedProjectRef | null): ProjectCloneState {
   return useAtomValue(ref === null ? EMPTY_CLONE_ATOM : projectCloneAtom(scopedProjectKey(ref)));
 }

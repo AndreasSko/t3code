@@ -95,13 +95,14 @@ export function getThemeCardDefinition(theme: ThemeDefinition): ThemeCardDefinit
   };
 }
 
-// Oklab keeps the glow perceptually even; premultiplied alpha avoids artifacts when fading to transparent.
+// Interpolating in oklab keeps the glow falloff perceptually even (no gray
+// mid-tones or banding rings), and premultiplied alpha keeps the fade to
+// transparent clean.
 function getThemePreviewStyle(
   colors: ThemeCardPreviewColors,
   mode: ThemeAppearance,
 ): CSSProperties {
   const spec = THEME_PREVIEW_RENDER_SPECS[mode];
-  // Keep the canvas dominant so light and dark previews remain distinguishable.
   const modeBase = `color-mix(in oklab, ${colors.canvas} ${spec.baseWeight * 100}%, ${spec.baseTarget})`;
   const accentPosition = `${spec.accent.center[0] * 100}% ${spec.accent.center[1] * 100}%`;
   const actionPosition = `${spec.action.center[0] * 100}% ${spec.action.center[1] * 100}%`;
@@ -109,8 +110,6 @@ function getThemePreviewStyle(
     backgroundColor: modeBase,
     backgroundImage: [
       `radial-gradient(circle at ${accentPosition} in oklab, ${colors.accent} 0%, color-mix(in oklab, ${colors.accent} ${spec.accent.middleOpacity * 100}%, transparent) ${spec.accent.middleOffset * 100}%, transparent ${spec.accent.endOffset * 100}%)`,
-      // The action color is a soft tint from the opposite corner, not a second
-      // light source — two bright hotspots read as headlights.
       `radial-gradient(circle at ${actionPosition} in oklab, color-mix(in oklab, ${colors.messageAction} ${spec.action.startOpacity * 100}%, transparent) 0%, transparent ${spec.action.endOffset * 100}%)`,
     ].join(", "),
   };

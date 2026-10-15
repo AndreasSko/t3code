@@ -30,7 +30,9 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const CODEX_TIMEOUT_MS = 180_000;
 const CODEX_MCP_LIST_TIMEOUT_MS = 10_000;
-// Plugin/app MCP servers need config overrides after user args; --disable plugins cannot override -c.
+// Plugins and apps bring MCP servers of their own; the user's are listed and
+// turned off by name below. These follow the user's launch args, so they win
+// over a `-c features.plugins=true` there, which `--disable plugins` does not.
 const CODEX_NO_PLUGIN_ARGS = [
   "--config",
   "features.plugins=false",
@@ -43,8 +45,8 @@ const CodexMcpServers = Schema.fromJsonString(
 const decodeCodexMcpServers = Schema.decodeEffect(CodexMcpServers);
 
 /**
- * mcp_servers={} merges rather than replaces servers; disable each by name.
- * Quote names so dots stay inside a single config key.
+ * `mcp_servers={}` merges into the user's servers rather than replacing them,
+ * so each is named; quoting the name keeps one with a dot a single key.
  */
 const codexMcpServersOff = (names: ReadonlyArray<string>): string | null =>
   names.length === 0
@@ -87,8 +89,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       .remove(path.dirname(filePath), { recursive: true })
       .pipe(Effect.catch(() => Effect.void));
 
-  // Use unscoped temp files: closed background scopes would reap them immediately.
-  // Allocation failures and runCodexJson success paths remove their own directories.
+  // Deliberately unscoped: text generation runs from background fibers whose
+  // ambient scope may already be closed (a closed scope reaps the temp
+  // directory the moment it is created). Each allocation removes its own
+  // directory on failure; success-path cleanup is explicit in runCodexJson.
   const writeTempFile = (
     operation: string,
     prefix: string,
@@ -158,7 +162,6 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     return imagePaths;
   });
 
-  /** Listing failures do not block text generation. */
   const listEnabledMcpServers = Effect.fn("listEnabledMcpServers")(
     function* (input: {
       readonly binary: string;
@@ -287,7 +290,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         [
           "exec",
           ...execLaunchArgs,
-          // Disable MCP servers so they cannot act on a text-generation prompt.
+          // Text generation needs only the prompt. A user's MCP server would
+          // otherwise start and could act on it, as Claude's --strict-mcp-config
+          // prevents for Claude.
           ...CODEX_NO_PLUGIN_ARGS,
           ...(mcpServersOff ? ["--config", mcpServersOff] : []),
           "--ephemeral",
@@ -359,7 +364,6 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     return yield* Effect.gen(function* () {
       yield* runCodexCommand().pipe(
         Effect.scoped,
-        // The read-only sandbox already holds an investigation to reading; it only needs longer.
         Effect.timeoutOption(investigate?.timeoutMs ?? CODEX_TIMEOUT_MS),
         Effect.flatMap(
           Option.match({

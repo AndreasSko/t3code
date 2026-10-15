@@ -5,7 +5,6 @@ export interface TurnDiffFileSummary {
   readonly deletions: number;
 }
 
-/** Reads Git's NUL-delimited numstat output without decoding display paths. */
 export function parseTurnDiffFilesFromNumstat(numstat: string): ReadonlyArray<TurnDiffFileSummary> {
   const records = numstat.split("\0");
   const files: TurnDiffFileSummary[] = [];
@@ -36,7 +35,10 @@ export function parseTurnDiffFilesFromNumstat(numstat: string): ReadonlyArray<Tu
   return files.toSorted((left, right) => left.path.localeCompare(right.path));
 }
 
-/** Null authoredPaths means nothing was imported; either authored rename side keeps the file visible. */
+/**
+ * `authoredPaths` comes from `CheckpointStore.listAuthoredPaths`; null means nothing was imported.
+ * A rename stays visible when either side was authored, because the summary shows it as one file.
+ */
 export function isGitImport(
   file: TurnDiffFileSummary,
   authoredPaths: ReadonlySet<string> | null,

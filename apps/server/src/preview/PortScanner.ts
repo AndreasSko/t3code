@@ -1,7 +1,3 @@
-/**
- * lsof's -F pcn output is stable; Linux falls back to /proc socket ownership when lsof is unavailable.
- * Probe only configured URLs or T3-owned listeners, caching classifications briefly to avoid repeated requests.
- */
 import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
@@ -55,9 +51,7 @@ export class PortDiscovery extends Context.Service<
 
 const POLL_INTERVAL = Duration.seconds(3);
 const LSOF_TIMEOUT_MS = 5_000;
-/** File descriptors one `/proc` walk may read before it stops looking for socket owners. */
 const PROC_FD_WALK_LIMIT = 50_000;
-/** Scans that retry the fd walk for a listening socket whose owner was not found. */
 const SOCKET_OWNER_ATTEMPTS = 3;
 const WINDOWS_LISTENER_TIMEOUT_MS = 5_000;
 const WEB_PROBE_TIMEOUT = Duration.seconds(1);
@@ -218,8 +212,6 @@ const parseLsofOutput = (
 };
 
 const parsePortFromLsofName = (name: string): number | null => {
-  // Examples: "*:5173", "127.0.0.1:5173", "[::1]:5173", "localhost:5173",
-  //           "192.168.1.10:5173 (LISTEN)" — we only care if the host part is local.
   const trimmed = name.split(" ", 1)[0]?.trim() ?? "";
   if (trimmed.length === 0) return null;
   const lastColon = trimmed.lastIndexOf(":");
@@ -267,7 +259,7 @@ const parseWindowsListenerOutput = (
 /** `/proc/net/tcp` state for a listening socket. */
 const PROC_TCP_LISTEN = "0A";
 
-/** Accept wildcard and loopback addresses; each /proc hex-address word is little-endian. */
+/** Each 32-bit word of the hex address is little-endian. */
 const procLocalAddress = (hex: string): boolean => {
   if (hex.length === 8) {
     return hex === "00000000" || hex.endsWith("7F");
@@ -278,7 +270,6 @@ const procLocalAddress = (hex: string): boolean => {
   return hex.startsWith(`${"0".repeat(16)}FFFF0000`) && procLocalAddress(hex.slice(24));
 };
 
-/** Listening loopback ports in `/proc/net/tcp{,6}` content, with their socket inodes. */
 const parseProcNetTcp = (
   raw: string,
 ): ReadonlyArray<{ readonly port: number; readonly inode: string }> => {
@@ -340,7 +331,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const socketOwnersRef = yield* Ref.make<
     ReadonlyMap<string, { readonly pid: number; readonly processName: string | null }>
   >(new Map());
-  /** Failed fd-walk counts per socket inode, capped by SOCKET_OWNER_ATTEMPTS. */
   const socketOwnerMissesRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
 
   const findSocketOwners = Effect.fn("PortDiscovery.findSocketOwners")(function* (
@@ -379,7 +369,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     return owners;
   });
 
-  /** Linux fallback when lsof fails; unreadable /proc yields null so only configured URLs can be probed. */
   const scanProcListeners = Effect.fn("PortDiscovery.scanProcListeners")(function* (
     terminalByProcessId: ReadonlyMap<number, TerminalProcessOwner>,
   ) {
@@ -394,8 +383,9 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     const known = yield* Ref.get(socketOwnersRef);
     const knownMisses = yield* Ref.get(socketOwnerMissesRef);
     const inodes = new Set(listeners.map((listener) => listener.inode));
-    // Cache confirmed owners and limit failed fd walks to avoid rescanning stable listeners.
-    // Misses usually belong to another user or a process that exited mid-walk.
+    // Listeners rarely change, so the fd walk runs only for sockets without a
+    // confirmed owner, and gives up on one after a few walks miss it (another
+    // user's process, or one that exited mid-walk).
     const unseen = new Set(
       [...inodes].filter(
         (inode) => !known.has(inode) && (knownMisses.get(inode) ?? 0) < SOCKET_OWNER_ATTEMPTS,
@@ -692,7 +682,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     ),
   );
 
-  // Leave polling idle without retained clients to avoid scan and tracing costs.
   const pollIfRetained = Ref.get(stateRef).pipe(
     Effect.flatMap((state) => (state.retainCount > 0 ? pollTick() : Effect.void)),
   );
@@ -704,7 +693,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       { ...state, retainCount: state.retainCount + 1 },
     ]);
     if (wasIdle) {
-      // Emit immediately so a new retainer does not wait for POLL_INTERVAL.
       yield* pollTick();
     }
   });

@@ -76,7 +76,6 @@ export interface PullRequestExpectedHost {
   readonly kind: SourceControlProviderKind;
 }
 
-/** Use provider names unless multiple hosts share a kind; then show each ambiguous host address. */
 export function pullRequestHostLabel(
   entries: ReadonlyArray<{ readonly host: string; readonly kind: SourceControlProviderKind }>,
   entry: { readonly host: string; readonly kind: SourceControlProviderKind },
@@ -119,12 +118,14 @@ export function PullRequestSearchInput({
 }
 
 const ALL_PROJECTS_VALUE = "all";
-/** Empty string is the radio sentinel for all hosts. */
+/** MenuRadioGroup wants a string, so "every host" wears the one value no host can be. */
 const ALL_HOSTS_VALUE = "";
-/** Empty string cannot collide with environment ids. */
 const ALL_SERVERS_VALUE = "";
 const UNFILTERED_VALUE = "all";
-/** Project ids are environment-local; include the server to keep radio values unique. */
+/**
+ * A project's own radio value, carrying the server along with the id: the id alone is only
+ * unique within its own server, so two rows sharing one would otherwise both read as checked.
+ */
 export const pullRequestProjectKey = (project: {
   readonly id: ProjectId;
   readonly environmentId: EnvironmentId;
@@ -170,7 +171,6 @@ function PullRequestFilterRadioGroup<Value extends string>({
     >
       <MenuGroupLabel>{label}</MenuGroupLabel>
       {options.map((option) => {
-        // Offering an unreadable host would replace a working list with its known failure.
         const item = (
           <MenuRadioItem
             key={option.value}
@@ -410,18 +410,18 @@ export function PullRequestFiltersMenu({
   authorOptions?: ReadonlyArray<PullRequestAuthorFacet>;
   labelOptions?: ReadonlyArray<PullRequestLabelFacet>;
   host: string | undefined;
-  /** Includes the empty-string all-hosts option; hide the group with fewer than two hosts. */
   hostOptions: ReadonlyArray<PullRequestFilterOption<string>>;
   onHost: (host: string | undefined) => void;
   server: EnvironmentId | undefined;
-  /** Includes the empty-string all-servers option; hide the group with fewer than two servers. */
   serverOptions: ReadonlyArray<PullRequestFilterOption<string>>;
   onServer: (server: EnvironmentId | undefined) => void;
   projects: ReadonlyArray<ProjectFaviconProject & { readonly id: ProjectId }>;
   projectId: ProjectId | undefined;
-  /** Project ids are unique only within this environment. */
+  /**
+   * The server the selected project belongs to. A project id is only unique within its own
+   * server, so without this two rows sharing an id would both read as checked here.
+   */
   projectEnvironmentId: EnvironmentId | undefined;
-  /** Per-project read failures shown beside project choices. */
   unavailable: ReadonlyMap<string, string>;
   onProject: (projectId: ProjectId | undefined, environmentId: EnvironmentId | undefined) => void;
 }) {

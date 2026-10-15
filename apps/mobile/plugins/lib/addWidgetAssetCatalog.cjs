@@ -1,7 +1,15 @@
 "use strict";
 
-// Xcode skips a hand-added Resources phase on the generated widget target, so compile
-// assets with actool directly. Run after expo-widgets creates the target.
+// expo-widgets generates the widget target without a Resources build phase, and
+// hand-adding a PBXResourcesBuildPhase does NOT get picked up — xcodebuild's
+// planner never schedules `actool` for it (verified: even a full re-plan skips
+// it). So instead we add a shell-script phase that runs `actool` directly and
+// drops the compiled Assets.car into the extension bundle. Marked
+// alwaysOutOfDate so the build system always runs it.
+// Idempotent across re-runs. Returns true when it added the phase, false when
+// it was already present. Throws when the target does not exist — that means
+// this ran before expo-widgets created the target (plugin ordering bug) and
+// silently skipping would ship a widget without its assets.
 
 const PHASE_NAME = "Compile Widget Assets";
 

@@ -33,7 +33,6 @@ export interface UpdatesHarnessOptions {
   readonly platform?: NodeJS.Platform;
   /** Contents of the resources/package-type marker a Linux package ships. */
   readonly packageType?: string | undefined;
-  /** Contents of the install record a previous run left behind. */
   readonly installRecord?: string | undefined;
 }
 
@@ -270,7 +269,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     installSteps,
     updateRestartMarkers,
     installRecords,
-    /** The record the test started with, until the app removes it. */
     previousInstallRecord: () => previousInstallRecord,
     downloadCount: () => downloadCount,
     feedUrls: (): ElectronUpdater.ElectronUpdaterFeedUrl[] => feedUrls,

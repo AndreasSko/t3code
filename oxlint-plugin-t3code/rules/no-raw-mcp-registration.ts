@@ -5,7 +5,6 @@ import { getPropertyName, isIdentifier, unwrapExpression } from "../utils.ts";
 
 const MCP_SERVER_MODULE = "effect/ai/McpServer";
 const AI_MODULES = new Set(["effect/ai", "effect/ai/index"]);
-// Raw MCP registration skips McpToolAccess, which declares who may call each tool.
 const MODULE_REGISTRATIONS = new Set([
   "toolkit",
   "registerToolkit",
@@ -47,7 +46,10 @@ const namesMcpServer = (node: unknown) =>
 const exposesMcpServer = (source: Option.Option<string>) =>
   Option.isSome(source) && (source.value === MCP_SERVER_MODULE || AI_MODULES.has(source.value));
 
-/** Keeps registrations in McpHttpServer through McpToolAccess handlers; lint config exempts that file. */
+/**
+ * Keeps every registration on `/mcp` inside McpHttpServer, whose helpers
+ * accept only handlers McpToolAccess built; the lint config exempts that file.
+ */
 export default defineRule({
   meta: {
     type: "problem",

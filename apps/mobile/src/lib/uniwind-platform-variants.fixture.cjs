@@ -1,7 +1,10 @@
 "use strict";
 
-// Run directly with Node so test-runner transforms do not alter the compiler output.
-// The loader handles uniwind's CommonJS output under "type": "module" and its build-time @/ aliases.
+// Loading `dist/common` needs a small custom loader because uniwind declares
+// `"type": "module"` over that CommonJS output and its internal `@/...` import
+// alias only exists at uniwind's own build time; the loader hands unmodified
+// file bytes to V8 and resolves those aliases the same way, so this runs the
+// exact compiled code the Metro transformer bundles.
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
@@ -117,15 +120,12 @@ async function main() {
       payloadIncludesAllCompiled: Object.keys(compiled).every((className) =>
         payload.includes(`"${className}"`),
       ),
-      // A utility dropped from this platform's stylesheet must not appear
-      // anywhere in the payload the bundle embeds for this platform.
       payloadLeaks: Object.keys(compiledGuardedClasses)
         .filter((className) => compiled[className] === undefined)
         .filter((className) => payload.includes(`"${className}"`)),
     };
   }
 
-  // Use the shipped Metro transformer to include the native stylesheet fingerprint.
   const transformerPath = path.join(uniwindRoot, "dist/metro/transformer.cjs");
   let reinitCode = "";
   const Module = require("node:module");

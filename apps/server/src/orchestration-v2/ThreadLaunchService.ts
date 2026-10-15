@@ -101,7 +101,10 @@ type PreparationInput = Pick<
   ThreadLaunchInput,
   "commandId" | "projectId" | "workspaceStrategy" | "initialMessage"
 > & {
-  /** A retry reuses its recorded worktree; setup is tracked again while its original branch rename may continue. */
+  /**
+   * Its setup is tracked like a new one, but the thread already records the
+   * workspace, and a branch rename may still be running.
+   */
   readonly reusedWorktree?: { readonly baseRef: string };
 };
 
@@ -166,7 +169,10 @@ export class ThreadLaunchService extends Context.Service<
       ThreadLaunchResult,
       ThreadLaunchError | ThreadManagement.ThreadManagementProviderInstanceDisabledError
     >;
-    /** Validate before launch when the caller needs base-ref errors before a thread exists. */
+    /**
+     * `launch` accepts such a launch and reports the failure inside the
+     * thread; a caller that needs it before a thread exists checks first.
+     */
     readonly checkWorktreeBase: (
       input: Pick<ThreadLaunchInput, "projectId" | "workspaceStrategy">,
     ) => Effect.Effect<void, ThreadLaunchBaseRefError>;
@@ -257,8 +263,6 @@ const make = Effect.gen(function* () {
     // `:/text` is a commit search, which cannot be asked for a commit type.
     if (strategy.type !== "worktree" || strategy.baseRef.startsWith(":")) return;
     const { baseRef } = strategy;
-    // Anything this cannot establish is left for the launch to report: a
-    // missing project, a folder that is not a repository, a failing Git.
     const unresolved = yield* Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* projects.getById(input.projectId));
       if (project === undefined) return undefined;
@@ -391,8 +395,6 @@ const make = Effect.gen(function* () {
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
         }
         let startRef = input.workspaceStrategy.baseRef;
-        // "Start from origin" is a stored default; repos without the requested
-        // remote branch fall back to the local base branch.
         const startFromOrigin =
           input.workspaceStrategy.startFromOrigin === true &&
           (yield* git
@@ -484,8 +486,6 @@ const make = Effect.gen(function* () {
       }
       workspaceRecorded = true;
 
-      // Rename in the background so generation cannot delay provisioning or turns;
-      // a failed generation or rename leaves the temporary branch name.
       if (
         reused === undefined &&
         worktreePath !== null &&
@@ -803,8 +803,10 @@ const make = Effect.gen(function* () {
         instanceId: input.modelSelection.instanceId,
       });
       return yield* Effect.gen(function* () {
-        // Recover a retried launch's recorded thread ID before allocating one;
-        // a fresh ID would conflict with its accepted receipt.
+        // A retried launch has no client-supplied id to replay against, so
+        // recover the thread id its accepted create was recorded under before
+        // allocating another one; a fresh id would only collide with the
+        // recorded receipt.
         const reusableLaunchReceipt =
           input.threadId === undefined &&
           Option.isSome(launchReceipt) &&

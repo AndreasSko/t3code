@@ -147,8 +147,11 @@ const makeMigrationLoader = (throughId?: number) =>
 const FIRST_V2_MIGRATION_ID = 55;
 
 /**
- * The migrator skips all ids through the highest recorded id, regardless of name.
- * Reject V2 id collisions before startup can proceed without required schema; earlier collisions only warn.
+ * Fail before migrating when the migrator would skip one of V2's own
+ * migrations. It skips every id up to the highest recorded one, whatever name
+ * was recorded, so a database that took a V2 id for another migration would
+ * start without V2's schema and fail on first use. Earlier ids keep the
+ * warning below: databases with a site-local migration there still work.
  */
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
@@ -206,8 +209,6 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     ? Effect.logDebug("Database schema is current")
     : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
 
-  // Migration ids, not names, determine which schema changes are skipped.
-  // Warn about divergent histories so skipped changes in local or fork builds remain diagnosable.
   const sql = yield* SqlClient.SqlClient;
   const recorded = yield* sql<{
     readonly migration_id: number;

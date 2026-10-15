@@ -34,7 +34,6 @@ class MediaFileStatError extends Schema.TaggedError<MediaFileStatError>()("Media
   }
 }
 
-/** Holds the file identity and descriptor for one HTTP request, never a copy of its bytes. */
 export interface OpenMediaFile {
   readonly handle: NodeFSP.FileHandle;
   readonly info: NodeFS.BigIntStats;
@@ -79,8 +78,10 @@ export const openMediaFile = Effect.fn("openMediaFile")(function* (
           ) {
             return null;
           }
-          // Match the caller's JS realpath: fs/promises uses the native Windows binding,
-          // which expands 8.3 names and would falsely detect a path swap.
+          // Callers canonicalise with Effect's FileSystem.realPath, which is
+          // Node's JS realpath. fs/promises.realpath is the native binding and
+          // on Windows also expands 8.3 short names, so a path that is already
+          // canonical by the caller's rules would still look swapped here.
           if ((await realpathLikeFileSystem(filePath)) !== filePath) return null;
           const after = await NodeFSP.lstat(filePath, { bigint: true });
           if (!after.isFile() || info.dev !== after.dev || info.ino !== after.ino) return null;
@@ -96,7 +97,6 @@ export const openMediaFile = Effect.fn("openMediaFile")(function* (
   );
 });
 
-/** Reads the leading bytes of an already-validated media file, never past the end. */
 export const readMediaFileHeader = (filePath: string, file: OpenMediaFile, byteCount: number) =>
   Effect.tryPromise({
     try: async () => {

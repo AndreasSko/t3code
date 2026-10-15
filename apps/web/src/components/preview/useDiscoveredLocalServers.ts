@@ -8,7 +8,10 @@ import { useDiscoveredPortsState } from "~/portDiscoveryState";
 
 export interface PreviewableServer extends DiscoveredLocalServer {
   source: "scanner" | "configured";
-  /** Key history by this unresolved loopback URL; resolved remote targets can change. */
+  /**
+   * Pre-resolution loopback url. `url` is the resolved navigation target
+   * (volatile on a remote environment); history must key off this instead.
+   */
   requestedUrl: string;
 }
 

@@ -30,21 +30,43 @@ export interface AppUpdateClient {
 }
 
 export interface AppUpdateEnvironment {
-  /** Asks the user to install the waiting update now; `false` keeps it deferred. */
   readonly confirmInstallNow: () => Promise<boolean>;
-  /** Reject on a failed write so an automatic restart preserves unsaved state. */
+  /**
+   * Lands persisted state (drafts, outbox) before the restart. Rejects when a
+   * write failed, so a silent restart can hold off instead of dropping the
+   * unsaved in-memory state.
+   */
   readonly flushPendingWrites: () => Promise<void>;
-  /** Recheck after flushing: iOS suspension may resume in foreground; native handoffs must also block restarts. */
+  /**
+   * Whether a deferred restart may fire right now: the app must still be
+   * backgrounded (flush latency or an iOS suspend can push the continuation
+   * into the next foreground session) and not merely paused behind an
+   * app-initiated handoff like the Android image picker.
+   */
   readonly isSafeToRestartInBackground: () => Promise<boolean>;
-  /** Include an already-backgrounded app to catch module-load races; exclude it after failure to avoid a retry loop. */
+  /**
+   * Runs `apply` the next time the app enters the background. With
+   * `includeCurrent`, an app that is already backgrounded fires immediately
+   * (so a backgrounding that raced module load is not missed); without it,
+   * only a future transition fires, so an attempt that already failed in the
+   * current background session cannot retry in a tight loop.
+   */
   readonly onNextBackground: (apply: () => void, includeCurrent: boolean) => void;
-  /** Runs after a continuous foreground prompt window, when no background install had a chance. */
+  /**
+   * Runs `apply` once the app has stayed foregrounded for the whole prompt
+   * window — the signal that a deferred install has had no backgrounding to
+   * ride on.
+   */
   readonly onForegroundStay: (apply: () => void) => void;
 }
 
 export interface AppUpdateDeferral {
   pendingInstall: boolean;
-  /** Shared restart claim prevents racing background, prompt, and manual paths from restarting twice. */
+  /**
+   * Claimed by whichever restart sequence (deferred backgrounding, foreground
+   * prompt, manual install) starts first, so racing paths cannot tear down
+   * the runtime twice.
+   */
   installInProgress: boolean;
 }
 
@@ -55,7 +77,12 @@ export function createAppUpdateDeferral(): AppUpdateDeferral {
 const appUpdateDeferral = createAppUpdateDeferral();
 
 interface AppUpdateCheckOptions {
-  /** Background mode defers until backgrounding or a long-foreground prompt; immediate mode requires an explicit request. */
+  /**
+   * "background" (default) installs silently at the next backgrounding,
+   * asking only if the app then stays foregrounded so long that the install
+   * never gets its chance. "immediate" restarts as soon as the download
+   * lands — reserved for flows where the user explicitly requested the update.
+   */
   readonly applyMode?: "background" | "immediate";
   readonly client?: AppUpdateClient;
   readonly deferral?: AppUpdateDeferral;
@@ -94,7 +121,6 @@ export function isAppUpdateCheckAvailable(client: Pick<AppUpdateClient, "isEnabl
   return client.isEnabled && !(typeof __DEV__ !== "undefined" && __DEV__);
 }
 
-/** Five deliberate version-row taps reveal manual update checks. */
 export function registerHiddenUpdateTap(count: number): {
   readonly nextCount: number;
   readonly shouldCheck: boolean;
@@ -222,8 +248,6 @@ async function performAppUpdateCheck(
   const environment = options.environment ?? defaultAppUpdateEnvironment;
   const deferral = options.deferral ?? appUpdateDeferral;
 
-  // The user explicitly asked to install and a previous check has already
-  // downloaded the update; restart into it without another network round trip.
   if (options.applyMode === "immediate" && deferral.pendingInstall) {
     await installPendingAppUpdate(client, environment, deferral, options);
     return;
@@ -267,7 +291,9 @@ async function performAppUpdateCheck(
       options.applyMode === "immediate",
     );
     if (outcome === "flush-failed") {
-      // Preserve unsaved state after an automatic rollback flush failure; the rollback still applies at cold start.
+      // Only reachable for an automatic rollback: keep the state-bearing
+      // runtime alive and retry like a deferred install. The fetched rollback
+      // still applies at the next cold start regardless.
       setState("ready");
       armDeferredAppUpdateInstall(client, environment, deferral);
     }
@@ -280,7 +306,14 @@ async function performAppUpdateCheck(
 
 type AppUpdateInstallOutcome = "installed" | "flush-failed" | "restart-failed";
 
-/** Background restarts avoid expo-updates teardown crashes; only an explicit request may proceed after a failed flush. */
+/**
+ * Restarting mid-session while native surfaces are mounted is the crashiest
+ * moment expo-updates has, so the restart flushes persistence first and, by
+ * default, waits for a backgrounding — where nothing is rendering and the
+ * teardown is invisible. Only a restart the user explicitly asked for may
+ * proceed over a failed flush; an automatic one aborts with "flush-failed"
+ * so unsaved state is never silently discarded.
+ */
 async function installAppUpdate(
   client: AppUpdateClient,
   environment: AppUpdateEnvironment,
@@ -337,7 +370,6 @@ function armDeferredAppUpdateInstall(
   });
 }
 
-/** Prompt only after a long foreground stay; declining leaves the background install armed. */
 async function promptDeferredAppUpdateInstall(
   client: AppUpdateClient,
   environment: AppUpdateEnvironment,
@@ -445,12 +477,12 @@ function defaultOnNextBackground(apply: () => void, includeCurrent: boolean): vo
   });
 }
 
-/** Allow normal background installs before prompting a long-running foreground session. */
 export const DEFERRED_INSTALL_PROMPT_AFTER_MS = 30 * 60 * 1000;
 
 /**
- * Backgrounding resets the window because deferred installation can run then.
- * iOS inactive blips from the app switcher or notification shade leave the timer running.
+ * The window resets on every backgrounding because that is exactly when the
+ * deferred install gets its chance. iOS "inactive" blips (app switcher, a
+ * pulled-down notification shade) leave the timer running.
  */
 function defaultOnForegroundStay(apply: () => void): void {
   void import("react-native").then(({ AppState }) => {
@@ -515,7 +547,10 @@ export function createAppUpdateLaunchCheck(
 
 export const checkForAppUpdateOnLaunch = createAppUpdateLaunchCheck();
 
-/** Resident apps need rechecks; the interval avoids checks for brief app switches. */
+/**
+ * The app can stay resident for days, so a launch-only check misses updates published while it was
+ * in memory.
+ */
 export const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;
 
 export function shouldRecheckAppUpdateOnForeground(

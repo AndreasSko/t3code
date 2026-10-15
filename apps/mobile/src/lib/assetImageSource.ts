@@ -1,7 +1,11 @@
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import type { ImageSource } from "expo-image";
 
-/** Cache immutable attachments by id because freshly signed URLs change on every mint or reconnect. */
+/**
+ * Every mint signs a new URL, and a reconnect mints again, so a URL-keyed cache
+ * misses each time. Attachments never change once stored, so they cache under
+ * their id instead.
+ */
 export function assetImageSource(
   environmentId: EnvironmentId,
   resource: AssetResource,

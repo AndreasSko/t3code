@@ -1,4 +1,10 @@
-/** Count concurrent draft transfers so sending cannot snapshot unfinished attachments. */
+/**
+ * Sending while any of it is outstanding snapshots a message whose chip has nothing behind it,
+ * and the late result lands in whatever draft is open by then.
+ *
+ * Counted rather than flagged: two pastes can be in flight at once, and the first to finish must
+ * not clear the second's claim.
+ */
 class PendingDraftWork {
   private readonly counts = new Map<string, number>();
 
@@ -17,5 +23,7 @@ class PendingDraftWork {
   }
 }
 
-/** Draft ownership survives composer remounts while transfers are still running. */
+/**
+ * Module-scoped, so a transfer keeps its claim on a draft across a remount of the composer.
+ */
 export const pendingDraftWork = new PendingDraftWork();

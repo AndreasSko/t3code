@@ -85,8 +85,10 @@ interface AdaptiveWorkspaceContextValue {
   readonly selectThread: (thread: EnvironmentThreadShell) => void;
   readonly activateAuxiliaryPaneRole: (role: WorkspaceAuxiliaryPaneRole) => () => void;
   /**
-   * Prefer useRegisterWorkspaceInspector. Returns an owner-guarded deactivate
-   * callback that keeps content mounted until the close animation settles.
+   * Returns a deactivate callback: the pane animates closed (content kept
+   * mounted for the exit transition) unless a newer registration already took
+   * over — stale deactivates never clobber it. Prefer
+   * useRegisterWorkspaceInspector over calling this directly.
    */
   readonly registerWorkspaceInspector: (render: () => ReactNode) => () => void;
   readonly setPrimarySidebarSearchQuery: (query: string) => void;
@@ -135,8 +137,16 @@ export function useAdaptiveWorkspacePaneRole(role: WorkspaceAuxiliaryPaneRole) {
 }
 
 /**
- * Restore the registering screen's route/navigation contexts outside the navigator.
- * Use focus events so frozen react-native-screens subtrees can still unregister inspector panes.
+ * The column renders BESIDE the navigator — outside any screen — so the
+ * registering screen's navigation and route contexts are captured here and
+ * re-provided around the portal content. Without them, useNavigation/useRoute
+ * inside the pane (e.g. GitOverviewSheet via useThreadSelection) throw
+ * "Couldn't find a route object".
+ *
+ * Registration is FOCUS-scoped, driven by navigation events rather than the
+ * screen's own render cycle: react-native-screens freezes blurred screens, so a
+ * cleanup that depends on the blurred subtree re-rendering never runs and would
+ * leak the pane into the next route.
  */
 export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefined) {
   const { registerWorkspaceInspector } = useAdaptiveWorkspaceLayout();
@@ -258,7 +268,6 @@ function AdaptiveWorkspaceLayoutContent(
     [height, viewportWidth, nativeMetrics],
   );
   const layout = baseLayout;
-  // Reserve the Android rail before sizing either pane or the detail navigator.
   const shouldRenderNavigationRail = Platform.OS === "android" && layout.usesSplitView;
   const navigationRailWidth =
     shouldRenderNavigationRail && showPrimarySidebar
@@ -321,8 +330,10 @@ function AdaptiveWorkspaceLayoutContent(
       return null;
     }
   }, [environmentId, threadId]);
-  // Wrap the render function so useState does not call it as an initializer/updater.
-  // Keep inactive content mounted for the close animation.
+  // Wrapped in an object: bare functions in useState would be treated as
+  // lazy initializers/updaters. `active: false` keeps the outgoing route's
+  // content mounted so the pane can animate closed (or be replaced
+  // seamlessly by the next route's registration in the same commit).
   const [workspaceInspector, setWorkspaceInspector] = useState<{
     readonly render: () => ReactNode;
     readonly active: boolean;
@@ -552,8 +563,9 @@ function AdaptiveWorkspaceLayoutContent(
     width: renderedSidebarWidth.value,
   }));
 
-  // Keep the navigator/feed at a settled width to avoid reflowing text each frame.
-  // Animated pane widths clip it instead.
+  // The navigator (native header + markdown feed) lays out ONCE per pane toggle
+  // instead of re-measuring on every animation frame — the animating columns
+  // merely clip/reveal it over a matching background.
   const renderedInspectorWidth = useSharedValue(inspectorColumnTargetWidth);
   const renderedContentWidth = useDerivedValue(() =>
     Math.max(

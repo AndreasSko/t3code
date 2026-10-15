@@ -14,13 +14,19 @@ export function sortModelsByTokens(models: readonly ModelTotals[]) {
   );
 }
 
-/** Unknown cost has no cost share; unpriced models still have a real token share. */
+/**
+ * A model's share of the selected metric, or `null` for a cost share of an
+ * unknown cost. An unpriced model still has a real token share.
+ */
 export function modelShare(model: ModelTotals, metric: "cost" | "tokens"): number | null {
   if (metric === "tokens") return model.tokenShare;
   return isModelCostUnknown(model) ? null : model.costShare;
 }
 
-/** Cache writes count as misses because that input was processed in full. */
+/**
+ * Share of a model's input read from cache, or `null` without input. Cache
+ * writes count as misses: that input was processed in full.
+ */
 export function cacheHitRate({ tokens }: ModelTotals): number | null {
   const input = tokens.uncachedInputTokens + tokens.cachedInputTokens + tokens.cacheCreationTokens;
   return input === 0 ? null : tokens.cachedInputTokens / input;
@@ -34,7 +40,6 @@ export function costPerMillionTokens(model: ModelTotals): number | null {
     : (model.costUsd / pricedTokens) * 1_000_000;
 }
 
-/** A neutral step between background and foreground, so mixes never borrow a provider's color. */
 const ink = (percent: number) =>
   `color-mix(in oklab, var(--foreground) ${percent}%, var(--background))`;
 
@@ -70,7 +75,6 @@ export function tokenTypeSegments(
   ];
 }
 
-/** Speeds are ordered by price, so they brighten from standard to ultrafast. */
 export function speedCostSegments(cost: SpeedCost): readonly ShareSegment[] {
   return [
     { label: "Standard", value: cost.standard, color: ink(34) },

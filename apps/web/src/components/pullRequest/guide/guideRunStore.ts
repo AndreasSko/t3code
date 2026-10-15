@@ -1,5 +1,3 @@
-/** Share run watches and tour progress across panels for this renderer session;
- * reload drops them while server-stored guides remain available. */
 import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
 import { create } from "zustand";
 
@@ -24,7 +22,6 @@ const NO_PROGRESS: GuideProgress = { position: 0, seen: new Set() };
 
 interface GuideRunStoreState {
   readonly watches: Readonly<Record<string, GuideRunWatch>>;
-  /** The guide on screen right now, which needs no notice when it lands. */
   readonly shownKey: string | null;
   /** A guide a notice asked to open; its panel switches to the Guide tab and clears this. */
   readonly openRequestKey: string | null;

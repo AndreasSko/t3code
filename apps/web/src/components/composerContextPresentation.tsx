@@ -443,7 +443,6 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
   fallback: (_kind, _entry, context) => <UnresolvedContextChip label={context.label} />,
 });
 
-/** Compact chip for one reference. Unknown kinds and missing records use the registry fallback. */
 export function ComposerContextReferenceChip(props: {
   kind: string;
   contextId: string;

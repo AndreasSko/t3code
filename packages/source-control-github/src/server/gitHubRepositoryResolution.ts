@@ -20,8 +20,15 @@ export function parseFetchRemotes(
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
 
-/** Prefer gh-resolved, then upstream/github/origin, then the sole remote.
- * remotes is git remote -v output; resolved is remote.*.gh-resolved config. Null for ambiguous hosts/marks. */
+/**
+ * The repository `gh pr list` reads in a checkout, picked the way gh picks one without a
+ * prompt: the remote `gh repo set-default` marked, else the first of upstream, github, origin
+ * (in any case), else the only remote. `remotes` is `git remote -v` output and `resolved` is the output of
+ * `git config --get-regexp '^remote\..*\.gh-resolved$'`.
+ *
+ * Null whenever gh might weigh the remotes differently: a remote on another host or under an SSH alias,
+ * more than one mark, or several remotes with none of those names.
+ */
 export function selectGitHubBaseRepository(input: {
   readonly remotes: string;
   readonly resolved: string;
@@ -58,11 +65,13 @@ export function selectGitHubBaseRepository(input: {
     : null;
 }
 
-/** Caller checks GH_REPO first. Resolve gh's chosen remote, then the best remote on its API host. */
+/**
+ * `host` is the API host it settled on, which a caller names when no repository was
+ * found there. GH_REPO is the caller's to check first.
+ */
 export function resolveGitHubRepository(input: {
   readonly remotes: string;
   readonly resolved: string;
-  /** The checkout's GitHub API host, when the caller already knows it. */
   readonly hostHint: string | undefined;
   readonly defaultHost: string;
 }): { readonly host: string; readonly locator: GitHubRepositoryLocator | null } {
@@ -153,7 +162,11 @@ export function parsePullRequestReference(
   return { kind: "branch", headSelector: trimmed };
 }
 
-/** Dotless SSH aliases have no API host; github-named aliases use github.com (issue #6198). */
+/**
+ * An SSH alias (`git@github-work:owner/repo`) names no API host of its own; it is read
+ * through `github.com`, which is what such an alias almost always stands for (issue
+ * #6198).
+ */
 export function gitHubApiHostForRemote(remoteUrl: string): string | null {
   const provider = detectSourceControlProviderFromRemoteUrl(remoteUrl);
   if (provider === null) return null;

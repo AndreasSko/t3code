@@ -19,7 +19,6 @@ import * as Schema from "effect/Schema";
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
-/** Build the regular navigation shell without duplicating the archive dataset. */
 export function buildActiveShellSnapshot(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly threads: OrchestrationV2ThreadShellSnapshot;
@@ -34,7 +33,11 @@ export function buildActiveShellSnapshot(input: {
   };
 }
 
-/** Read one transactional snapshot, then decode after commit so large shells cannot hold the shared connection. */
+/**
+ * One transaction covers the reads so they agree; the threads are decoded after it commits,
+ * because the server shares one SQLite connection and decoding a large shell takes longer than
+ * reading it.
+ */
 export const loadShellSnapshotParts = <E1, E2, E3, E4>(input: {
   readonly sql: SqlClient.SqlClient;
   readonly readThreads: Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E2>, E1>;
@@ -42,7 +45,6 @@ export const loadShellSnapshotParts = <E1, E2, E3, E4>(input: {
   readonly latestSequence: Effect.Effect<number, E4>;
 }) =>
   Effect.gen(function* () {
-    // Read on the reader worker, off the event loop and the writer.
     const read = yield* input.sql
       .withTransaction(
         Effect.all({
@@ -81,7 +83,6 @@ export function toShellApplicationEvent(stored: ApplicationStoredEvent): ShellAp
     : { sequence: stored.sequence, event: { threadId: stored.event.threadId } };
 }
 
-/** Keep only the newest shell-relevant event per project/thread aggregate. */
 export function coalesceShellApplicationEvents<A extends ShellApplicationEvent>(
   events: ReadonlyArray<A>,
 ): ReadonlyArray<A> {
@@ -98,7 +99,10 @@ export function coalesceShellApplicationEvents<A extends ShellApplicationEvent>(
   );
 }
 
-/** Emit the initial snapshot first so newer enrichment cannot be overwritten by an older authoritative frame. */
+/**
+ * Prevents a newer marked enrichment from landing before the unmarked authoritative initial
+ * snapshot.
+ */
 export function composeShellStreamWithEnrichment<A, E, R, A2, E2, R2, A3, E3, R3>(input: {
   readonly initial: Stream.Stream<A, E, R>;
   readonly tail: Stream.Stream<A2, E2, R2>;
@@ -109,7 +113,6 @@ export function composeShellStreamWithEnrichment<A, E, R, A2, E2, R2, A3, E3, R3
 
 const sameProjects = Schema.toEquivalence(Schema.Array(ProjectShellSchema));
 
-/** Drop repeated metadata refreshes within one subscription, preserving resolution progress. */
 export function dedupeShellEnrichment<E, R>(
   stream: Stream.Stream<OrchestrationV2ShellStreamItem, E, R>,
 ): Stream.Stream<OrchestrationV2ShellStreamItem, E, R> {
@@ -173,7 +176,10 @@ export function shellStreamItemFromEnrichmentRefresh(input: {
   };
 }
 
-/** Emit authoritative state before any same-sequence enrichment for resolved roots. */
+/**
+ * Initial subscribe frames: always emit the unmarked authoritative snapshot,
+ * then a same-sequence enrichment frame only when some roots already resolved.
+ */
 export function shellStreamItemsFromInitialSnapshot(input: {
   readonly snapshot: OrchestrationV2ShellSnapshot;
   readonly resolvedRepositoryIdentityRoots: ReadonlyArray<string>;
@@ -214,12 +220,13 @@ export function shellStreamItemsFromResumeSnapshot(input: {
 
 const sameThreadShell = Schema.toEquivalence(ThreadShellSchema);
 
-/** How long an unchanged thread shell may go unsent on a live subscription. */
 const UNCHANGED_THREAD_SHELL_RESEND_MS = 5_000;
 
 /**
- * Ignore updatedAt-only deltas, but resend unchanged shells periodically
- * so the client cursor's replay gap and stale activity timestamp stay bounded.
+ * A skipped delta leaves the client cursor behind, and a resume replays the events after that
+ * cursor. So an unchanged shell is still sent once its last send is
+ * `UNCHANGED_THREAD_SHELL_RESEND_MS` old. That bounds both the replay and how stale the client's
+ * `updatedAt` can get.
  */
 export function skipUnchangedThreadShells<A extends OrchestrationV2ShellStreamItem, E, R>(
   stream: Stream.Stream<A, E, R>,
@@ -256,7 +263,6 @@ export function skipUnchangedThreadShells<A extends OrchestrationV2ShellStreamIt
   });
 }
 
-/** Keep only the newest stored event per thread within a coalescing window. */
 export function coalesceStoredThreadEvents(
   events: ReadonlyArray<OrchestrationV2StoredEvent>,
 ): ReadonlyArray<OrchestrationV2StoredEvent> {
@@ -269,7 +275,9 @@ export function coalesceStoredThreadEvents(
   );
 }
 
-/** A null shell emits removal for a deleted or unknown thread. */
+/**
+ * `shell` is null when the thread is deleted or unknown.
+ */
 export function shellStreamItemFromThreadShell(input: {
   readonly stored: Extract<ShellApplicationEvent, { readonly event: unknown }>;
   readonly shell: OrchestrationV2ThreadShell | null;
@@ -299,7 +307,6 @@ export function shellStreamItemFromThreadShell(input: {
   };
 }
 
-/** Converts a committed event into an archive-only delta when it changes archive membership. */
 export function archivedShellStreamItemFromThreadShell(input: {
   readonly stored: OrchestrationV2StoredEvent;
   readonly shell: OrchestrationV2ThreadShell | null;

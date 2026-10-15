@@ -38,7 +38,12 @@ export interface ProviderUpdateToastView {
   readonly dismissAfterVisibleMs?: number;
 }
 
-/** Persist only terminal phases: stored snapshots never re-poll and would otherwise pin row spinners. */
+/**
+ * A non-terminal ("initial"/"running") snapshot never re-polls itself, so
+ * storing one pins an update row's spinner indefinitely once its pending flag
+ * expires; such phases must be dropped in favor of the live per-environment
+ * provider state instead of being persisted.
+ */
 export function isTerminalProviderUpdatePhase(phase: ProviderUpdateToastPhase): boolean {
   return phase === "succeeded" || phase === "failed" || phase === "unchanged";
 }
@@ -336,7 +341,6 @@ export interface ProviderUpdateRun {
   >;
 }
 
-/** Failure lines name both the machine and provider. */
 export function getProviderUpdateRunOutcome(
   run: ProviderUpdateRun,
 ):
@@ -364,8 +368,7 @@ export function getProviderUpdateRunOutcome(
 
 /**
  * Summarize a cross-machine "Update all" as one toast, or null when every
- * request was interrupted. Each update that did not succeed gets its own line,
- * so a failure on one machine is not hidden by successes on the others.
+ * request was interrupted.
  */
 export function getProviderUpdateRunToastView(
   runs: ReadonlyArray<ProviderUpdateRun>,
@@ -609,7 +612,6 @@ function getFailedProviderUpdateDescription(providers: ReadonlyArray<ServerProvi
   return `${formatProviderList(providers)} failed to update. Check provider settings for details.`;
 }
 
-/** provider is the targeted instance's post-update snapshot, or null if the backend did not report it. */
 export interface LocalProviderUpdateOutcome {
   readonly environmentId: EnvironmentId;
   readonly isPrimary: boolean;
@@ -640,7 +642,13 @@ export function firstRejectedProviderUpdateMessage(
   return rejected.reason instanceof Error ? rejected.reason.message : "Provider update failed.";
 }
 
-/** Keep each driver's worst status: secondary instance ids differ and must not hide failures behind primary success. */
+/**
+ * Because the same driver has a distinct instance id per environment, a
+ * secondary backend (e.g. WSL) that *resolved* with a failed or unchanged
+ * provider would otherwise be filtered out (its instance id is not the
+ * primary's) or collapsed behind the primary's success — this surfaces it
+ * instead.
+ */
 export function collectProviderUpdateOutcomeSnapshots(
   results: ReadonlyArray<PromiseSettledResult<LocalProviderUpdateOutcome>>,
 ): ServerProvider[] {
@@ -661,7 +669,6 @@ export function collectProviderUpdateOutcomeSnapshots(
   return [...worstByDriver.values()];
 }
 
-/** Use platform labels to distinguish machines instead of repeating the account name. */
 export function deriveEnvironmentDisplayLabel(input: {
   readonly isWsl: boolean;
   readonly wslDistro: string | null;
@@ -727,7 +734,6 @@ export function environmentGroupsWithUpdates(
   return groups.filter((group) => group.candidates.length > 0);
 }
 
-/** Notify once per distinct offered update set, then allow notification when that set changes. */
 export function localEnvironmentUpdateNotificationKey(
   groups: ReadonlyArray<LocalEnvironmentUpdateGroup>,
 ): string | null {
@@ -756,8 +762,11 @@ function environmentProviderNames(group: LocalEnvironmentUpdateGroup): string {
     .join(", ");
 }
 
-/** Terminal RPC results can survive missing config sync; live state survives lost RPCs.
- * Skip nonterminal stored results so the live state can resolve the spinner. */
+/**
+ * A non-terminal result snapshot ("running") is intentionally skipped rather
+ * than treated as authoritative, so live server state can still drive the row
+ * to its terminal status instead of pinning it on "Updating…".
+ */
 export function resolveEnvironmentUpdateRowStatus(input: {
   readonly group: LocalEnvironmentUpdateGroup;
   readonly error: string | undefined;

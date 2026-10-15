@@ -25,7 +25,6 @@ export function agentDeviceTargetArgs(device: DeviceSummary): ReadonlyArray<stri
     : ["--platform", "android", "--serial", device.id];
 }
 
-/** Return device-driving guidance on open so other threads do not pay for it in their prompt. */
 export function agentDeviceQuickStart(
   device: DeviceSummary,
   targetArgs = agentDeviceTargetArgs(device),
@@ -247,7 +246,6 @@ const handlers = {
   ),
 } satisfies McpToolAccess.Handlers<typeof DeviceToolkit.tools>;
 
-/** Width and height from the IHDR chunk; a PNG that lacks one reports 0×0. */
 export function pngDimensions(png: Uint8Array): { width: number; height: number } {
   if (png.length < 24) return { width: 0, height: 0 };
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);

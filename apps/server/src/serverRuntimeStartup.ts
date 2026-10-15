@@ -400,7 +400,6 @@ export function runOrderedV2StartupPhases<
 >(input: {
   readonly importLegacyShells: Effect.Effect<Import, ImportError, ImportContext>;
   readonly recover: Effect.Effect<Recovery, RecoveryError, RecoveryContext>;
-  /** Settles delegated tasks whose runs recovery just terminalized. */
   readonly recoverDelegatedTasks: Effect.Effect<void, DelegationError, DelegationContext>;
   readonly startEffectWorker: Effect.Effect<void, WorkerError, WorkerContext>;
   readonly autoBootstrap: Effect.Effect<Bootstrap, BootstrapError, BootstrapContext>;
@@ -539,7 +538,8 @@ const make = (options?: StartupOptions) =>
         ).pipe(Effect.map((targets): AutoBootstrapWelcomeTargets => targets)),
       });
       yield* Effect.logInfo("V2 orchestration recovery completed", recovery);
-      // Waiting for project remotes would delay command readiness, so run after activation.
+      // Runs after activation: the status check fetches every enabled project's
+      // remote, and awaiting it here held command readiness for that long.
       yield* runStartupPhase(
         "projects.auto-pull",
         Effect.gen(function* () {

@@ -6,7 +6,6 @@ import { useTheme } from "../../hooks/useTheme";
 import { MarkdownCodeBlockFrame } from "../ChatMarkdown";
 import { ComposerCodeBlockLanguagePicker } from "./ComposerCodeBlockLanguagePicker";
 
-/** Reuse the chat code frame with a language picker; draft text already wraps and supports selection copy. */
 export function ComposerCodeBlockNodeView({
   node,
   editor,

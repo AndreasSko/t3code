@@ -6,7 +6,6 @@ import { cn } from "~/lib/utils";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { useSettingsSearchTarget, useSettingsSearchTargetId } from "./settingsLayout";
 
-/** Settings search unfolds this section before its target scrolls. */
 export function FoldedSettingsSection({
   id,
   title,

@@ -45,7 +45,10 @@ import { resolveAgentAwarenessPlatformPresentation } from "./SettingsRouteScreen
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
 
-// Local permission does not guarantee delivery: the relay must register this device.
+// Reflects whether the relay actually accepted this device's registration.
+// The notification and Live Activity switches are gated on this so they can
+// never read as enabled when the device cannot receive anything (e.g. the
+// registration request timed out).
 function useDeviceRegistered(): boolean {
   const status = useSyncExternalStore(
     subscribeAgentAwarenessRegistrationStatus,
@@ -294,8 +297,9 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     savePreferences({ liveActivitiesEnabled: true });
     refreshManagedRelayEnvironments();
     setLiveActivityStatus("enabled");
-    // Linking an environment can succeed before this device's push-to-start registration.
-    // Confirm device registration before reporting that activity updates are enabled.
+    // The environment link can succeed while this device's own registration
+    // (the push-to-start token the relay needs) has not — don't claim Live
+    // Activities are live until the device is actually registered.
     if (getAgentAwarenessRegistrationStatus() === "registered") {
       Alert.alert(
         Platform.OS === "android" ? "Ongoing activity enabled" : "Live Activities enabled",
@@ -437,7 +441,6 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               notificationStatus === "unsupported"
             }
             subtitle={agentAwarenessSubtitle}
-            // Local notification permission is insufficient until the relay registers this device.
             value={
               agentAwarenessPushAvailable && notificationStatus === "enabled" && deviceRegistered
             }

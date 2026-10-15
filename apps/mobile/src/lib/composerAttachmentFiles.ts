@@ -77,7 +77,11 @@ export function isComposerAttachmentFileRetained(uri: string): boolean {
   return retainedFiles.has(composerAttachmentFileReferenceKey(uri));
 }
 
-/** iOS updates can change container UUIDs; rebase only owned copies, never picker or open-in-place URIs. */
+/**
+ * Resolves only our saved attachment copies. iOS preserves Documents on updates
+ * but can change its container UUID. Picker and open-in-place source URIs must
+ * bypass this resolver so another app's document keeps its original location.
+ */
 export function resolveOwnedComposerAttachmentFileUri(
   uri: string,
   documentDirectoryUri: string,

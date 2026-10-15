@@ -90,9 +90,13 @@ export function ThemeSearchSection({
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<OpenVsxThemeExtension | null>(null);
   const requestRef = useRef<AbortController | null>(null);
-  // Remember the successful query/sort pair so an install finishing cannot clear its own error.
+  // The (query, sort) pair the last search actually ran, so an install
+  // finishing can tell a same-key rerun (which must not wipe an install
+  // error) from a query that changed mid-install (which must be searched).
   const lastSearchKeyRef = useRef<string | null>(null);
-  // Track effect-key changes to clear stale search errors without clearing fresh install errors.
+  // The (query, sort) pair from the previous effect run, so a search error
+  // that belongs to an older key can be cleared when the user returns to
+  // already-shown results without clearing a fresh install error.
   const prevSearchKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -176,11 +180,15 @@ export function ThemeSearchSection({
       return;
     }
     if (debouncedQuery !== query.trim()) {
-      // Wait for debounce to catch up so Open VSX never searches a query the input no longer shows.
+      // Searching it would hit Open VSX for a query that is no longer visible;
+      // wait for the debounce to catch up to the current input instead.
       return;
     }
     if (lastSearchKeyRef.current === searchKey) {
-      // Abort newer in-flight searches before keeping these results; clear errors only when the key changed.
+      // A request for a newer key may still be in flight (typed and then
+      // undone); abort it so it cannot overwrite the results. Only a genuine
+      // key change makes a stale search error irrelevant, so an install error
+      // on an unchanged query survives.
       requestRef.current?.abort();
       requestRef.current = null;
       setIsSearching(false);
@@ -188,8 +196,12 @@ export function ThemeSearchSection({
       return;
     }
     void runSearch(debouncedQuery);
-    // Only a query/sort change should rerun search after install; a same-key rerun must preserve install
-    // errors.
+    // `sortBy` is deliberately not a direct dependency: the guards above read
+    // the current value from the fresh render closure. An install finishing
+    // reruns the search only when the query or sort changed while it was in
+    // flight (checked via lastSearchKeyRef, recorded only once a search
+    // succeeds), so the install error the user needs to see is preserved
+    // across that rerun.
   }, [open, query, debouncedQuery, installingId, runSearch]);
 
   const handleSortChange = useCallback((value: OpenVsxThemeSort | null) => {

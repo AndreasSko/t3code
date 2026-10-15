@@ -132,13 +132,11 @@ export interface ReviewGuidePromptInput {
   /** The commit the change is measured from, already present in the checkout. */
   baseCommit: string;
   settledReview: string;
-  /** The maintainer's own preferences for guides, from settings. Empty for none. */
   instructions?: string | undefined;
   /** The stack the change is a layer of, bottom first. */
   stack?: ReadonlyArray<ReviewGuideStackLayer> | undefined;
 }
 
-/** Name adjacent stack layers only to explain their seams with this layer. */
 function reviewGuideStack(
   number: number,
   stack: ReadonlyArray<ReviewGuideStackLayer> | undefined,
@@ -179,8 +177,7 @@ function reviewGuidePreferences(instructions: string | undefined): string[] {
 }
 
 /**
- * The model reads the checkout; returned line numbers are trusted only after
- * the server clamps them to the change's hunks.
+ * Line numbers it returns are only trusted after the server clamps them to the change's hunks.
  */
 export function buildReviewGuidePrompt(input: ReviewGuidePromptInput) {
   const base = input.baseCommit;

@@ -321,7 +321,9 @@ export function NewTaskBranchPickerRouteScreen() {
           return;
         }
 
-        // Checkout already mutated Git; persist its draft selection even if the sheet closed.
+        // The checkout has already changed the repository. Persist the matching
+        // draft selection even if the native sheet was dismissed while the
+        // command was in flight; only visible-screen work is focus-gated below.
         flow.selectBranch(result.value);
         if (!mountedRef.current || !navigation.isFocused()) {
           return;

@@ -1,6 +1,7 @@
 /**
- * Use grok inspect --json so discovery honors native ignore/disable settings and plugin skills.
- * Keep workspace probe failures typed so snapshots do not cache an empty catalog.
+ * Asking the CLI beats scanning the filesystem because the catalog honors Grok's own skill
+ * config (ignore lists, disabled skills) and includes plugin skills, which live three levels
+ * deep under `~/.grok/installed-plugins/` where a flat scan cannot see them.
  */
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import type { GrokSettings } from "../settings.ts";
@@ -30,7 +31,6 @@ class GrokSkillsProbeError extends Schema.TaggedError<GrokSkillsProbeError>()(
   }
 }
 
-/** Keep non-user-invocable skills disabled so enabled-only pickers hide them. */
 function decodeGrokInspectSkills(stdout: string): ReadonlyArray<ServerProviderSkill> | undefined {
   let parsed: unknown;
   try {
@@ -76,8 +76,8 @@ function decodeGrokInspectSkills(stdout: string): ReadonlyArray<ServerProviderSk
 }
 
 /**
- * Best-effort callers may recover failures to an empty list; workspace callers
- * must leave them typed so failed discovery is not cached.
+ * Callers that need best-effort discovery can recover this effect to an empty list; workspace
+ * callers leave failures typed so they are not cached.
  */
 export const discoverGrokSkills = Effect.fn("discoverGrokSkills")(function* (
   grokSettings: Pick<GrokSettings, "binaryPath">,

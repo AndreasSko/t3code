@@ -39,7 +39,10 @@ const toBrowserDefaults = (settings: {
     appearance: settings.browserDefaultAppearance,
     autoShowFloatingPreview: settings.browserAutoShowFloatingPreview,
     profiles,
-    // Deleted profiles fall back. Incognito is per-tab only so every new tab is not signed out.
+    // Incognito is a per-tab choice, not a default: a profile that discards
+    // everything on close would leave every new tab signed out. Excluding it
+    // here keeps the resolved default equal to what the settings list offers,
+    // so the row badged "Default" is the one tabs actually open under.
     profileId:
       profiles.find(
         (profile) =>
@@ -48,13 +51,16 @@ const toBrowserDefaults = (settings: {
   };
 };
 
-/** Non-hook accessor for imperative open paths (menu actions, automation hosts). */
 export function getBrowserDefaults(): BrowserDefaults {
   return toBrowserDefaults(getClientSettings());
 }
 
-/** Await hydration so tabs use the user's profile and viewport, rather than schema defaults.
- * Reject read failures instead of opening a tab with the wrong settings. */
+/**
+ * Opening a preview is asynchronous anyway, and before hydration the snapshot
+ * is the schema defaults rather than the user's — a tab opened in that window
+ * would be born at the wrong viewport, zoom and appearance and never corrected.
+ * Read failures reject so a new tab cannot use the wrong profile or viewport.
+ */
 export async function resolveBrowserDefaults(): Promise<BrowserDefaults> {
   await ensureClientSettingsHydrated();
   return getBrowserDefaults();
@@ -64,14 +70,21 @@ export function useBrowserDefaults(): BrowserDefaults {
   return useClientSettings(toBrowserDefaults);
 }
 
-/** Pass at creation to avoid painting a frame at 100% zoom with system appearance. */
+/**
+ * Passing these at creation rather than after registration keeps the guest from
+ * painting a frame at 100%/system first.
+ */
 export function browserDefaultTabState(
   defaults: BrowserDefaults = getBrowserDefaults(),
 ): DesktopPreviewTabDefaults {
   return { zoomFactor: defaults.zoomFactor, colorScheme: defaults.appearance };
 }
 
-/** Send with preview.open so the configured viewport applies before the first frame. */
+/**
+ * The viewport a *newly opened* tab should start at. Sent with `preview.open`
+ * so the session is born at the configured size instead of being resized a
+ * frame later, which the user would see as a visible reflow.
+ */
 export function browserDefaultOpenViewport(
   defaults: BrowserDefaults = getBrowserDefaults(),
 ): PreviewViewportSetting {
@@ -84,8 +97,6 @@ export function browserDefaultOpenProfileId(
   return defaults.profileId;
 }
 
-/** Device-toolbar toggles prefer a configured non-fill viewport, then the measured panel,
- * and finally this fallback if the panel is unmeasured. */
 export const FALLBACK_RESPONSIVE_VIEWPORT_SIZE = { width: 1024, height: 768 } as const;
 
 export function browserResponsiveViewportForToggle(input: {

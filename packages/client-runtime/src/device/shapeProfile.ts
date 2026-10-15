@@ -103,7 +103,6 @@ const ANDROID_TABLET_SHAPE: DeviceShapeProfile = {
   backColor: 0x697b80,
 };
 
-/** Names identify a family when available; wide unknown screens get a generic tablet shell. */
 export function resolveDeviceShape(options: {
   platform: DevicePlatform;
   name?: string;

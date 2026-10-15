@@ -9,7 +9,10 @@ function errorCode(error: unknown): string | null {
   return typeof error.code === "string" ? error.code : null;
 }
 
-/** Personal Team builds lack expo-sharing's App Group, so unavailable sharing reads as an empty inbox. */
+/**
+ * Personal Team builds cannot include the App Group that expo-sharing reads
+ * from.
+ */
 export function createIncomingSharePayloadReader(input: {
   readonly platform: string;
   readonly readPayloads: () => ReadonlyArray<SharePayload>;

@@ -1,5 +1,3 @@
-/** Imports cookies, never passwords: Electron has no password store.
- * Availability distinguishes recoverable permissions from unsupported platforms. */
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
@@ -19,7 +17,12 @@ const BROWSER_IMPORT_SOURCE_IDS = [
 export const BrowserImportSourceId = Schema.Literals(BROWSER_IMPORT_SOURCE_IDS);
 export type BrowserImportSourceId = typeof BrowserImportSourceId.Type;
 
-/** Keychain approval and running browsers are recoverable; Windows App-Bound Encryption is unsupported. */
+/**
+ * `needsKeychainApproval` and `browserRunning` are recoverable — the user
+ * grants access or quits the browser. `unsupportedPlatform` is not: it covers
+ * cases like Chrome on Windows, whose App-Bound Encryption is designed to stop
+ * exactly this, and which we will not work around.
+ */
 export const BrowserImportUnavailableReason = Schema.Literals([
   "notInstalled",
   "needsKeychainApproval",
@@ -30,7 +33,11 @@ export const BrowserImportUnavailableReason = Schema.Literals([
 ]);
 export type BrowserImportUnavailableReason = typeof BrowserImportUnavailableReason.Type;
 
-/** Preflight may pass before import fails, e.g. when the user declines a keychain prompt. */
+/**
+ * A superset of the unavailable reasons: a source can pass the pre-flight
+ * check and still fail, most often because the user declined the keychain
+ * prompt the read triggers.
+ */
 export const BrowserImportFailureReason = Schema.Literals([
   ...BrowserImportUnavailableReason.literals,
   /** The operating system's keyring or its bundled reader is unavailable. */
@@ -40,11 +47,16 @@ export const BrowserImportFailureReason = Schema.Literals([
   "unknownSourceProfile",
   /** The target profile's Electron session could not be opened. */
   "sessionUnavailable",
-  /** Failed settings persistence clears the written partition so no orphan profile remains. */
+  /**
+   * The cookies were written, but the new profile could not be saved to
+   * settings, so its partition was cleared again rather than left orphaned.
+   */
   "profileNotSaved",
-  /** A concurrently reached profile cap clears the new partition instead of leaving an orphan. */
+  /**
+   * The cookies were written, but the profile count reached its cap while the
+   * import ran, so the new profile was not saved and its partition was cleared.
+   */
   "profileLimitReached",
-  /** Anything else: a corrupt database, a failed decrypt, a vanished file. */
   "readFailed",
 ]);
 export type BrowserImportFailureReason = typeof BrowserImportFailureReason.Type;
@@ -53,7 +65,10 @@ export const BrowserImportSourceProfile = Schema.Struct({
   /** Directory name under the source's user-data dir. */
   directory: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
-  /** Counted without decryption; absent when unreadable, e.g. Safari before Full Disk Access. */
+  /**
+   * Counted without decrypting, so it is cheap; absent when the store could not
+   * be read yet (Safari before Full Disk Access is granted).
+   */
   cookieCount: Schema.optional(Schema.Int),
 });
 export type BrowserImportSourceProfile = typeof BrowserImportSourceProfile.Type;
@@ -62,7 +77,6 @@ export const BrowserImportSource = Schema.Struct({
   id: BrowserImportSourceId,
   name: TrimmedNonEmptyString,
   profiles: Schema.Array(BrowserImportSourceProfile),
-  /** Absent when the source is importable. */
   unavailable: Schema.optional(BrowserImportUnavailableReason),
 });
 export type BrowserImportSource = typeof BrowserImportSource.Type;
@@ -84,9 +98,14 @@ export const DesktopPreviewImportCookiesInputSchema = Schema.Struct({
 
 export const BrowserImportResult = Schema.Struct({
   imported: Schema.Int,
-  /** Expired, malformed, or undecryptable cookies are reported so mostly-failed imports do not appear successful. */
+  /**
+   * Surfaced rather than hidden so a mostly-failed import doesn't look like a
+   * success.
+   */
   skipped: Schema.Int,
-  /** Capped host list identifies skipped sessions without exposing thousands of entries. */
+  /**
+   * Capped, since a broken key can skip thousands across many sites.
+   */
   skippedDomains: Schema.Array(Schema.String),
 });
 export type BrowserImportResult = typeof BrowserImportResult.Type;

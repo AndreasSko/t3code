@@ -31,10 +31,19 @@ import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
 
-/** Hide Chromium PDF chrome and fit width; the panel supplies its own header. */
+/**
+ * Chromium's viewer opens with its own toolbar, a thumbnail rail and a small
+ * zoom. The panel header is the only chrome we want, so ask for the page alone,
+ * fitted to the panel width.
+ */
 const PDF_VIEWER_FRAGMENT = "#toolbar=0&view=FitH";
 
-/** Pages can forge key reports; allow only view commands, never thread mutations. */
+/**
+ * Shortcuts that still work while a focused HTML render holds the keyboard.
+ * The page reports the keys, and a page script can report any key it likes,
+ * so only commands that change what the reader sees are here, never one that
+ * changes a thread.
+ */
 const HTML_RENDER_SHORTCUT_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
   "commandPalette.toggle",
   "filePicker.toggle",
@@ -51,21 +60,22 @@ const HTML_RENDER_SHORTCUT_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
   "thread.previous",
   "thread.next",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
-  // Share Cmd/Ctrl+digit with thread jumps, and act only while the picker is open.
   ...MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 ]);
 
 export const isPdfPreviewFile = (path: string): boolean =>
   /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 
-/** HTML needs an opaque sandbox origin to isolate app sessions and storage.
- * The script-free built-in PDF viewer requires an unsandboxed frame. */
+/**
+ * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
+ * the app's session or storage. The built-in PDF viewer needs an unsandboxed
+ * frame; a PDF runs no scripts.
+ */
 export function BrowserDocumentFrame(props: {
   readonly src: string;
   readonly title: string;
   readonly pdf: boolean;
   readonly htmlRender?: boolean;
-  /** The thread an HTML render's links open beside. */
   readonly threadRef?: ScopedThreadRef | undefined;
 }) {
   const className = "min-h-0 flex-1 border-0 bg-white";
@@ -96,15 +106,15 @@ export function BrowserDocumentFrame(props: {
   );
 }
 
-/** Bootstrap the theme before first paint and retain the initial src so
- * refreshing signed asset URLs cannot reload the page. */
+/**
+ * The first URL is kept for the frame's lifetime: signed asset URLs re-mint
+ * while it stays mounted, and a new src would reload the page.
+ */
 export function HtmlRenderDocument(props: {
   readonly src: string;
   readonly title: string;
   readonly className?: string;
-  /** The thread the page's links open beside, as a chat link would. */
   readonly threadRef?: ScopedThreadRef | undefined;
-  /** Receives the page's content height whenever it changes, so an inline frame can fit it. */
   readonly onContentHeight?: (height: number) => void;
 }) {
   const theme = useHtmlRenderTheme();
@@ -120,8 +130,10 @@ export function HtmlRenderDocument(props: {
   const environmentKeybindings = useAtomValue(
     serverEnvironment.configValueAtom(props.threadRef?.environmentId ?? null),
   )?.keybindings;
-  // Replay only Cmd/Ctrl chords: printable keys would type into the composer.
-  // Bindings for other commands block replay regardless of their live context.
+  // The app resolves a replayed key in its live context, so every allowed
+  // binding counts whatever its `when`, and a key that any binding gives to
+  // another command stays with the page. Only Cmd/Ctrl chords: a printable key
+  // would type into the composer instead.
   const { shortcuts, blocked } = useMemo(() => {
     const mac = isMacPlatform(navigator.platform);
     const resolve = (shortcut: KeybindingShortcut): HtmlRenderShortcut => ({
@@ -152,8 +164,10 @@ export function HtmlRenderDocument(props: {
     );
   };
   useEffect(postShortcuts, [blocked, shortcuts]);
-  // Pages can forge key/code pairs; reject chords that could match other commands.
-  // Named keys must match event.key too, while dead keys match by code.
+  // The page reports the key and code, and a page script can report any pair,
+  // so a key that could match another command's binding is never replayed. A
+  // named key (Backspace, Enter) must be the shortcut's own, since some app
+  // handlers read `event.key` directly. A dead key matches by its code.
   const isShortcut = useEffectEvent(
     (key: NonNullable<ReturnType<typeof readHtmlRenderKeyDown>>) => {
       const matches = (shortcut: HtmlRenderShortcut) =>
@@ -171,7 +185,6 @@ export function HtmlRenderDocument(props: {
   const openChangeRequestLink = useOpenChangeRequestLink(props.threadRef);
   const openLink = useOpenLink(props.threadRef);
   const open = useEffectEvent((url: string, modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
-    // The modifier's destination needs no saved setting, so it never waits on one.
     if (modifiers.metaKey || modifiers.ctrlKey) {
       void readLocalApi()
         ?.shell.openExternal(url)
@@ -191,8 +204,11 @@ export function HtmlRenderDocument(props: {
     }
     void openLink(url, { event: modifiers }).catch((cause: unknown) => console.error(cause));
   });
-  // Gate page-requested opens on focus and recent user activity to prevent opens
-  // on load; script focus can still wait for the next user click or key.
+  // The page cannot open windows itself (an inline page runs unopened, and
+  // desktop sends any window to the browser). It asks the client, which opens
+  // the link only while this frame has focus and the reader has just used the
+  // app. A page can take focus by script, so this stops opens on load, not a
+  // page that waits for the reader's next click or key.
   useEffect(() => {
     const openLink = (event: MessageEvent) => {
       const frame = frameRef.current;
@@ -212,8 +228,10 @@ export function HtmlRenderDocument(props: {
     window.addEventListener("message", openLink);
     return () => window.removeEventListener("message", openLink);
   }, []);
-  // Focused frames consume app shortcuts; replay only posted chords, with
-  // the same focus and recent-activity guard used for links.
+  // A focused frame takes every key, so app shortcuts would stop until the
+  // reader clicked out. The page passes on the chords posted to it, which replay
+  // on the frame element and bubble to the app's window listeners. A report is
+  // gated like a link and must be one of those chords.
   useEffect(() => {
     const replayKey = (event: MessageEvent) => {
       const frame = frameRef.current;
@@ -236,7 +254,8 @@ export function HtmlRenderDocument(props: {
     return () => window.removeEventListener("message", replayKey);
   }, []);
   const { onContentHeight } = props;
-  // Listen during layout so a fast page cannot post its first height before subscription.
+  // A page posts its height once per change, so listen from the commit that
+  // inserts the frame; a passive effect could run after a fast page's first post.
   useLayoutEffect(() => {
     if (onContentHeight === undefined) return;
     const resize = (event: MessageEvent) => {
@@ -262,8 +281,9 @@ export function HtmlRenderDocument(props: {
         postTheme();
         postShortcuts();
       }}
-      // Match the initial blank frame scheme to avoid a white flash in dark mode;
-      // follow the app scheme once its document loads.
+      // A frame whose color scheme differs from its document's paints an opaque
+      // canvas, so the blank document a frame starts with would flash white in
+      // dark mode. Once the page is in, its prefers-color-scheme follows the app.
       className={cn("border-0 scheme-light", props.className)}
       style={loaded ? { colorScheme: theme.appearance } : undefined}
     />

@@ -16,7 +16,11 @@ export function isPasteAsTextShortcut(
   );
 }
 
-/** Fold large text into files by byte size; character counts understate Unicode context cost. */
+/**
+ * Large clipboard text becomes a file so an agent can inspect it selectively.
+ * The threshold is byte-based: character counts substantially understate the
+ * context cost of some Unicode-heavy clipboard contents.
+ */
 export function pastedTextDisposition(input: {
   readonly text: string;
   readonly canAttach: boolean;
@@ -33,7 +37,6 @@ export function pastedTextDisposition(input: {
     : "inline";
 }
 
-/** Stable, human-readable names when a draft contains several folded pastes. */
 export function nextPastedTextFileName(existingNames: ReadonlyArray<string>): string {
   const names = new Set(existingNames.map((name) => name.toLowerCase()));
   if (!names.has("pasted-text.txt")) {

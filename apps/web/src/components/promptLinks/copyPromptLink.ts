@@ -43,7 +43,10 @@ export function promptLinkRepositoryOf(
     : null;
 }
 
-/** withContext includes repository and model; null means there is no prompt to share. */
+/**
+ * The draft in a composer as a link: its text and, with `withContext`, the project's repository
+ * and the model the composer has picked. Null when the composer holds no prompt to share.
+ */
 export function composerPromptLink(input: {
   readonly target: ComposerThreadTarget;
   readonly project: EnvironmentProject | undefined;

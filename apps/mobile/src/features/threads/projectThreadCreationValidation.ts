@@ -32,7 +32,12 @@ export const ProjectThreadCreationValidationError = Schema.Union([
 ]);
 export type ProjectThreadCreationValidationError = typeof ProjectThreadCreationValidationError.Type;
 
-/** Explicit branches win; only immediately sent local tasks may infer the live checkout, which queued tasks cannot predict. */
+/**
+ * A detached HEAD, a non-repository project, or a status that has not arrived
+ * stays null rather than fabricating a branch. Only the online creation path
+ * resolves a checkout; a queued task cannot know the checkout it will drain
+ * against.
+ */
 export function resolveProjectThreadCreationBranch(input: {
   readonly workspaceMode: "local" | "worktree";
   readonly selectedBranch: string | null;

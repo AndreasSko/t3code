@@ -65,7 +65,6 @@ interface ProjectScriptsControlProps {
   onRequestMenuClose?: () => void;
   environmentId: EnvironmentId;
   scripts: ReadonlyArray<ProjectScript>;
-  /** Scripts declared in the project's checked-in t3.json, offered for import. */
   fileScripts?: ReadonlyArray<T3ProjectFileScript>;
   preferredScriptId?: string | null;
   onRunScript?: ((script: ProjectScript) => void) | undefined;
@@ -443,8 +442,6 @@ export default function ProjectScriptsControl({
                 panel={isPanel}
                 className={isPanel ? undefined : "w-7 sm:w-6 @3xl/header-actions:w-auto!"}
                 aria-label={isPanel ? "Add project script" : "Add action"}
-                // The tooltip wrapper replaces data-slot="button", so themed
-                // toolbar styling needs its own hook.
                 data-toolbar-control=""
                 onClick={openAddDialog}
               />

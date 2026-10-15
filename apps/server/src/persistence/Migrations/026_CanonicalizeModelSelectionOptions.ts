@@ -1,7 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-/** Object-shaped persisted options fail the array-of-selections schema. */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 

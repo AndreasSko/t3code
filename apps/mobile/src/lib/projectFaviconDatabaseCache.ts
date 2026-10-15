@@ -14,7 +14,11 @@ const CACHE_SCHEMA_VERSION = 1;
 
 let database: MobileDatabase.MobileDatabase["Service"] | undefined;
 
-/** Favicon atoms retain this singleton outside Effect runtimes; attach the existing client_cache database instead of re-entering a runtime. */
+/**
+ * The cache is a module singleton because the favicon atom family holds it outside
+ * any Effect runtime. Its rows live in `client_cache`, so the environment cache store
+ * hands over the database it already owns instead of the cache re-entering the runtime.
+ */
 export function attachProjectFaviconDatabase(service: MobileDatabase.MobileDatabase["Service"]) {
   database = service;
 }
@@ -26,7 +30,11 @@ const runDatabase = <A, E>(
     ? Effect.runPromise(use(database))
     : Promise.reject(new Error("Project icon storage is not attached."));
 
-/** expo-image can encode only through its disk cache; remove the temporary thumbnail after reading its bytes. */
+/**
+ * The native decoder writes the downsized frame to expo-image's disk cache,
+ * which is the only encode path it exposes; the temporary entry is removed once
+ * its bytes are read.
+ */
 export async function downscaleProjectFavicon(
   image: { readonly url: string },
   signal: AbortSignal,
@@ -70,7 +78,10 @@ export async function downscaleProjectFavicon(
   throw new Error("Project icon thumbnail exceeds the cache limit.");
 }
 
-/** Store rows in client_cache so Client storage can count and clear them. */
+/**
+ * Rows live in `client_cache` so Settings → Client storage counts and clears
+ * them.
+ */
 export const projectFaviconDatabaseCache = createSharedProjectFaviconCache({
   storage: {
     list: () =>

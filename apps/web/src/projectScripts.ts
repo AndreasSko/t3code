@@ -36,7 +36,10 @@ export function buildProjectScript(id: string, input: ProjectScriptInput): Proje
   };
 }
 
-/** Each project has at most one script per role (setup or settle); claiming a role releases its previous holder. */
+/**
+ * A project runs at most one setup script and one settle script, so saving a
+ * script that claims either role takes it from the script that held it.
+ */
 export function releaseClaimedRoles(
   script: ProjectScript,
   saved: ProjectScriptInput,
@@ -99,7 +102,6 @@ export function nextProjectScriptId(name: string, existingIds: Iterable<string>)
     suffix += 1;
   }
 
-  // This last-resort fallback only triggers after exhausting thousands of suffixes.
   return `${baseId}-${Date.now()}`.slice(0, MAX_SCRIPT_ID_LENGTH);
 }
 

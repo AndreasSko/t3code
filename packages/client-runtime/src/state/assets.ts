@@ -81,7 +81,6 @@ export type AssetUrlState =
       readonly expiresAt: number;
       /** The host path the server chose to serve, when it differs from what was asked for. */
       readonly sourcePath?: string;
-      /** Pixel size from the image header, when the server could read one. */
       readonly imageDimensions?: AssetImageDimensions;
     };
 
@@ -89,8 +88,10 @@ export const MISSING_FILE_ACCESS_MESSAGE =
   "This connection cannot read host files. Pair again with a new link to view it.";
 
 /**
- * Return null to let the client request the asset. Host files require
- * `filesystem:read`; a missing grant must prompt pairing rather than imply deletion.
+ * The state for a host file this session cannot read yet, or null when the client
+ * should ask the host. The host requires `filesystem:read` for these resources, so
+ * clients skip the request. A connected session without the scope gets its own
+ * reason, so the UI can say to pair again instead of implying the file is gone.
  */
 export function blockedAssetUrlState(
   resource: AssetResource | null,
@@ -207,7 +208,10 @@ export function createAssetEnvironmentAtoms<R, E>(
   };
 }
 
-/** Retains each icon's last URL or confirmed absence across environment reconnects. */
+/**
+ * Keeps project icons visible while their environment reconnects. Each resource
+ * owns its last resolved URL, including a confirmed missing-icon response.
+ */
 export function createProjectFaviconUrlAtomFamily(input: {
   readonly imageCache?: ProjectFaviconCache;
   readonly createUrl: (target: {
@@ -229,7 +233,9 @@ export function createProjectFaviconUrlAtomFamily(input: {
     const [environmentId, cwd, path] = decodeKey(JSON.parse(key));
     const resource = { _tag: "project-favicon" as const, cwd, ...(path ? { path } : {}) };
     const query = input.createUrl({ environmentId, input: { resource } });
-    // Projects exist before cloned files do; retry the icon on clone phase changes, including an initial done state.
+    // A cloned project exists before its files do, and the server reports its
+    // icon missing until the clone lands. Ask again whenever the clone's phase
+    // changes: the first list a client sees may already say done.
     const request = projectClones
       ? query.pipe(
           Atom.makeRefreshOnSignal(

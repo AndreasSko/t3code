@@ -44,7 +44,8 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
 
   const openChildThread = (childThreadId: ThreadId) => {
     void Haptics.selectionAsync();
-    // Replace the leaf sheet so the child joins the workspace stack expected by Home's Back button.
+    // Replace rather than push: the sheet is a leaf, and the child thread
+    // belongs in the workspace stack where Home's back button expects it.
     navigation.dispatch(
       StackActions.replace("Thread", {
         environmentId: target.environmentId,
@@ -82,7 +83,8 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
   );
 
   if (Platform.OS === "ios") {
-    // formSheet omits a stack header; provide one with a nested native stack.
+    // A plain formSheet screen never renders a stack header, so it comes from
+    // a nested native stack inside the sheet (same shape as the git sheet).
     return (
       <View collapsable={false} className="flex-1 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
@@ -175,7 +177,10 @@ function AgentElapsed(props: {
   );
 }
 
-/** Only live work ticks inside AgentElapsed, keeping metadata and settled sheets passive. */
+/**
+ * Only live work ticks, inside AgentElapsed, so the timer never repaints the metadata or a
+ * settled sheet.
+ */
 function useSubagentElapsed(
   subagent: Pick<OrchestrationV2Subagent, "status" | "startedAt" | "completedAt">,
   tickSeconds: boolean,

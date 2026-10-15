@@ -199,9 +199,11 @@ export function PreviewView({
         : findActiveBrowserRecordingRuntimeTabId(threadRef, tabId)
       : null;
   const snapshot = tabId ? (previewState.sessions[tabId] ?? null) : null;
-  // Desktop renders its own server tabs natively; other clients receive the environment browser stream.
+  // Server tabs run in the environment's browser and stream to any client, except the
+  // desktop app's own server's tabs, which render here natively while the server drives them.
   const nativeServerTab = useRendersServerTabNatively(threadRef.environmentId, snapshot);
   const isServerTab = snapshot?.runtime === "server" && !nativeServerTab;
+  /** The server owns this tab's appearance, zoom, and size, whoever renders it. */
   const serverOwnsRendering = snapshot?.runtime === "server";
   const serverSurfaceRef = useRef<ServerBrowserHandle | null>(null);
   const [serverAspectRatioLocked, setServerAspectRatioLocked] = useState(false);
@@ -233,8 +235,12 @@ export function PreviewView({
   const controller = desktopOverlay?.controller ?? "none";
   const viewport = snapshot?.viewport ?? FILL_PREVIEW_VIEWPORT;
   const browserDefaults = useBrowserDefaults();
-  // Profile-less tabs run in the built-in default partition, not the current
-  // default profile. Passing undefined to IPC would clear every profile.
+  // A tab created before profiles existed carries no profile of its own. It
+  // runs in the built-in `default` partition — the scope the browser used
+  // before profiles — not in whatever profile is configured as the default
+  // now, so that is what its label names and its clear actions target.
+  // Passing the snapshot's raw `undefined` through would reach the IPC layer
+  // as "every profile".
   const activeProfileId = snapshot?.profileId ?? DEFAULT_BROWSER_PROFILE_ID;
   const activeProfileName = previewProfileName(browserDefaults.profiles, activeProfileId);
   const panelRect = useBrowserSurfaceStore((state) =>
@@ -288,9 +294,7 @@ export function PreviewView({
         if (await navigateToResolvedUrl(resolved)) {
           recordVisitForThread(threadRef, resolved);
         }
-      } catch {
-        // Only empty input or an unsupported scheme lands here; the bar keeps the text.
-      }
+      } catch {}
     },
     [navigateToResolvedUrl, threadRef],
   );
@@ -486,8 +490,11 @@ export function PreviewView({
     useRightPanelStore.getState().close(threadRef);
   }, [miniPlayerTabId, tabId, threadRef]);
 
-  /** Server-owned appearance runs through the environment so clients and agents
-   * share state; DevTools and separate windows need the desktop page. */
+  /**
+   * A server tab, streamed or rendered natively here, runs them through its
+   * environment, so every client and agent sees one state. Opening DevTools and
+   * a separate window need the desktop's own page.
+   */
   const desktopCall = (op: ((tabId: string) => Promise<void>) | undefined) => () => {
     if (op && runtimeTabId) void op(runtimeTabId).catch(() => undefined);
   };
@@ -792,8 +799,9 @@ export function PreviewView({
       void previewBridge.cancelPickElement(runtimeTabId).catch(() => undefined);
       return;
     }
-    // Capture focus before main transfers it to the guest webContents; restore
-    // it after picking so the user can keep typing in the same context.
+    // Snapshot whatever the user was focused on (typically the chat composer
+    // textarea or the chrome-row pick button) BEFORE main steals focus into the
+    // guest webContents.
     const previouslyFocused =
       typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
     const pickRequest = { cancelled: false };
@@ -810,15 +818,20 @@ export function PreviewView({
         if (pickRequest.cancelled) return;
         const result = await previewBridge.pickElement(runtimeTabId);
         if (!result || pickRequest.cancelled) return;
-        // Submitted picks must survive later cancellation, tab changes, and unmounts.
+        // The user has submitted. Nothing that happens after this point (a
+        // second picker click, a tab change, unmount) may discard it, so the
+        // pick stops being cancellable here rather than in `finally`.
         if (pickActiveRef.current === pickRequest) {
           pickActiveRef.current = null;
           if (isMountedRef.current) setPickActive(false);
           submitted = true;
         }
         const { annotation: picked, submission, screenshotFailed = false } = result;
-        // Failed crops must not block annotations or leave the prompt claiming an
-        // unsent screenshot is attached.
+        // The structured annotation is still sendable when its optional crop
+        // stalls or fails, so tell the user what they lost and keep going
+        // instead of holding the composer for an attachment that never lands.
+        // The stored copy drops the screenshot on failure, otherwise the prompt
+        // would tell the agent a crop is attached when none was sent.
         const capture = capturePreviewAnnotationScreenshot(picked);
         const cropDropped = screenshotFailed || capture.status === "failed";
         const annotation = capture.status === "failed" ? { ...picked, screenshot: null } : picked;
@@ -857,9 +870,7 @@ export function PreviewView({
           onSendAnnotation?.(annotation, image);
         }
       } catch {
-        // Picker failed (e.g. webview navigated). Treat as silent cancel.
       } finally {
-        // Guard state updates when the panel unmounts with a pick still in flight.
         const isCurrentPick = pickActiveRef.current === pickRequest;
         if (isCurrentPick) {
           pickActiveRef.current = null;
@@ -888,7 +899,6 @@ export function PreviewView({
       .catch(() => undefined);
   }, [canSendAnnotation, pickActive, runtimeTabId]);
 
-  // Tab changes must cancel the main picker and reset the local pressed state.
   useEffect(() => {
     return () => {
       if (!pickActiveRef.current) return;
@@ -960,16 +970,22 @@ export function PreviewView({
         }
         onPickElement={previewBridge && tabId && !isServerTab ? handlePickElement : undefined}
         pickActive={pickActive}
-        // Failed pages have an overlay that prevents clicking the underlying webview.
+        // Disable when there's no tab (nothing to pick on) OR the page
+        // failed to load (a React overlay covers the webview, so the
+        // user wouldn't be able to actually click anything underneath).
         pickDisabled={!tabId || isUnreachable}
         pickDisabledReason={
           isUnreachable ? "Page didn't load — pick unavailable until the page renders" : undefined
         }
         leadingActions={
-          // Only label non-default profiles to avoid noise on ordinary tabs.
           activeProfileId !== browserDefaults.profileId ? (
-            // Cap profiles at 48 characters to preserve URL input width; inline-flex badges
-            // need an inner span for text-overflow ellipsis.
+            // Capped: profile names run to 48 characters, and an unbounded
+            // badge in this row takes its width from the URL input, the only
+            // flexible element in the compact chrome. The cap sits on the
+            // badge and the truncation on an inner span, because `Badge` is an
+            // `inline-flex` with `whitespace-nowrap` — `text-overflow` never
+            // reaches a bare text node inside it, so the name would be cut off
+            // at both ends with no ellipsis.
             <Tooltip>
               <TooltipTrigger render={<Badge variant="outline" className="max-w-28 shrink-0" />}>
                 <span className="truncate">{activeProfileName}</span>

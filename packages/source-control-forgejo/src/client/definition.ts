@@ -14,7 +14,10 @@ const CHANGE_REQUEST_REFERENCE =
 
 const KIND = SourceControlProviderKind.make("forgejo");
 
-/** Resolved web URLs retain mount paths that the host and owner/repo selector cannot express. */
+/**
+ * The repository's browser URL the server resolved from the signed-in account, which is the
+ * only place a Forgejo mounted below a path says so.
+ */
 function resolvedWebUrl(identity: ChangeRequestProjectIdentity): URL | null {
   if (!identity.webUrl) return null;
   try {
@@ -38,7 +41,8 @@ export const definition = defineSourceControlClient({
   publishHost: (signedInHost) => signedInHost ?? "your server",
   newRepositoryOwner: (account) => (account ? { owner: account } : null),
   defaultCloneTransport: "https",
-  // Prefer the resolved web URL, then a matching HTTP remote; SSH does not identify web ports.
+  // The server's resolved web URL wins; otherwise an HTTP remote on the same host names the
+  // origin, which may carry a port. SSH remotes say nothing about the web origin.
   changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) => {
     if (webUrl) return `${webUrl.replace(/\/+$/, "")}/pulls/${number}`;
     try {

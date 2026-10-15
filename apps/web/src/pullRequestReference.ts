@@ -2,7 +2,11 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 
 const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
 
-/** Accept host change-request URLs, bare numbers, and checkout commands; unrelated inputs return null. */
+/**
+ * The change request a pasted reference names: a host's change request URL, returned as is, or
+ * a bare number. A host's checkout command, such as `gh pr checkout 42`, is read for its
+ * argument first. Null for anything else, such as a branch name.
+ */
 export function parsePullRequestReference(input: string): string | null {
   const trimmed = input.trim();
   if (trimmed.length === 0) {

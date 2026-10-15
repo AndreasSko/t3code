@@ -135,7 +135,6 @@ function SidebarControl() {
   }, [keybindings, toggleSidebar, usagePageOpen]);
 
   return (
-    // Mirror the right controls' 1px border compensation to keep the titlebar symmetric.
     // The sheet owns its trigger until its closing transition unmounts it.
     <div
       className={cn(

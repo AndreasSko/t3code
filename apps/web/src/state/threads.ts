@@ -55,7 +55,6 @@ const isRunning = (status: string) =>
 
 type KeptThreads = ReadonlyMap<EnvironmentId, ReadonlySet<ThreadId>>;
 
-// Loading and reconnecting detail streams must stay mounted until their own stop arrives.
 function isDetailDone<E>(result: AsyncResult.AsyncResult<EnvironmentThreadState, E>): boolean {
   if (!AsyncResult.isSuccess(result)) return true;
   const { status, data, error } = result.value;
@@ -66,7 +65,15 @@ function isDetailDone<E>(result: AsyncResult.AsyncResult<EnvironmentThreadState,
   );
 }
 
-/** Mount this atom; its value is bookkeeping. Keep threads until their independent detail streams show the stop. */
+/**
+ * Keeps the thread state atom mounted for each running thread in the listed
+ * environments. Mount the result; its value is only bookkeeping.
+ *
+ * The shell and detail streams are independent, so the shell can report a
+ * stop before the detail loads or catches up. A stopped thread stays mounted
+ * until its own detail is live and shows the stop too. Then the stream closes
+ * and saves the settled state to disk.
+ */
 export function createRunningThreadKeepAliveAtom<E>(input: {
   readonly environmentIdsAtom: Atom.Atom<ReadonlyArray<EnvironmentId>>;
   readonly threadsAtom: (
@@ -103,7 +110,6 @@ export function createRunningThreadKeepAliveAtom<E>(input: {
         // stream open until some other change rebuilds this atom.
         if (isDetailDone(get.once(stateAtom))) continue;
         threadIds.add(threadId);
-        // Rebuild when this detail is done, not on each update.
         get.subscribe(stateAtom, (state) => {
           if (isDetailDone(state)) get.refreshSelf();
         });
@@ -115,7 +121,6 @@ export function createRunningThreadKeepAliveAtom<E>(input: {
   }).pipe(Atom.withLabel("web-running-thread-keep-alive"));
 }
 
-/** Mounted by `RunningThreadKeepAlive` on desktop, for every enabled environment. */
 export const runningThreadKeepAliveAtom = createRunningThreadKeepAliveAtom({
   environmentIdsAtom: Atom.map(environmentCatalog.catalogValueAtom, (catalog) => [
     ...enabledEnvironmentIds(catalog),

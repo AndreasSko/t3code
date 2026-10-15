@@ -49,7 +49,6 @@ export interface ChatImageAttachment extends ContractChatImageAttachment {
 export interface ChatFileAttachment extends ContractChatFileAttachment {
   readonly previewUrl?: string;
   readonly downloadable?: boolean;
-  /** A page an agent published with `html_render`; its viewer hands it the app theme. */
   readonly htmlRender?: boolean;
 }
 
@@ -63,7 +62,10 @@ export type ChatAttachment = ChatImageAttachment | ChatFileAttachment | ChatUnkn
 // The union has an open member (`type: string`), so a literal comparison does
 // not narrow. Use these guards wherever type-specific fields are read.
 export function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {
-  // Reclassify legacy image files only; unknown attachment types must remain inert.
+  // Messages sent before pictures were typed by content carry `file`; they are still
+  // pictures, and reading them as such is what lets them render instead of listing. Only
+  // `file` is reclassified: an attachment type this client does not know yet is not a
+  // picture by default, whatever its name says.
   if (attachment.type === "image") return true;
   return attachment.type === "file" && imageMimeType(attachment) !== null;
 }

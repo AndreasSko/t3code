@@ -1,4 +1,8 @@
-// Scope the roster to one run so a current-turn pill does not count all historical subagents.
+/**
+ * Scoped to a run rather than the whole thread: a thread accumulates every
+ * subagent it ever spawned, while the pill and its sheet answer "what is this
+ * turn doing right now".
+ */
 import * as DateTime from "effect/DateTime";
 import type { OrchestrationV2Subagent, OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
@@ -58,7 +62,6 @@ export function deriveThreadTurnSubagents(
   return { runId, turnActive: activeRun !== null, subagents, liveCount, settledCount };
 }
 
-/** Hide the pill once the turn settles so stale counts do not linger above the composer. */
 export function resolveSubagentPillSegment(
   turn: ThreadTurnSubagents | null,
 ): SubagentPillSegment | null {

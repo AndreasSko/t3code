@@ -23,7 +23,11 @@ function publishedThemeColors(
   appearance: ThemeAppearance,
   colors: Readonly<Record<string, string>> | undefined,
 ): ThemeColors {
-  // Only generate the appearance matching the seed; a dark seed would make a light variant unreadable.
+  // Seeds generate the base with the guided theme editor's generator, so a
+  // desktop theme arrives as a coherent T3 Code palette rather than a foreign
+  // one — but only for the appearance they describe. A variant builds on that
+  // appearance's stock defaults: the generator follows the seed canvas's
+  // luminance, so dark seeds would give a light variant unreadable colors.
   const base =
     appearance === theme.appearance && theme.canvas !== undefined && theme.accent !== undefined
       ? createVividThemeColors(appearance, theme.canvas, theme.accent)
@@ -31,7 +35,6 @@ function publishedThemeColors(
   return { ...base, ...lenientThemeColorOverrides(colors ?? {}) };
 }
 
-/** Accept seeded desktop palettes and standard exported files as published themes. */
 export function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefinition {
   const variants: Partial<Record<ThemeAppearance, ThemeColors>> = {};
   for (const [variantAppearance, variantColors] of Object.entries(theme.variants ?? {})) {
@@ -49,7 +52,10 @@ export function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefini
     appearance: theme.appearance,
     colors: publishedThemeColors(theme, theme.appearance, theme.colors),
     ...(Object.keys(variants).length > 0 ? { variants } : {}),
-    // Only pure seeds use the guided editor; regeneration would discard explicit role overrides.
+    // Only the pure seeded form is guided-generator output. An exported file,
+    // or seeds carrying explicit role overrides, must open Duplicate in the
+    // advanced editor -- the guided one regenerates from canvas and accent and
+    // would discard whatever the machine hand-tuned.
     ...(theme.canvas !== undefined &&
     theme.accent !== undefined &&
     theme.colors === undefined &&
@@ -59,7 +65,12 @@ export function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefini
   };
 }
 
-/** Reject reserved ids to avoid cards resolving to built-ins or capturing stock dark/light preferences. */
+/**
+ * Published palettes this client can render. Reserved ids are dropped here rather
+ * than rendered: a published `t3-iris.json` would show this palette on its
+ * card while "Use" resolved the built-in, and a published `dark.json` would
+ * capture everyone whose stored preference is the stock `"dark"`.
+ */
 export function publishedThemeDefinitions(
   themes: ReadonlyArray<EnvironmentTheme>,
 ): ReadonlyArray<ThemeDefinition> {
@@ -80,14 +91,15 @@ export function useEnvironmentThemeDefinitions(): ReadonlyArray<ThemeDefinition>
   return useSyncExternalStore(subscribeToCustomThemes, getEnvironmentThemes, () => []);
 }
 
-/** Follow the primary environment's published themes; reapply the selected one when its palette changes. */
 export function useEnvironmentThemeSync(): void {
   const published = useAtomValue(primaryServerEnvironmentThemesAtom);
   const { refreshTheme } = useTheme();
   const lastPublished = useRef<ReadonlyArray<EnvironmentTheme> | null>(null);
 
   useEffect(() => {
-    // Reconnect snapshots are usually identical; avoid regenerating palettes and repainting for unchanged data.
+    // Every reconnect snapshot delivers a fresh but usually identical array;
+    // regenerating palettes and repainting the document for it is exactly the
+    // wasted-frame class this codebase audits for.
     if (lastPublished.current !== null && Equal.equals(lastPublished.current, published)) return;
     lastPublished.current = published;
 

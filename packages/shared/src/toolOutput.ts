@@ -108,7 +108,6 @@ function boundedId(value: unknown): string | undefined {
   return Array.from(value).join("");
 }
 
-/** Keeps only IDs and failure metadata used by T3's grouped tool summaries. */
 export function compactDynamicToolOutput(value: unknown): CompactToolOutput | undefined {
   const budget: ResultReadBudget = {
     remainingBytes: MAX_PARSED_BYTES,
@@ -190,8 +189,13 @@ export function htmlRenderFromToolItem(item: {
   return output?.isError ? undefined : output?.htmlRender;
 }
 
-/** Accept an app reference only when it names this item's server and tool,
- * so a tool result cannot point at another server's app. */
+/**
+ * The MCP App a completed tool call carries, if any. The adapter that captured
+ * it put the reference in the output, beside the tool's own result. A tool's
+ * result can imitate that shape, so the reference only counts when it names
+ * the very server and tool the item records: a server can then only ever
+ * point at an app of its own.
+ */
 export function mcpAppFromToolItem(item: {
   readonly toolName: string | null | undefined;
   readonly output?: unknown;
@@ -220,7 +224,10 @@ export interface ToolOutputImage {
   readonly data?: string;
 }
 
-/** Reads MCP and Anthropic base64 image blocks; raster only so SVG/HTML cannot be served inline. */
+/**
+ * Only raster types are recognized, so the server never serves an agent's SVG
+ * or HTML inline.
+ */
 export function readToolOutputImage(block: unknown): ToolOutputImage | null {
   if (!Predicate.isObject(block) || block.type !== "image") return null;
   const source = Predicate.isObject(block.source) ? block.source : undefined;
@@ -247,7 +254,6 @@ export const MAX_TOOL_OUTPUT_IMAGES = 8;
 export const MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH =
   Math.ceil(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / 3) * 4;
 
-/** Image blocks by reference; the asset reader enforces the base64 size limit. */
 export function toolOutputImageBlocks(value: unknown): ReadonlyArray<unknown> {
   const blocks: unknown[] = [];
   for (const block of outputBlocks(value)) {
@@ -258,7 +264,10 @@ export function toolOutputImageBlocks(value: unknown): ReadonlyArray<unknown> {
   return blocks;
 }
 
-/** Asset indices follow this order; servers and clients must agree. */
+/**
+ * The order is the `tool-output-image` asset index, so servers and clients
+ * agree on it.
+ */
 export function toolOutputImages(value: unknown): ReadonlyArray<ToolOutputImage> {
   return toolOutputImageBlocks(value).flatMap((block) => readToolOutputImage(block) ?? []);
 }

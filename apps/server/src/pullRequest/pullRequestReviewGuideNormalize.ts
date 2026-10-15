@@ -26,7 +26,11 @@ const hunkRange = (start: string, count: string | undefined): LineRange | null =
   return lines === 0 ? null : { start: Number(start), end: Number(start) + lines - 1 };
 };
 
-/** Parse matching name-only and unified=0 diffs; renames use the new path, deletions the old path. */
+/**
+ * Reads `git diff --name-only -z` and `git diff --unified=0` of the same range. Hunks are keyed
+ * by the new path, or the old one for a deleted file, so both sides of a renamed file sit under
+ * the name the model sees in `--stat`.
+ */
 export function parseReviewGuideChange(nameOnly: string, patch: string): ReviewGuideChange {
   const hunks = new Map<string, FileHunks>();
   let oldPath: string | null = null;
@@ -105,7 +109,11 @@ function mergeExcerpts(
 
 const nonEmpty = (value: string) => value.trim() !== "";
 
-/** Model line numbers and ids are suggestions; constrain excerpts and notes to changes and include skipped files. */
+/**
+ * A model's line numbers and ids are suggestions: excerpts are clamped to changed lines, notes
+ * must sit inside what is left, and any changed file the tour skipped lands in a closing skim
+ * stop.
+ */
 export function normalizeReviewGuide(
   guide: ReviewGuideGenerationResult,
   change: ReviewGuideChange,
@@ -143,7 +151,8 @@ export function normalizeReviewGuide(
       };
     });
 
-  // Only unexcerpted files need a files entry, listed once across stops.
+  // A file can be excerpted in several stops, its shape in one and its implementation in another.
+  // A files entry is for a file the tour never shows, so it is listed once and only then.
   const placed = new Set(shaped.flatMap((stop) => stop.excerpts.map((excerpt) => excerpt.path)));
   const stops = shaped.map((stop) => {
     const files = stop.files.filter((file) => !placed.has(file.path));

@@ -251,7 +251,9 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
 
   const behindCount = gitStatus.data?.behindCount ?? 0;
 
-  // Query pending also covers quiet background refreshes; track explicit refreshes so the spinner settles.
+  // Deterministic refresh state. Tying RefreshControl to the query's
+  // isPending flag left the spinner stuck (the status query reports pending
+  // during quiet background refreshes too).
   const [isRefreshing, setIsRefreshing] = useState(false);
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -432,7 +434,9 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   }
 
   if (Platform.OS === "ios") {
-    // formSheet omits its stack header; use a nested native stack for the branch header and pull-to-refresh content.
+    // Compact form sheet: a plain screen presented as formSheet never renders a
+    // stack header, so — like the Settings sheet — the header must come from a
+    // nested native stack INSIDE the sheet.
     return (
       <View collapsable={false} className="flex-1 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>

@@ -595,7 +595,6 @@ const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
 
 const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
   payload: Schema.Struct({
-    /** Omit instanceId to refresh all configured instances. */
     instanceId: Schema.optional(ProviderInstanceId),
     cwd: Schema.optional(TrimmedNonEmptyString),
     /** With `instanceId` and `cwd`: rescan the workspace's skills and slash
@@ -883,7 +882,6 @@ const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
   error: Schema.Union([EnvironmentAuthorizationError, UsageReadError]),
 });
 
-/** Refetch before the daily TTL to price newly released models in the next usage summary. */
 const WsServerRefreshUsageRatesRpc = Rpc.make(WS_METHODS.serverRefreshUsageRates, {
   payload: Schema.Struct({}),
   success: UsagePricing,
@@ -937,7 +935,11 @@ const WsPullRequestsListRpc = Rpc.make(WS_METHODS.pullRequestsList, {
   error: PullRequestRpcError,
 });
 
-/** Fetch line counts separately: GitHub's count lookup cost 40-60% of listing time. */
+/**
+ * The line counts for rows already on the page. Its own call because on GitHub the pair costs
+ * 40-60% of the listing read that answers everything else on the row, so the rows arrive first
+ * and their stats a moment later.
+ */
 const WsPullRequestsListStatsRpc = Rpc.make(WS_METHODS.pullRequestsListStats, {
   payload: PullRequestListStatsInput,
   success: PullRequestListStatsResult,
@@ -1101,7 +1103,11 @@ const WsPullRequestsSubscribeRefreshesRpc = Rpc.make(WS_METHODS.pullRequestsSubs
   stream: true,
 });
 
-/** Load candidates only when the menu opens to avoid unused host requests. */
+/**
+ * Read on its own rather than as part of the detail: the people who may be asked are only wanted
+ * once somebody opens the menu, and reading them with every change request would spend a request
+ * per host on a list nobody looked at.
+ */
 const WsPullRequestsReviewerCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsReviewerCandidates, {
   payload: PullRequestRef,
   success: PullRequestReviewerCandidateList,
@@ -1114,7 +1120,7 @@ const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsReques
   error: PullRequestRpcError,
 });
 
-/** Load only when the label menu opens to avoid unused host requests. */
+/** Read when the label menu opens, for the same reason the reviewer candidates are. */
 const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCandidates, {
   payload: PullRequestRef,
   success: PullRequestLabelCandidateList,
@@ -1139,7 +1145,8 @@ const WsSourceControlCloneRepositoryRpc = Rpc.make(WS_METHODS.sourceControlClone
   error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
 });
 
-// Returns once the project exists and cloning starts; subscribe for progress.
+// Clone-backed project creation. `start` returns once the project exists and
+// the clone is running; progress arrives on the subscription.
 const WsProjectCloneStartRpc = Rpc.make(WS_METHODS.projectCloneStart, {
   payload: ProjectCloneStartInput,
   success: ProjectCloneStartResult,
@@ -1211,14 +1218,12 @@ const WsProjectsMutateRpc = Rpc.make(WS_METHODS.projectsMutate, {
   error: Schema.Union([ProjectMutationError, EnvironmentAuthorizationError]),
 });
 
-// Scratch is rooted at ServerConfig.scratchWorkspaceRoot.
 const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
   payload: Schema.Struct({}),
   success: ProjectEnsureScratchResult,
   error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
 });
 
-// Creates under ServerConfig.newProjectsRoot, including a first commit.
 const WsProjectsCreateNewRpc = Rpc.make(WS_METHODS.projectsCreateNew, {
   payload: ProjectCreateNewInput,
   success: ProjectCreateNewResult,
@@ -1396,10 +1401,6 @@ const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
 });
 
-/**
- * Ephemeral preview for compact/mobile surfaces; persisted reviews use
- * review.open* and review.getSnapshot.
- */
 const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   payload: ReviewDiffPreviewInput,
   success: ReviewDiffPreviewResult,
@@ -1710,13 +1711,17 @@ const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMeta
 
 export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
   payload: Schema.Struct({
-    /** Opt in because older clients fail on unknown environmentThemesUpdated events. */
+    /**
+     * Already-shipped clients decode the stream against the old event union and
+     * would die on an unknown member, so the server emits the theme stream only
+     * to subscribers that ask for it.
+     */
     environmentThemes: Schema.optional(Schema.Boolean),
-    /** Whether this client understands `usageLimitSourcesUpdated` events. */
     usageLimitSources: Schema.optional(Schema.Boolean),
     /**
-     * Advertise only if the client handles /usage-limits; older clients
-     * would send that command to the provider as an ordinary prompt.
+     * Whether this client answers `/usage-limits` itself. The server injects
+     * that command into provider catalogs only for such clients; an older
+     * client would send it to the provider as an ordinary prompt.
      */
     usageLimitsCommand: Schema.optional(Schema.Boolean),
   }),
@@ -1823,7 +1828,10 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
   stream: true,
 });
 
-/** Checks scopes before handlers run; every RPC in WsRpcGroup must carry it. */
+/**
+ * Every RPC in `WsRpcGroup` carries it, so a handler cannot be added without
+ * authorization.
+ */
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
   "t3/contracts/RpcScopeAuthorization",
   { error: EnvironmentAuthorizationError },

@@ -24,7 +24,6 @@ function recordModelOptionsInState(
   };
 }
 
-/** No memory falls back to descriptor defaults. */
 function lookupModelOptionsInState(
   state: ModelOptionMemoryState,
   instanceId: string,
@@ -60,7 +59,6 @@ export function rememberedModelOptions(
   );
 }
 
-/** Preserve incoming selections when nothing is remembered or the remembered choices already match. */
 export function withRememberedModelOptions<
   T extends {
     readonly instanceId: string;

@@ -70,7 +70,6 @@ function projectHostAndProvider(project: OrchestrationProjectShell | undefined):
   };
 }
 
-// Prefer URL identity; otherwise fill repository/number with the caller project's host.
 const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   input: PullRequestTargetInput,
   project: OrchestrationProjectShell | undefined,
@@ -151,8 +150,10 @@ export function listThreadPullRequests(
   };
 }
 
-// Host reads require a checkout project; prefer the caller's matching
-// repository, then another matching project. No checkout means no guide.
+/**
+ * Host reads are scoped to a project, so a repository with no checkout in this
+ * environment cannot be guided from it.
+ */
 function projectForPullRequest(
   projects: ReadonlyArray<OrchestrationProjectShell>,
   target: { readonly host: string; readonly repository: string },
@@ -252,7 +253,6 @@ const make = Effect.gen(function* () {
         ? Effect.failCause(cause as Cause.Cause<never>)
         : Effect.fail(new Failure({ cause }));
 
-  // Link and watch in one command so the reported state matches the stored result.
   const setWatching = Effect.fn("PullRequestsToolkit.setWatching")(function* (
     input: PullRequestTargetInput,
     watching: boolean,
@@ -268,8 +268,8 @@ const make = Effect.gen(function* () {
       return yield* new PullRequestWatchFromSubagentError();
     }
     const before = watchedLink(thread);
-    // Merged PRs cannot reopen; closed snapshots may be stale, so let the
-    // watch's first host read confirm whether to stop.
+    // A merged pull request cannot reopen. A closed one can, and its saved state may be stale,
+    // so the watch starts and its first read ends it if the host still says closed.
     if (watching && before?.snapshot?.state === "merged") {
       return yield* new PullRequestNotOpenError({ state: "merged" });
     }
@@ -296,7 +296,6 @@ const make = Effect.gen(function* () {
     };
   });
 
-  // Prefer the caller's matching repository project; OAuth callers may use any matching project.
   const locateAll = Effect.fn("PullRequestsToolkit.locateAll")(function* (
     targets: ReadonlyArray<Omit<PullRequestTargetInput, "threadId">>,
   ) {
@@ -422,7 +421,6 @@ const make = Effect.gen(function* () {
     write_pull_request_guides: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
         const located = yield* locateAll(input.pullRequests);
-        // One pull request that cannot be guided does not stop the rest; it reports why.
         const guides = yield* Effect.forEach(
           located,
           (entry) =>

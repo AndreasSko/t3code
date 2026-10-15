@@ -41,7 +41,6 @@ export function GuideRail({
 
   return (
     <nav aria-label="Review tour" className="flex min-h-0 flex-col gap-4">
-      {}
       <p className="text-xs text-muted-foreground tabular-nums @max-[56rem]/guide:hidden">
         {reviewed} of {stops.length} read
       </p>

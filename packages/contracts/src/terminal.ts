@@ -2,7 +2,9 @@ import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
-/** Client id of the first shell; term-N ids have no intrinsic default. */
+/**
+ * Ids are uniformly `term-N`; there's no "default" intrinsic.
+ */
 export const DEFAULT_TERMINAL_ID = "term-1";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;

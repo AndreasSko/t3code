@@ -1,5 +1,6 @@
-/** Expected conditions use debug logs so warnings stay actionable; client-runtime forbids console output.
- * Set globalThis.__T3_DEBUG__ to true for all namespaces or to a namespace array; enabledInDev bypasses the filter in development. */
+/**
+ * (client-runtime cannot host this: its tooling bans `console.*` in favor of Effect logging.)
+ */
 
 export interface DebugLogger {
   readonly isEnabled: () => boolean;
@@ -9,7 +10,6 @@ export interface DebugLogger {
 export interface DebugLoggerOptions {
   /** Log whenever `__DEV__` is true, without the global filter. Defaults to false. */
   readonly enabledInDev?: boolean;
-  /** A subsystem-specific global boolean, such as __T3_CLOUD_DEBUG__. */
   readonly legacyGlobalFlag?: string;
 }
 

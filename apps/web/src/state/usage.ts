@@ -1,4 +1,3 @@
-/** Raw usage transcripts never leave the machine that produced them. */
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthDiagnosticsReadScope,
@@ -32,7 +31,11 @@ export interface EnvironmentUsageStatus {
   readonly needsCursorKeychainAccess: boolean;
 }
 
-// Serializing the window shares each environment query and preserves cached ranges.
+/**
+ * Keyed by the serialised window so switching ranges does not thrash the atom
+ * cache, and so each environment's query is shared with any other reader of the
+ * same window.
+ */
 const usageByWindowAtom = Atom.family((windowKey: string) =>
   Atom.make((get): readonly EnvironmentUsageStatus[] => {
     const input = JSON.parse(windowKey) as UsageSummaryInput;
@@ -84,14 +87,24 @@ export interface UsageView {
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   /** True until at least one selected environment has answered. */
   readonly isPending: boolean;
-  /** Uses this window once answered, otherwise the last answer for the same selection. */
+  /**
+   * The usage to draw: this window's once a selected environment answers,
+   * until then the last window answered for the same selection. Null while
+   * nothing has answered and something still could.
+   */
   readonly shown: { readonly window: UsageSummaryInput; readonly merged: MergedUsage } | null;
-  /** Failed environments have error rows and do not keep totals marked as still reporting. */
+  /**
+   * True while environments that have not failed are still answering. Failed
+   * environments are reported through their own error rows: totals will not
+   * improve by waiting on them, so they must not read as "still reporting".
+   */
   readonly isPartial: boolean;
   readonly refresh: (input?: UsageSummaryInput) => Promise<void>;
 }
 
-/** `keepBucket` preserves source ownership; session counts remain per directory and are not narrowed. */
+/**
+ * Session counts are per directory and are not narrowed.
+ */
 export function mergeAnsweredUsage(
   environments: readonly EnvironmentUsageStatus[],
   keepBucket?: (bucket: UsageBucket) => boolean,
@@ -234,7 +247,6 @@ export function useUsage(
     lastAnswered?.selection === selectedEnvironmentIds && lastAnswered.hidden === hiddenProviders
       ? lastAnswered
       : null;
-  // With no answers, even failed ones keep the last answered usage on screen.
   const shown =
     answeredCount > 0
       ? { window: input, merged }

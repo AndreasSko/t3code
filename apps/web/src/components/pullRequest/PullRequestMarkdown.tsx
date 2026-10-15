@@ -18,8 +18,6 @@ export const PullRequestMarkdownContext = createContext<{
   threadRef: ScopedThreadRef | null;
 } | null>(null);
 
-/** Private GitHub uploads need signed URLs fetched with repository credentials;
- * retry re-signs stale capabilities. */
 function PullRequestGitHubVideo({
   environmentId,
   cwd,
@@ -39,7 +37,6 @@ function PullRequestGitHubVideo({
   );
   const assetUrl = useAssetUrlState(environmentId, resource);
   const refreshAssetUrl = useAssetUrlRefresh(environmentId, resource);
-  // Fall back to public media when the server cannot sign this resource.
   const src =
     assetUrl._tag === "Success" ? assetUrl.url : assetUrl._tag === "Failure" ? fetchUrl : null;
   return (
@@ -54,7 +51,6 @@ function PullRequestGitHubVideo({
   );
 }
 
-/** Renders PR uploads inline, with retry and an original link when video playback fails. */
 export function PullRequestMarkdown({
   text,
   cwd,
@@ -65,7 +61,6 @@ export function PullRequestMarkdown({
   text: string;
   cwd: string;
   environmentId: EnvironmentId;
-  /** Thread the body is shown beside, so its links can open in that thread's in-app browser. */
   threadRef?: ScopedThreadRef | null;
   className?: string;
 }) {
@@ -125,7 +120,9 @@ export function PullRequestMarkdown({
           );
         }
         return (
-          // Plain anchors work in web tabs without a desktop shell; desktop handles blocked _blank externally.
+          // A plain anchor rather than the page's openExternal button: the desktop window
+          // turns a blocked _blank into openExternal itself, and in a browser tab — where
+          // there is no shell to call — this is the only one of the two that goes anywhere.
           <a
             key={segment.id}
             href={segment.url}

@@ -1,4 +1,3 @@
-// Read traces directly so summaries remain available while the server is stalled or stopped.
 import { PositiveInt } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -23,8 +22,10 @@ const decodeTraceSpanLine = Schema.decodeUnknownOption(
       durationMs: Schema.Finite,
       endTimeUnixNano: Schema.FiniteFromString,
       exit: Schema.optional(Schema.Struct({ _tag: Schema.String })),
-      // OTLP code 2 marks errors; effect.fiber.interrupted marks interrupts.
-      // Pre-4.0.2 clients used code 1 with message "Interrupted".
+      // Browser (`otlp-span`) records. Effect's OTLP tracer writes code "2" for
+      // errors. It marks interrupts with an `effect.fiber.interrupted`
+      // attribute; clients before Effect 4.0.2 wrote code "1" with message
+      // "Interrupted" instead.
       status: Schema.optional(
         Schema.Struct({
           code: Schema.optional(Schema.String),
@@ -38,11 +39,14 @@ const decodeTraceSpanLine = Schema.decodeUnknownOption(
   ),
 );
 
-/** Add streamed lines, then finish; sinceMs filters by span end time
- * and rates use minutes between the first and last span ends. */
+/**
+ * Spans that ended before `sinceMs` are left out. Rates are per minute between
+ * the first and last span end, since spans are written when they end.
+ */
 export function makeTraceSpanSummary(sinceMs = -Infinity) {
-  // Exact durations cost only a few MB for 110 MB of traces; sketches would
-  // save little while making percentiles approximate.
+  // Keep each span's duration (8 bytes, a few MB for the default 110 MB of
+  // rotated traces) for exact percentiles. A bounded sketch would save little
+  // and make p50 and p90 approximate.
   const byName = new Map<string, { durations: number[]; interrupted: number; failures: number }>();
   let spanCount = 0;
   let skippedLineCount = 0;
@@ -85,7 +89,6 @@ export function makeTraceSpanSummary(sinceMs = -Infinity) {
     const spans = [...byName]
       .map(([name, { durations, interrupted, failures }]) => {
         const sorted = durations.toSorted((left, right) => left - right);
-        // Nearest-rank percentile.
         const percentile = (p: number) => sorted[Math.ceil(p * sorted.length) - 1]!;
         return {
           name,

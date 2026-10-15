@@ -19,7 +19,10 @@ export interface ReopenOwnerState {
   panel: ThreadRightPanelState;
 }
 
-/** Skip missing owners but retain their history; stop when ownership is not yet known rather than guessing. */
+/**
+ * A thread missing from a live shell is skipped but kept; anything not yet knowable stops
+ * the scan with no restore.
+ */
 export function planNextReopen(
   entries: readonly ClosedViewEntry[],
   ownerState: (entry: ClosedViewEntry) => ReopenOwnerState,
@@ -59,7 +62,6 @@ type PullRequestsSearchLike = Partial<PullRequestListPreferences> & {
   selectedEnvironmentId?: EnvironmentId;
 };
 
-/** Selects the restored pull request on the Pull Requests page, keeping the list filters. */
 export function pullRequestsSearchForRestore<S extends PullRequestsSearchLike>(
   previous: S,
   selected: RightPanelSurface | null,

@@ -115,7 +115,7 @@ function createPullRequestRefreshAtomFamily<R, E>(
   });
 }
 
-/** Refresh only the live fields a linked thread renders. A merged pull request is not re-read. */
+/** A merged pull request is not re-read. */
 export function createLinkedPullRequestSummaryAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
   refreshes = createPullRequestRefreshAtomFamily(runtime),
@@ -133,7 +133,6 @@ export function createLinkedPullRequestSummaryAtomFamily<R, E>(
   });
 }
 
-/** The host-native stack a pull request belongs to; null where it is not stacked. */
 export function createPullRequestStackAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
   refreshes = createPullRequestRefreshAtomFamily(runtime),
@@ -164,7 +163,10 @@ export function pullRequestDetailToVcsStatus(
   };
 }
 
-/** Caches detail/activity for one minute; serial per-environment mutations preserve order and patch confirmed edits. */
+/**
+ * Mutations run serially per environment: actions on the same pull request are
+ * order-sensitive.
+ */
 export function createPullRequestEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<
     EnvironmentRegistry | PullRequestDiffLoader.PullRequestDiffLoader | R,
@@ -253,8 +255,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId, input }) =>
         input.cursors === undefined ? refreshes({ environmentId, input: {} }) : undefined,
     }),
-    // Across 12 repositories, listings took ~4.0s without stats versus ~7.1s with them.
-    // Fetch stats separately and retain them longer because size changes only on pushes.
+    /**
+     * Its own query because the listing is quicker without them — measured over twelve
+     * repositories, ~4.0s against ~7.1s — so the rows arrive first and their stats a moment
+     * later. Kept longer than the listing: a change request's size only moves when somebody
+     * pushes to it.
+     */
     listStats: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list-stats",
       persistence: persistPullRequestStats(),
@@ -329,7 +335,10 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: (input) => routedRequest(WS_METHODS.pullRequestsFilesViewed, input),
       staleTimeMs: 15_000,
     }),
-    // Serialize viewed-file writes per change request so quick presses cannot arrive out of order.
+    /**
+     * One write in flight per change request: the host applies these in order, and a reader
+     * ticking down a file list faster than the round trip would otherwise race their own presses.
+     */
     setFilesViewed: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-files-viewed",
       tag: WS_METHODS.pullRequestsSetFilesViewed,
@@ -441,7 +450,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
-    // Reviewer candidates load on menu open and stay fresh for a minute because repository access changes slowly.
     reviewerCandidates,
     requestReviewers: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:request-reviewers",
@@ -531,7 +539,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           updateCached(registry, reviewGuide(target), () => result, true);
         }),
     }),
-    /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
     labelCandidates,
     setLabels: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-labels",
@@ -583,7 +590,10 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
-    // Only explicit refresh spends host requests; silent reads share cached answers.
+    /**
+     * A separate request rather than a flag on a read, so only a person's refresh spends
+     * host requests while every silent re-read shares the cache.
+     */
     invalidate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:invalidate",
       tag: WS_METHODS.pullRequestsInvalidate,

@@ -15,7 +15,6 @@ import {
   type UpdateEverythingRun,
 } from "./updateEverything.logic";
 
-/** Outlives the sidebar button. */
 const updateEverythingRunAtom = Atom.make<UpdateEverythingRun | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("update-everything-run"),
@@ -65,9 +64,7 @@ export function saveUpdateEverythingResult(result: UpdateEverythingResult): void
       SAVED_RESULT_KEY,
       JSON.stringify({ ...result, savedAt: Date.now() } satisfies typeof SavedResult.Type),
     );
-  } catch {
-    // Without storage the summary is lost with the relaunch; the update still runs.
-  }
+  } catch {}
 }
 
 export function clearSavedUpdateEverythingResult(): void {
@@ -108,7 +105,9 @@ export function showUpdateEverythingResult(result: UpdateEverythingResult): void
 
 let notifiedNotAppliedVersion: string | null = null;
 
-/** Mount once at the app root to consume the saved update result. */
+/**
+ * Mount once at the app root.
+ */
 export function DesktopUpdateLaunchNotice() {
   const notAppliedVersion = useDesktopUpdateState()?.notAppliedVersion ?? null;
 

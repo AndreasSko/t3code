@@ -79,7 +79,11 @@ function encodeAzureDevOpsPathSegment(segment: string): string {
   return encodeURIComponent(segment);
 }
 
-/** Recover the browser organization root from the returned REST URL when other links are absent. */
+/**
+ * The organization root a REST url belongs to, which is where a browser url has to be hung when
+ * Azure answered with neither a web link nor a repository url. Read from what Azure returned
+ * rather than from the local remote, whose shape varies.
+ */
 function azureDevOpsOrganizationBaseFromRestApiUrl(
   value: string | null | undefined,
 ): string | null {
@@ -112,7 +116,6 @@ function azureDevOpsOrganizationBaseFromRestApiUrl(
   }
 }
 
-/** Prefer Azure's web link, then assemble from repository or organization URLs. */
 export function azureDevOpsPullRequestWebUrl(input: {
   readonly pullRequestId: number;
   readonly webLink?: string | null | undefined;

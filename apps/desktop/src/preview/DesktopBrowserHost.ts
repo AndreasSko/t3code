@@ -1,5 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - Names download files on the shared disk.
-/** Share the preview manager's single debugger attachment through CdpRelay; do not attach another client. */
+/**
+ * A tab is attached once its `<webview>` registers with a key the web app
+ * gave it. The preview manager owns the tab's single debugger session and hands
+ * it here; the relay shares it.
+ */
 import {
   DesktopBrowserCommand,
   DesktopBrowserEvent,
@@ -19,10 +23,8 @@ import { createCdpRelayConnection, type CdpRelayConnection } from "./CdpRelay.ts
 const encodeEvent = Schema.encodeSync(Schema.fromJsonString(DesktopBrowserEvent));
 const decodeCommand = Schema.decodeUnknownOption(Schema.fromJsonString(DesktopBrowserCommand));
 const lineEncoder = new TextEncoder();
-/** CDP commands through which an agent clicks, types, or navigates the page. */
 const AGENT_INPUT_COMMAND =
   /"method":"(?:Input\.|Page\.navigate"|Runtime\.(?:evaluate|callFunctionOn)")/;
-/** How long after an agent's input a download still counts as the agent's. */
 const AGENT_DOWNLOAD_WINDOW_MS = 5_000;
 
 export interface DesktopBrowserTabKey {
@@ -62,13 +64,15 @@ export class DesktopBrowserHost extends Context.Service<
      * announcing the tabs already attached, so a restarted backend hears them.
      */
     readonly events: Stream.Stream<Uint8Array>;
-    /** One line from the backend's browser control fd. */
     readonly handleCommandLine: (line: string) => Effect.Effect<void>;
     readonly attach: (key: DesktopBrowserTabKey, debuggee: DesktopBrowserTabDebugger) => void;
+    /** Withdraws it: closed, swapped, crashed, or devtools needs the debugger. */
     readonly detach: (key: DesktopBrowserTabKey) => void;
-    /** Treat a server-tab download as human-started when no recent agent input preceded it. */
+    /**
+     * Whether a server tab's download came from the person at this desktop:
+     * the server sent the page no input just before it started.
+     */
     readonly humanStartedDownload: (source: Electron.WebContents) => boolean;
-    /** Points a server tab's download at the server; false for any other download. */
     readonly placeDownload: (source: Electron.WebContents, item: Electron.DownloadItem) => boolean;
     readonly pointers: Stream.Stream<{
       readonly key: DesktopBrowserTabKey;
@@ -122,7 +126,10 @@ export const make = Effect.gen(function* () {
     return relay;
   };
 
-  /** Set the server's download path before Electron opens a Save dialog for an agent-requested file. */
+  /**
+   * Without a path Electron would open its Save dialog over the app for a file
+   * the agent asked for. CDP names the download just before this runs.
+   */
   const placeDownload = (source: Electron.WebContents, item: Electron.DownloadItem) => {
     const tab = [...tabs.values()].find(
       (candidate) => candidate.debuggee.webContents === source && candidate.downloadDirectory,
@@ -178,7 +185,6 @@ export const make = Effect.gen(function* () {
         return;
       }
       if (command.value.type === "release") {
-        // A new server connection starts with a fresh relay and fresh sessions.
         tab.relay = null;
         return;
       }

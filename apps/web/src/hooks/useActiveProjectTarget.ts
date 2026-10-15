@@ -12,10 +12,6 @@ export interface ActiveProjectTarget {
   readonly threadRef: ScopedThreadRef;
 }
 
-/**
- * Resolve the active thread/draft's workspace and owning thread for project-scoped searches and result
- * panels.
- */
 export function useActiveProjectTarget(): ActiveProjectTarget | null {
   const { activeDraftThread, activeThread } = useHandleNewThread();
   const projects = useProjects();

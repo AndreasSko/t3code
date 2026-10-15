@@ -84,8 +84,11 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const unavailable = connectedEnvironments.length === 0;
-  // Resolve file-backed defaults from the target t3.json; the title reset clears
-  // the active tier, so the picker needs no inherit entry.
+  // File-backed keys show their effective value; the target already carries
+  // the checkout's t3.json, and a null file here only fills the built-in.
+  // The reset arrow beside the title clears the tier (SettingsRow handles a
+  // project override, the environment value is cleared here), so the picker
+  // has no "inherit" item.
   const effective = target
     ? resolveProjectSettings(target.settings, null, null, null).settings
     : null;

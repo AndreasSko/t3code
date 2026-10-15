@@ -24,8 +24,11 @@ import {
   type ThreadRouteTarget,
 } from "../threadRoutes";
 
-/** Render from the shared layout and keep draft keys across promotion so background sends and timelines survive route swaps.
- * Plain server threads stay unkeyed so navigating between them reuses ChatView. */
+/**
+ * Plain server threads are unkeyed, so navigating between them reuses one instance as ChatView
+ * expects. Rendered by the `_chat` layout rather than by the two leaf routes, since an element
+ * only survives a route swap when the same parent renders it.
+ */
 export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   const navigate = useNavigate();
   const draftId = target.kind === "draft" ? target.draftId : null;
@@ -67,7 +70,9 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   const promotedDraftId = useComposerDraftStore((store) =>
     target.kind === "server" ? store.getDraftIdByRef(target.threadRef) : null,
   );
-  // The draft disappears after promotion; latch its key to preserve the mounted ChatView until navigation.
+  // The draft record is removed once the promoted thread has started, which
+  // is after the route swap. Latch the key so the element that carried the
+  // draft keeps its identity for as long as this thread stays on screen.
   const [chatViewKey, setChatViewKey] = useState<{ threadKey: string; key: string } | null>(null);
   const serverThreadKey = target.kind === "server" ? scopedThreadKey(target.threadRef) : null;
   const nextChatViewKey =
@@ -131,7 +136,9 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     if (target.kind !== "server" || !bootstrapComplete) {
       return;
     }
-    // A routed but missing thread can never accept a drop; release it even when no redirect is available.
+    // Navigation already resolved onto this path, so a drop aimed here
+    // passed its landing check; once the thread reads as missing it can
+    // never be attached, release it even when there is nowhere to redirect.
     if (renderState === "missing") {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);

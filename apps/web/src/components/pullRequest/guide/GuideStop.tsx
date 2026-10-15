@@ -68,6 +68,7 @@ export function GuideStop({
   commenting: ExcerptCommenting | null;
   onStep: (delta: 1 | -1) => void;
   onAsk: ((question: string) => void) | null;
+  /** Opens the review composer, on the last stop. Null where the reader cannot review. */
   onFinish: (() => void) | null;
   onOpenFile: (path: string) => void;
 }) {
@@ -82,7 +83,6 @@ export function GuideStop({
       className={cn("grid gap-8", hasNotes && "@min-[90rem]/guide:grid-cols-[minmax(0,1fr)_20rem]")}
     >
       <article className="flex min-w-0 flex-col gap-5">
-        {}
         <Collapsible open={railOpen} onOpenChange={onRailOpenChange}>
           <header className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground tabular-nums @max-[56rem]/guide:hidden">

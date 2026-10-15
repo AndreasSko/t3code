@@ -99,7 +99,6 @@ function singleToolCallLabel(entry: WorkLogEntry): string {
   const title =
     item?.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input, item.title) : null;
   if (title) return title;
-  // A lone web search keeps its heading; the query stays in its detail.
   if (entry.itemType === "web_search") return entry.toolTitle ?? "Web search";
   return workEntryDisplayLabel(entry, undefined);
 }
@@ -151,7 +150,6 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (action === "read" && readPaths[0]) {
     return formatReadToolLabel(readPaths[0], readPaths.length - 1);
   }
-  // Retry diagnostics keep progress labels; other errors expose retained messages, never file bodies.
   const providerRetry =
     entry.projectedItem?.item.type === "error" && entry.projectedItem.item.retry !== undefined;
   const item = entry.structuredPayload;
@@ -197,7 +195,6 @@ export function threadReadTargetTitle(
   return shell.title.trim() || null;
 }
 
-/** Keep the read label's tense when inserting a live thread title; null preserves the generic label. */
 export function threadReadLabelPrefix(label: string) {
   return label.endsWith(THREAD_READ_OBJECT)
     ? `${label.slice(0, -THREAD_READ_OBJECT.length)} thread`
@@ -275,7 +272,6 @@ export function workEntryIsVisibleInGroup(
     (expandedToolGroupEntry &&
       (entry.toolLifecycleStatus === "inProgress" ||
         entry.sourceActivityKind === "task.progress")) ||
-    // A stopped call is an outcome ("Stopped sleep"), not an empty row.
     entry.toolLifecycleStatus === "stopped" ||
     !workEntryIndicatesToolNeutralStatus(entry)
   );
@@ -290,7 +286,6 @@ export interface WorkGroupScrollAnchor {
   readonly offset: number;
 }
 
-/** Restore a visible tool, including a position partway through its expanded output. */
 export function resolveWorkGroupScrollIndex(
   entries: ReadonlyArray<{ readonly id: string }>,
   anchor: WorkGroupScrollAnchor | undefined,
@@ -300,7 +295,6 @@ export function resolveWorkGroupScrollIndex(
   return index < 0 ? undefined : { index, viewOffset: -anchor.offset };
 }
 
-/** Only newly appended calls may follow the end, never status or output updates. */
 export function shouldFollowWorkGroupAppend(
   previous: ReadonlyArray<{ readonly id: string }>,
   entries: ReadonlyArray<{ readonly id: string }>,
@@ -322,7 +316,11 @@ export interface TimelineEndState {
   readonly scrollLength?: number;
 }
 
-/** Strict isAtEnd flickers during streaming growth; re-arm follow within this band of the real content bottom (#5566). */
+/**
+ * strict isAtEnd flickers false for a frame while streaming content grows under
+ * the viewport, so follow re-arms within this distance of the real content
+ * bottom instead.
+ */
 const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
 export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boolean | undefined {
@@ -333,7 +331,12 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   if (contentLength === undefined || scroll === undefined || scrollLength === undefined) {
     return state.isAtEnd;
   }
-  // Composer inset cancels between content and hidden viewport; LegendList subtracts it again, so isAtEnd is only a fallback.
+  // contentLength includes the composer inset spacer, but the composer hides
+  // the same amount of viewport, so the inset cancels: plain
+  // contentLength - scroll - scrollLength is the gap between the last real row
+  // and the visible edge above the composer. LegendList's own isAtEnd subtracts
+  // the inset and is true anywhere in the bottom composer-height band, so it is
+  // only a fallback here, never a short-circuit.
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
@@ -393,7 +396,10 @@ export function resolveTimelineMinimapCurrentIndex(input: {
   return precedingIndex;
 }
 
-/** Measure contentWidth: Chat width preferences change the centered column's gutter. */
+/**
+ * `contentWidth` is the rendered column width, which follows the Chat width
+ * setting, so callers measure it rather than assume a fixed maximum.
+ */
 function resolveTimelineSideGutter(viewportWidth: number, contentWidth: number): number {
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || !Number.isFinite(contentWidth)) {
     return 0;
@@ -414,7 +420,10 @@ const TIMELINE_MINIMAP_HIT_STRIP_LEFT = 12;
 const TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH = 40;
 const TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH = "22rem";
 
-/** Cap hover-strip width to the gutter so zoom or wider chat columns cannot swallow message pointer events; 0 disables it. */
+/**
+ * A fixed-width hover strip would then sit on top of the message text and
+ * swallow its pointer events.
+ */
 export function resolveTimelineMinimapHitStripWidth(
   viewportWidth: number,
   contentWidth: number,
@@ -433,16 +442,15 @@ export function resolveTimelineMinimapHitStripWidth(
 // their hitbox reaches 14px past the strip's left edge.
 const TIMELINE_MINIMAP_NAVIGATION_REACH = 14;
 
-/** Buttons extend beyond the strip height; enable their pointer hitbox only when the gutter fits it. */
+/**
+ * The prev/next buttons hang outside the strip's height, so the strip's own
+ * width cap does not cover them. Keep them inert to the pointer unless the
+ * gutter can hold them; keyboard focus still reaches them.
+ */
 export function resolveTimelineMinimapNavigationInteractive(collapsedWidth: number): boolean {
   return collapsedWidth >= TIMELINE_MINIMAP_NAVIGATION_REACH;
 }
 
-/**
- * Once the preview is open, keep the full preview and the space leading to it
- * interactive. The collapsed strip remains gutter-capped so it cannot block
- * selecting message text.
- */
 export function resolveTimelineMinimapInteractiveWidth(
   collapsedWidth: number,
   expanded: boolean,
@@ -511,7 +519,6 @@ type MessagesTimelineRowContent =
       groupId: string;
       expanded: boolean;
       active: boolean;
-      /** Latest reasoning in the live group, shown above the status line. */
       thought?: WorkLogEntry;
     }
   | {
@@ -523,7 +530,6 @@ type MessagesTimelineRowContent =
       kind: "thinking";
       id: string;
       createdAt: string | null;
-      /** Tool calls this row stands in for after the latest one failed. */
       groupId?: string;
       expanded?: boolean;
     }
@@ -722,7 +728,14 @@ interface SupersededAttemptFold {
   readonly hiddenEntryIds: ReadonlySet<string>;
 }
 
-/** Interrupted streams also close as completed; compare completion before steer dispatch and require the attempt's final output. */
+/**
+ * Final replies of superseded attempts that finished before the steer replaced
+ * them. A steer stamps the attempt's completedAt when it is dispatched, and the
+ * provider closes a reply it cut off only after that, so a reply whose item
+ * completed earlier was whole. Item status alone cannot tell: an interrupted
+ * stream also closes as `completed`. The reply must be the attempt's last
+ * output; trailing tool or reasoning work means the attempt was still going.
+ */
 function completeSupersededReplyEntryIds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
 ): ReadonlySet<string> {
@@ -758,7 +771,6 @@ function completeSupersededReplyEntryIds(
   return replyEntryIds;
 }
 
-/** Fold only explicitly cut-off attempt output; finished replies and logical-run user inputs remain visible. */
 function deriveSupersededAttemptFolds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
   unfoldedRunIds: ReadonlySet<RunId>,
@@ -777,7 +789,6 @@ function deriveSupersededAttemptFolds(
       completeAttemptIds.has(entry.attempt.id) ||
       unfoldedRunIds.has(entry.attempt.runId) ||
       (entry.kind === "message" && entry.message.role === "user") ||
-      // A published page stays visible, as it does when its turn folds.
       entry.kind === "html-render" ||
       entry.kind === "mcp-app" ||
       timelineEntryIsPersistentResourceCard(entry) ||
@@ -808,7 +819,12 @@ function deriveSupersededAttemptFolds(
   return foldsByAnchorEntryId;
 }
 
-/** Use run lifecycle, not transient working state, so sending before the next run exists cannot flicker folds. */
+/**
+ * This is deliberately keyed on the turn's own lifecycle rather than transient
+ * working state: right after the user sends a message, the previous turn is
+ * still the "active" one until the server creates the new turn, and folding
+ * must not flicker through that window.
+ */
 function deriveUnsettledRunId(
   latestRun: TimelineLatestRun | null,
   runningRunId: RunId | null = null,
@@ -825,7 +841,13 @@ function deriveUnsettledRunId(
   return isSettled ? null : latestRun.runId;
 }
 
-/** Child work can outlive its launching turn; keep the whole adjacent batch visible while any child remains live. */
+/**
+ * A child can keep working after its launching turn settles (or its attempt is
+ * superseded), and the waiting footer counts it, so its card stays visible
+ * until the child ends. Adjacent cards from one provider turn render as a
+ * single grouped row; the whole group stays visible while any member is live,
+ * so a launch batch never shows half of its children.
+ */
 function liveSubagentCardEntryIds(entries: ReadonlyArray<TimelineEntry>): ReadonlySet<string> {
   const visible = new Set<string>();
   let batch: Array<Extract<TimelineEntry, { kind: "event" }>> = [];
@@ -855,7 +877,6 @@ function liveSubagentCardEntryIds(entries: ReadonlyArray<TimelineEntry>): Readon
   return visible;
 }
 
-/** `runlessKey` stands in for the run of entries that have none. */
 function timelineEntryFoldRunId(entry: TimelineEntry, runlessKey: RunId | null): RunId | null {
   if (entry.kind === "work" && entry.entry.itemType === "system_notice") return null;
   if (entry.kind === "message" && entry.message.role === "assistant") {
@@ -873,7 +894,6 @@ function timelineEntryFoldRunId(entry: TimelineEntry, runlessKey: RunId | null):
   return null;
 }
 
-/** A steer adds input to its existing turn, without creating a new header. */
 function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
   return (
     (entry.kind === "message" &&
@@ -954,13 +974,6 @@ function failedTimelineRunIds(
   return failed;
 }
 
-/**
- * Settled turns fold activity before their terminal assistant message behind
- * a "Worked for ..." row. Ordinary trailing work joins the fold, while failures
- * and work still in progress stay visible. A prompt without a run (a
- * provider-native subagent, or a turn imported from V1) folds its response
- * the same way.
- */
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
@@ -969,7 +982,6 @@ function deriveTurnFolds(input: {
   /** Keeps the latest runless response open; V2 work must not reopen imported turns. */
   runlessWorkActive: boolean;
   liveSubagentEntryIds: ReadonlySet<string>;
-  /** Finished replies a steer superseded; they answer their prompt, so they stay out. */
   completeSupersededReplyEntryIds: ReadonlySet<string>;
 }): ReadonlyMap<string, TurnFold> {
   const interruptedRunIds = new Set<RunId>();
@@ -993,14 +1005,20 @@ function deriveTurnFolds(input: {
     entries: Array<TimelineEntry>;
     terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
     hasStreamingMessage: boolean;
-    /** Use the input boundary: provider output starts late and steer-cut turns may hold only instantaneous commentary. */
+    /**
+     * Entry timestamps alone undercount the duration (the first entry appears
+     * only once the provider starts producing output), and a turn cut short by
+     * a steer may hold a single instantaneous commentary message.
+     */
     startBoundary: string | null;
     anchorEntryId: string;
   }
   const groupsByRunId = new Map<RunId, TurnGroup>();
   const runlessFailedKeys = new Set<RunId>();
 
-  // Synthetic keys are per prompt so a first app run cannot unfold every imported runless turn.
+  // Fold state is keyed by run, so each runless prompt lends its response a
+  // stable key of its own. Decide per prompt, not per thread: a V1 thread's
+  // first V2 run must not unfold every imported turn above it.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
@@ -1035,7 +1053,9 @@ function deriveTurnFolds(input: {
         entries: [],
         terminalEntry: null,
         hasStreamingMessage: false,
-        // A continuation after the same user input starts at its own first entry instead of reusing that boundary.
+        // Each user boundary starts at most one turn; a second turn after the
+        // same user message (e.g. a steer-superseded continuation) falls back
+        // to its own first entry.
         startBoundary: pendingBoundary?.createdAt ?? null,
         anchorEntryId: pendingBoundary?.anchorEntryId ?? entry.id,
       };
@@ -1083,8 +1103,6 @@ function deriveTurnFolds(input: {
       if (!isCompaction && index > terminalEntryIndex && !isFoldableTrailingActivity) {
         continue;
       }
-      // Linked resources and still-working children can outlive their
-      // launching run and stay visible after the surrounding work folds.
       if (
         timelineEntryIsPersistentResourceCard(entry) ||
         input.liveSubagentEntryIds.has(entry.id) ||
@@ -1098,8 +1116,6 @@ function deriveTurnFolds(input: {
     if (hiddenEntryIds.size === 0) {
       continue;
     }
-    // A lone compaction row stays visible on its own; it only folds away as
-    // part of a turn that already folds other work.
     const hidesNonCompactionWork = group.entries.some(
       (entry) =>
         hiddenEntryIds.has(entry.id) &&
@@ -1149,7 +1165,6 @@ function deriveTurnFolds(input: {
   return foldsByAnchorEntryId;
 }
 
-/** Trailing tools share the terminal text's footer so metadata cannot separate one response. */
 function attachTrailingToolGroupsToAssistant(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): MessagesTimelineRow[] {
@@ -1333,7 +1348,10 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
-  /** Native subagents have no app run; their runless entries represent live response, not history. */
+  /**
+   * The live work has no app run (a provider-native subagent thread), so
+   * runless entries are the current response instead of settled history.
+   */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
@@ -1407,13 +1425,10 @@ export function deriveMessagesTimelineRows(input: {
     entry.toolLifecycleStatus === "inProgress" &&
     (entry.runId == null ? runlessWorkActive : entry.runId === unsettledRunId);
 
-  // A steer continues the current turn. Keep its elapsed-time header below
-  // the initiating prompt (or automatic wake), rather than moving it down.
   const activeTurnHeaderIndex = input.isWorking
     ? lastResponseBoundaryIndex(timelineEntries) + 1
     : timelineEntries.length;
 
-  // Keep one live work row between actions, retaining the last tool label after it settles (#8984).
   const activeToolEntries: Array<Extract<TimelineEntry, { kind: "work" }>> = [];
   if (input.isWorking && (unsettledRunId !== null || runlessWorkActive)) {
     let tailAttemptId: string | null | undefined;
@@ -1832,7 +1847,10 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
-  // Keep setup under the working header until the turn reaches the timeline; failed/cancelled outcomes remain reachable.
+  // "Live" means the turn is in the timeline, not just that the server
+  // dispatched it: the card must not vanish in the gap between. A failed or
+  // cancelled setup stays under the send so its outcome and actions remain
+  // reachable.
   const setupHandedOff =
     input.worktreeSetup !== null &&
     input.worktreeSetup !== undefined &&
@@ -1888,8 +1906,6 @@ export function deriveMessagesTimelineRows(input: {
     !hasActiveCompaction &&
     (!hasActivityRow || latestToolFailed)
   ) {
-    // A failed latest tool hands the row back to thinking, but its group
-    // stays reachable through the same disclosure the live row offers.
     const failedGroupAnchor = latestToolFailed ? activeWorkAnchor : undefined;
     if (failedGroupAnchor) {
       const groupId = workGroupId(failedGroupAnchor.id);
@@ -1939,7 +1955,6 @@ function timelineRowIsWorkLog(row: MessagesTimelineRow | undefined): boolean {
   );
 }
 
-// Keep created chats below the final answer even when the work that created them folds away.
 function attachCreatedThreadSummaries(
   rows: MessagesTimelineRow[],
   timelineEntries: ReadonlyArray<TimelineEntry>,
@@ -1997,7 +2012,10 @@ export interface MessagesTimelineRowsProjection {
   readonly rows: MessagesTimelineRow[];
 }
 
-/** Imported runless turns use synthetic fold keys; entry.runId alone cannot expand them. */
+/**
+ * Runless (imported V1) turns fold under a synthetic key, so the entry's own
+ * run id is not enough to open them.
+ */
 export function timelineEntryTurnFoldRunId(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -2055,7 +2073,8 @@ function replaceStreamingMessageRows(
     expandedWorkGroupIds,
     ...context
   } = input;
-  // Fresh equivalent shell/checkpoint summaries must not invalidate text-only projections.
+  // V2 shell and checkpoint selectors produce fresh summaries for each event.
+  // Equivalent summaries must not invalidate a text-only projection.
   if (
     timelineEntries.length !== previousEntries.length ||
     !shallow(previousContext, context) ||
@@ -2142,6 +2161,7 @@ export function computeStableMessagesTimelineRows(
   return anyChanged ? { byId: next, result } : previous;
 }
 
+/** Shallow field comparison per row variant — avoids deep equality cost. */
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
   if (a.kind !== b.kind || a.id !== b.id) return false;
 
@@ -2191,7 +2211,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     }
 
     case "mcp-app": {
-      // Equal apps must keep their mounted frame and its live state through unrelated tool updates.
+      // Same reason: an equal app keeps its live frame and its state.
       const bm = b as typeof a;
       return (
         a.createdAt === bm.createdAt &&

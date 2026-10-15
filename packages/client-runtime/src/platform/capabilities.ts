@@ -57,7 +57,10 @@ export class PrimaryEnvironmentAuth extends Context.Service<
 export class SshEnvironmentGateway extends Context.Service<
   SshEnvironmentGateway,
   {
-    /** expectedEnvironmentId rejects another machine before spending its one-time pairing credential. */
+    /**
+     * With `expectedEnvironmentId`, a server that is a different machine fails
+     * before its one-time pairing credential is spent.
+     */
     readonly provision: (
       target: DesktopSshEnvironmentTarget,
       expectedEnvironmentId?: EnvironmentId,

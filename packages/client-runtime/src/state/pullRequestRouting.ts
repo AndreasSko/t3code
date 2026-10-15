@@ -212,7 +212,10 @@ const invalidateTarget = Effect.fn("PullRequestRouting.invalidateTarget")(functi
   );
 });
 
-// Routed reads bypass the origin's linked threads; report observed state without delaying the read.
+/**
+ * The origin owns the threads linked to this pull request, but a routed read never reaches it.
+ * Tell it which state the read saw so it checks again. Best effort, and never holds up the read.
+ */
 const reportState = (
   { allowStale: _allowStale, expectedAccountId: _expectedAccountId, ...reference }: PullRequestRef,
   state: PullRequestState,
@@ -348,7 +351,6 @@ export function createPullRequestRouter() {
           identityProbe,
         )
       : identityProbe;
-    // Old servers and unknown accounts retain the existing path.
     if (identity === null || identity.provider !== "github") return yield* finish(source);
 
     const routedInput = {

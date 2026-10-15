@@ -38,25 +38,24 @@ import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { aliasedGraphQlDocument, type GraphQlDocument } from "./githubGraphQl.ts";
 import { dedupeChecks } from "@t3tools/source-control-core/server/pullRequestChecks";
 
-/** Accept new enum strings without failing the whole payload. */
+/**
+ * Enum-ish GitHub CLI fields are decoded as plain strings and normalized here: a `gh`
+ * release that adds a conclusion or a review state must not fail the whole payload.
+ */
 const RawActorSchema = Schema.Struct({
   __typename: Schema.optional(Schema.String),
   is_bot: Schema.optional(Schema.Boolean),
   /**
    * Optional because a requested team goes by its slug instead, and a mannequin, which no query
-   * has a fragment for, arrives as an empty object. A reviewer with neither names nobody to show,
-   * and must not fail the response the conversation travels in.
+   * has a fragment for, arrives as an empty object.
    */
   login: Schema.optional(Schema.String),
   id: Schema.optional(Schema.NullOr(Schema.String)),
   name: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Only the GraphQL API reports one; `gh pr view --json` has no avatar to give. */
   avatarUrl: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
-/**
- * A team answers with a slug where a user answers with a login. `combinedSlug` is the team's
- * `org/slug`, which is what a reviewer row shows for it.
- */
 const RawRequestedReviewerSchema = Schema.Struct({
   ...RawActorSchema.fields,
   slug: Schema.optional(Schema.NullOr(Schema.String)),
@@ -91,12 +90,13 @@ const RawCheckSchema = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   detailsUrl: Schema.optional(Schema.NullOr(Schema.String)),
   targetUrl: Schema.optional(Schema.NullOr(Schema.String)),
-  /** Workflow and timestamps distinguish duplicate check names and reruns.
-   * App check runs lack a workflow; commit statuses lack these run fields entirely. */
+  /**
+   * Empty for an app-provided check run, which belongs to no workflow, and
+   * absent entirely on a commit status, which is not a run at all.
+   */
   workflowName: Schema.optional(Schema.NullOr(Schema.String)),
   startedAt: Schema.optional(Schema.NullOr(Schema.String)),
   completedAt: Schema.optional(Schema.NullOr(Schema.String)),
-  /** Branch protection requires this check; read by the detail query on github.com only. */
   isRequired: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 
@@ -119,9 +119,13 @@ const RawListItemSchema = Schema.Struct({
   reviewRequests: Schema.optional(Schema.Array(RawReviewRequestSchema)),
   latestReviews: Schema.optional(Schema.NullOr(Schema.Array(RawLatestReviewSchema))),
   labels: Schema.optional(Schema.Array(RawLabelSchema)),
-  /** Adding rollups on pingdotgg/t3code grew reads from 0.6s to 7.9s at 100 rows,
-   * and from 0.9s to 2.1s at 30 rows.
-   * The 425 KB payload avoids per-row reads; host-wide search requests only the verdict. */
+  /**
+   * Every check of the head commit, which is the only rollup `gh pr list --json` can give: there
+   * is no field for the one-word verdict.
+   *
+   * The listing pays it because the alternative is a request per row; the cross-repository
+   * search below asks GitHub for the verdict itself instead.
+   */
   statusCheckRollup: Schema.optional(Schema.NullOr(Schema.Array(RawCheckSchema))),
 });
 
@@ -134,7 +138,10 @@ const RawStackMembershipSchema = Schema.Struct({
   stackEntry: Schema.optional(Schema.NullOr(Schema.Struct({ position: Schema.Int }))),
 });
 
-/** GraphQL keeps reviewer/label connections nested; non-PR nodes decode empty and are skipped. */
+/**
+ * Everything below the row is optional because a node that is not a pull request decodes
+ * as an empty object, which is skipped.
+ */
 const RawSearchItemSchema = Schema.Struct({
   ...RawStackMembershipSchema.fields,
   number: Schema.Int,
@@ -187,8 +194,6 @@ const RawSearchItemSchema = Schema.Struct({
       }),
     ),
   ),
-  /** Adding verdict enums to 100-row pingdotgg/t3code reads grew time from 0.8s to 3.0s (15 KB),
-   * versus 425 KB for whole CLI rollups reduced to the same verdicts. */
   commits: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -271,7 +276,6 @@ const RawStackMembershipsSchema = Schema.Struct({
 
 const REACTORS_PER_GROUP = 10;
 
-/** Bound reactor names for hover text; larger groups show a count instead. */
 const REACTION_GROUPS_FIELDS = `reactionGroups {
   content
   viewerHasReacted
@@ -341,7 +345,10 @@ const RawReactionGroupsSchema = Schema.optional(
 
 type RawReactionGroups = typeof RawReactionGroupsSchema.Type;
 
-/** Drop empty groups and omit the viewer from actors (shown as "You"), but retain them in count. */
+/**
+ * The viewer's own login is left out of `actors` — the page names them "You" instead, and
+ * leaving it in would name them twice — but `count` still counts them along with everyone else.
+ */
 function toReactions(
   groups: RawReactionGroups,
   viewer: string | null,
@@ -403,7 +410,6 @@ const RawDetailSchema = Schema.Struct({
   ...RawListItemSchema.fields,
   isCrossRepository: Schema.optional(Schema.Boolean),
   headRepositoryOwner: Schema.optional(Schema.NullOr(Schema.Struct({ login: Schema.String }))),
-  /** The exact head revision, used to find workflow runs that GitHub has not started yet. */
   headRefOid: Schema.optional(Schema.NullOr(Schema.String)),
   body: Schema.optional(Schema.String),
   changedFiles: Schema.optional(Schema.Int),
@@ -509,7 +515,11 @@ function RawPageInfoSchemaFields() {
 }
 const RawPageInfoSchema = RawPageInfoSchemaFields();
 
-/** Missing viewer permission fields grant access so the host can explain a refusal. */
+/**
+ * What GitHub says the viewer may do with a pull request. Both are optional so that an install
+ * that answers without them still delivers the conversation they travel with; an absent field
+ * reads as granted, which is what an unknown permission is.
+ */
 const RawViewerFieldsSchema = Schema.Struct({
   viewerCanUpdate: Schema.optional(Schema.Boolean),
   viewerDidAuthor: Schema.optional(Schema.Boolean),
@@ -521,9 +531,9 @@ const RawThreadCommentsSchema = Schema.Struct({
   nodes: Schema.Array(RawCommentSchema),
 });
 
+/** `gh pr view --json` cannot reach review threads, so they come from the GraphQL API. */
 const RawReviewThreadsSchema = Schema.Struct({
   data: Schema.Struct({
-    // Fetch viewer with reactors so identifying "You" requires no separate request.
     viewer: Schema.optional(
       Schema.NullOr(Schema.Struct({ login: Schema.optional(Schema.NullOr(Schema.String)) })),
     ),
@@ -538,7 +548,6 @@ const RawReviewThreadsSchema = Schema.Struct({
               isResolved: Schema.optional(Schema.Boolean),
               isOutdated: Schema.optional(Schema.Boolean),
               path: Schema.optional(Schema.NullOr(Schema.String)),
-              /** Null once the thread's line has left the diff, which `isOutdated` reports. */
               line: Schema.optional(Schema.NullOr(Schema.Int)),
               diffSide: Schema.optional(Schema.NullOr(Schema.String)),
               comments: RawThreadCommentsSchema,
@@ -651,7 +660,8 @@ const RawReviewThreadsSchema = Schema.Struct({
   }),
 });
 
-// Missing merge settings must fail instead of offering strategies the repository forbids.
+/** Requested together, so a response missing any of them fails rather than defaulting open:
+ *  guessing `true` would offer a merge method the repository forbids. */
 const RawRepositoryAccessSchema = Schema.Struct({
   mergeCommitAllowed: Schema.Boolean,
   squashMergeAllowed: Schema.Boolean,
@@ -726,7 +736,6 @@ const RawPullRequestFileSchema = Schema.Struct({
   previous_filename: Schema.optional(Schema.NullOr(Schema.String)),
   /** Absent for a binary file, and for one whose diff GitHub considers too large. */
   patch: Schema.optional(Schema.NullOr(Schema.String)),
-  /** Whether anything was withheld is the difference between a binary file and a pure rename. */
   additions: Schema.optional(Schema.NullOr(Schema.Int)),
   deletions: Schema.optional(Schema.NullOr(Schema.Int)),
 });
@@ -762,7 +771,11 @@ export function decodeActorAvatarsJson(
   return Result.succeed(avatarsByLogin);
 }
 
-/** Share comparison via pull refs; omit isRequired on Enterprise versions that may reject the field. */
+/**
+ * Pull refs let the comparison share the detail read without first resolving a fork branch.
+ * `isRequired` is asked for on github.com only: an older Enterprise server may not know it, and
+ * an unknown field fails the whole read.
+ */
 function checkContextNodesSelection(host: string): string {
   const required =
     host.toLowerCase() === "github.com" ? " isRequired(pullRequestNumber: $number)" : "";
@@ -841,7 +854,6 @@ export function decodePullRequestPreviewJson(
   }));
 }
 
-/** Comment/review connections page independently; request core identity and commits on the first page. */
 export const PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $head: Boolean!, $withComments: Boolean!, $commentsAfter: String, $withReviews: Boolean!, $reviewsAfter: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -861,14 +873,23 @@ export const PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY = `query($owner: String!, $name
   }
 }`;
 
-/** GitHub's own ceiling on a connection page, which is what both thread reads ask for. */
 const GRAPHQL_PAGE_SIZE = 100;
 
-/** GitHub search rejects first > 100 with EXCESSIVE_PAGINATION. */
+/**
+ * The ceiling on `search`, which refuses anything larger with EXCESSIVE_PAGINATION (measured:
+ * `first: 101` is an error, `first: 100` is not).
+ */
 export const PULL_REQUEST_SEARCH_MAX_ROWS = GRAPHQL_PAGE_SIZE;
 
-/** Across 12 repositories, 100 rows took ~4.0s without line counts vs ~7.1s with them.
- * Leave counts for batched stats; inner reviewer/label connections are bounded; rows is clamped. */
+/**
+ * `additions` and `deletions` are deliberately absent: measured over twelve repositories at a
+ * hundred rows, this query answers in ~4.0s with them left out and ~7.1s with them in, for two
+ * numbers at the end of a row. They are read afterwards, by `buildPullRequestStatsGraphQlQuery`.
+ *
+ * The row count is written into the document rather than sent as a variable because every
+ * variable here travels as a string — and it is this module's own number, clamped by the caller,
+ * never a reader's.
+ */
 export function pullRequestSearchGraphQlQuery(
   rows: number,
   includeStacks = false,
@@ -886,7 +907,6 @@ export function pullRequestSearchGraphQlQuery(
 }`;
 }
 
-/** Search-free fallback for unindexed repositories, ordered by creation rather than update. */
 export function pullRequestListGraphQlQuery(rows: number, includeStacks = false): string {
   return `query($owner: String!, $name: String!, $states: [PullRequestState!], $after: String) {
   repository(owner: $owner, name: $name) {
@@ -926,27 +946,17 @@ function pullRequestRowSelection(includeStacks: boolean, includeStats: boolean):
 }
 
 /**
- * One page of review threads with their comments, and the people on the review. `$cursor` is
- * null for the first page and the last page's `endCursor` after that, so a pull request with
- * more threads than one page holds is walked rather than cut off at the first fifty.
- *
  * Only ten comments ride with each thread. A hundred threads times a hundred comments made
  * GitHub reserve 10,000 nested rows and charge 104 points; unfinished threads are paged from
  * their own cursor below.
  *
  * Reviewers come from here rather than from `gh pr view --json reviewRequests` for two reasons:
  * that field holds only requests still outstanding, so anyone who has already reviewed drops off
- * it, and neither it nor any other `gh` JSON field carries an avatar. A reviewer can be a person,
- * an app, or a team, and each is asked for by name because they are different GraphQL types.
- *
- * `viewerCanUpdate` and `viewerDidAuthor` ride along here for the same reason: they belong to the
- * pull request this query is already standing on, so what the reader may do with it arrives with
- * the conversation rather than costing a request of its own.
+ * it, and neither it nor any other `gh` JSON field carries an avatar.
  *
  * Commits are asked for with `last` rather than `first`: `gh pr view --json commits` pages from
  * the start, so a pull request with more than a hundred commits loses the newest ones from its
- * view entirely. This query gives back the newest hundred, which is what a reader scoping a diff
- * wants, and stands in for the `gh` list wherever it came back non-empty.
+ * view entirely.
  */
 export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   viewer { login }
@@ -1010,7 +1020,11 @@ export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: Strin
   }
 }`;
 
-/** GraphQL inner connections must be paged from their own nodes, so finish long threads separately. */
+/**
+ * GraphQL pages a connection nested inside another only from the inner node itself, so a thread
+ * longer than a page is followed on its own — a request GitHub makes necessary, and one no
+ * ordinary pull request ever provokes.
+ */
 export const REVIEW_THREAD_COMMENTS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $threadId: ID!, $cursor: String) {
   viewer { login }
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } }
@@ -1033,7 +1047,6 @@ const RawReviewThreadCommentsSchema = Schema.Struct({
     repository: Schema.NullOr(
       Schema.Struct({ pullRequest: Schema.NullOr(Schema.Struct({ id: Schema.String })) }),
     ),
-    /** Null for an id that names nothing the viewer can read, which is not a thread to page. */
     node: Schema.NullOr(
       Schema.Struct({
         pullRequest: Schema.optional(Schema.Struct({ id: Schema.String })),
@@ -1049,7 +1062,6 @@ export const REVIEW_THREAD_REPLY_GRAPHQL_MUTATION = `mutation($threadId: ID!, $b
   }
 }`;
 
-/** Pull-request node id for mutations; conversation remarks already carry their own ids. */
 export const PULL_REQUEST_NODE_ID_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } }
 }`;
@@ -1071,7 +1083,10 @@ export function decodePullRequestNodeIdJson(raw: string): Result.Result<string, 
     : Result.fail(decoded.failure);
 }
 
-/** Verify client-given subject ownership before mutation so it cannot write to another pull request. */
+/**
+ * Read before a mutation reaches it, so a subject named for one pull request cannot
+ * react on another's behalf.
+ */
 export const REACTION_SUBJECT_PULL_REQUEST_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $subjectId: ID!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } }
   node(id: $subjectId) {
@@ -1098,7 +1113,6 @@ const RawReactionSubjectScopeSchema = Schema.Struct({
 
 const decodeReactionSubjectScope = decodeJsonResult(RawReactionSubjectScopeSchema);
 
-/** False for unreadable/missing subjects and subjects outside this pull request. */
 export function decodeReactionSubjectScopeJson(raw: string): Result.Result<boolean, DecodeFailure> {
   const decoded = decodeReactionSubjectScope(raw);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
@@ -1124,7 +1138,11 @@ export const UNRESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION = `mutation($threadId: ID!
   unresolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } }
 }`;
 
-/** Omitted title/body variables leave fields untouched, sharing one mutation across partial edits. */
+/**
+ * Both are nullable so that one document serves a change to the title, to the description, or to
+ * the two together: a variable the request does not send puts no entry in the input at all,
+ * which leaves that field as it was rather than clearing it.
+ */
 export const UPDATE_PULL_REQUEST_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!, $title: String, $body: String) {
   updatePullRequest(input: { pullRequestId: $pullRequestId, title: $title, body: $body }) {
     pullRequest { id }
@@ -1137,7 +1155,6 @@ export const REVERT_PULL_REQUEST_GRAPHQL_MUTATION = `mutation($pullRequestId: ID
   }
 }`;
 
-/** Both comment kinds share variable names despite different mutation input names. */
 export const UPDATE_ISSUE_COMMENT_GRAPHQL_MUTATION = `mutation($commentId: ID!, $body: String!) {
   updateIssueComment(input: { id: $commentId, body: $body }) { issueComment { id } }
 }`;
@@ -1167,7 +1184,6 @@ const REVIEW_EVENTS: Record<PullRequestReviewVerdict, "COMMENT" | "APPROVE" | "R
   "request-changes": "REQUEST_CHANGES",
 };
 
-/** Follow only when dismissal events extend past the thread query's embedded page. */
 export const REVIEW_DISMISSALS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -1195,7 +1211,6 @@ function gitHubReviewPosition(position: PullRequestReviewPosition): {
   }
 }
 
-/** One review request body keeps comments invisible until the verdict is sent. */
 export function buildReviewSubmission(input: {
   readonly verdict: PullRequestReviewVerdict;
   readonly body: string;
@@ -1224,14 +1239,12 @@ export interface GitHubPullRequestListItem {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
   readonly mergeability: PullRequestMergeability;
-  /** Null where GitHub has no verdict to summarise, which includes a draft nobody has reviewed. */
   readonly reviewDecision: PullRequestReviewDecision | null;
   readonly additions: number;
   readonly deletions: number;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly reviewRequestLogins: ReadonlyArray<string>;
-  /** At least one outstanding request targets a team rather than an individual login. */
   readonly hasTeamReviewRequest: boolean;
   readonly labels: ReadonlyArray<PullRequestLabel>;
   /** Null where the head commit reported no checks, which is not the same as passing none. */
@@ -1249,7 +1262,6 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly checks: ReadonlyArray<PullRequestCheck>;
   /** Absent where `gh` did not answer for auto-merge at all, which is not the same as off. */
   readonly autoMergeEnabled?: boolean;
-  /** Absent where auto-merge is off or GitHub did not report the stored strategy. */
   readonly autoMergeMethod?: PullRequestMergeMethod;
 }
 
@@ -1277,14 +1289,22 @@ function trimmed(value: string | null | undefined): string | null {
   return text.length > 0 ? text : null;
 }
 
-/** hasNextPage decides exhaustion; GitHub may return endCursor on the final page too. */
+/**
+ * GitHub sends an `endCursor` on a page that is also the last one, so the flag is what
+ * decides, not the cursor's presence.
+ */
 function nextCursorOf(
   pageInfo: Schema.Schema.Type<typeof RawPageInfoSchema> | undefined,
 ): string | null {
   return pageInfo?.hasNextPage === true ? trimmed(pageInfo.endCursor) : null;
 }
 
-/** Missing update permission grants access, but unknown authorship cannot grant author-only actions. */
+/**
+ * Updating is a permission, so an install that does not report it grants it and lets the host's
+ * own refusal explain anything that fails. Authorship is not a permission but a fact about who
+ * wrote the thing, and it is read to decide what an author may do to their own change — so an
+ * unknown answer is "not the author", which grants nothing it should not.
+ */
 function toPullRequestViewerFields(
   raw: Schema.Schema.Type<typeof RawViewerFieldsSchema> | null | undefined,
 ): { readonly canUpdate: boolean; readonly didAuthor: boolean } {
@@ -1303,10 +1323,6 @@ function toActor(raw: Schema.Schema.Type<typeof RawActorSchema> | null | undefin
       };
 }
 
-/**
- * A requested team as a reviewer row. It goes by `org/slug`, the handle GitHub mentions it by.
- * No GitHub login contains a slash, so a team never shares a row or a verdict with a user.
- */
 function toRequestedTeam(
   raw:
     | Pick<Schema.Schema.Type<typeof RawReviewRequestSchema>, "combinedSlug" | "name" | "avatarUrl">
@@ -1328,8 +1344,6 @@ function toCommitActor(
   return login === null ? null : { login, name: trimmed(raw.name), avatarUrl: null };
 }
 
-/** An author off the GraphQL commits connection, which names an account by `user.login` where
- *  `gh pr view --json commits` names it by a flat `login` copied off the signature. */
 function toGraphqlCommitActor(raw: {
   readonly name?: string | null | undefined;
   readonly avatarUrl?: string | null | undefined;
@@ -1376,11 +1390,14 @@ function toMergeMethod(value: string | null | undefined): PullRequestMergeMethod
   }
 }
 
-/** Branch rules can leave reviewDecision empty despite reviews.
- * Fall back to each reviewer's latest verdict, with changes requested outranking approval. */
+/**
+ * GitHub's own `reviewDecision` counts only reviews that satisfy the branch rules, so an
+ * approval from an app (a review bot) or from anyone without the required permission leaves it
+ * empty. The reviewers still said something, and a row should show it: when GitHub reports no
+ * verdict, the latest review per reviewer decides, changes requested outranking approval.
+ */
 function toReviewDecisionWithReviews(
   value: string | null | undefined,
-  // `gh pr list` hands the reviews as an array; the GraphQL reads hand a connection.
   latestReviews:
     | ReadonlyArray<Schema.Schema.Type<typeof RawLatestReviewSchema>>
     | { readonly nodes: ReadonlyArray<Schema.Schema.Type<typeof RawLatestReviewSchema>> }
@@ -1423,7 +1440,6 @@ function toLabels(
   });
 }
 
-/** Track team requests separately because team slugs cannot match the viewer's login. */
 function toReviewRequestLogins(
   raw: ReadonlyArray<Schema.Schema.Type<typeof RawReviewRequestSchema>> | undefined,
 ): ReadonlyArray<string> {
@@ -1475,7 +1491,6 @@ function toCheckStatus(raw: Schema.Schema.Type<typeof RawCheckSchema>): PullRequ
 /** What GitHub writes where a run has not reached that moment yet, which is not a time. */
 const UNSET_TIMESTAMP = "0001-01-01T00:00:00Z";
 
-/** Sorts after every real timestamp, so the deduper keeps a run that has not finished. */
 const STILL_RUNNING = "9999-12-31T23:59:59Z";
 
 function realTimestamp(value: string | null | undefined): string | null {
@@ -1483,12 +1498,15 @@ function realTimestamp(value: string | null | undefined): string | null {
   return at === null || at === UNSET_TIMESTAMP ? null : at;
 }
 
-/** Only a row the rollup gives no name of any kind, which is not a check anyone can show. */
 function isNamelessCheck(raw: Schema.Schema.Type<typeof RawCheckSchema>): boolean {
   return trimmed(raw.name) === null && trimmed(raw.context) === null;
 }
 
-/** Unfinished reruns outrank finished runs so duplicate push/pull_request workflows cannot hide progress. */
+/**
+ * A run that has not finished outranks any finished run of the same check: a workflow triggered
+ * by both `push` and `pull_request` runs the check twice on one commit, and the run that
+ * finished first must not hide the one still going.
+ */
 function toCheckEntries(
   raw: ReadonlyArray<Schema.Schema.Type<typeof RawCheckSchema>> | null | undefined,
 ): ReadonlyArray<{
@@ -1519,8 +1537,14 @@ function toCheckEntries(
   });
 }
 
-/** Deduped failures outrank pending runs; no checks means null, never an unearned passing state.
- * Nameless search verdicts cannot collide; cancelled fails while skipped/neutral are ignored. */
+/**
+ * A cancelled run is a failure, as GitHub's own rollup and the client's detail rollup both read
+ * it; skipped and neutral count towards neither, so the row and the detail header never disagree
+ * about one head commit.
+ *
+ * A row with no name at all is counted as it comes, since the cross-repository search dresses
+ * GitHub's own rollup enum as one nameless row, and nothing nameless can collide with anything.
+ */
 function rollupChecksState(
   raw: ReadonlyArray<Schema.Schema.Type<typeof RawCheckSchema>> | null | undefined,
 ): PullRequestChecksState | null {
@@ -1566,7 +1590,10 @@ function toComments(raw: {
     path: null,
     reviewState: null,
   }));
-  // Keep bodiless verdicts, but omit empty COMMENTED review containers whose line comments render separately.
+  // A review with no body is kept only when its state is the event itself — an approval, a
+  // request for changes, a dismissal. GitHub also opens a bodiless `COMMENTED` review as the
+  // container for line comments, and those comments are read from the review threads, so
+  // keeping the container too would show a row with a name and nothing under it.
   const reviews = (raw.reviews ?? []).flatMap((review): ReadonlyArray<PullRequestComment> => {
     const submittedAt = trimmed(review.submittedAt);
     const reviewState = trimmed(review.state);
@@ -1647,8 +1674,6 @@ function toDetail(raw: Schema.Schema.Type<typeof RawDetailSchema>): GitHubPullRe
     mergedAt: trimmed(raw.mergedAt),
     closedAt: trimmed(raw.closedAt),
     checks: toChecks(raw.statusCheckRollup),
-    // A JSON null is GitHub saying "nobody armed this"; a missing key is GitHub not saying, and
-    // the difference survives here rather than being flattened into false.
     ...(raw.autoMergeRequest === undefined
       ? {}
       : { autoMergeEnabled: raw.autoMergeRequest !== null }),
@@ -1678,7 +1703,6 @@ export interface GitHubPullRequestListBatch {
   readonly endCursor: string | null;
 }
 
-/** Skip malformed rows without blanking the page; unreadable repositories return an empty page. */
 export function decodePullRequestListJson(
   raw: string,
 ): Result.Result<GitHubPullRequestListBatch, DecodeFailure> {
@@ -1699,7 +1723,6 @@ export function decodePullRequestListJson(
   });
 }
 
-/** Null for non-PR or malformed GraphQL nodes; normalize connections and check enums to listing rows. */
 function toRow(
   entry: unknown,
 ): { readonly item: GitHubPullRequestListItem; readonly repository: string | null } | null {
@@ -1725,8 +1748,6 @@ function toRow(
         ),
         reviewRequests,
         labels: (node.labels?.nodes ?? []).flatMap((label) => (label === null ? [] : [label])),
-        // The rollup arrives as one enum. Dressed as a single check here so it is read the same
-        // way the detail's checks are.
         statusCheckRollup: (node.commits?.nodes ?? []).flatMap((commitNode) => {
           const state = trimmed(commitNode?.commit?.statusCheckRollup?.state);
           return state === null ? [] : [{ state }];
@@ -1750,7 +1771,6 @@ export interface GitHubPullRequestSearchBatch {
   readonly endCursor: string | null;
 }
 
-/** Skip non-PR/malformed search nodes so one unexpected row cannot blank the host. */
 export function decodePullRequestSearchJson(
   raw: string,
 ): Result.Result<GitHubPullRequestSearchBatch, DecodeFailure> {
@@ -1787,10 +1807,12 @@ function toStackMembership(
     : undefined;
 }
 
-/** What GitHub allows in an owner or repository name. */
 const REPOSITORY_PART = /^[A-Za-z0-9._-]+$/;
 
-/** Reject unsafe selectors before batching: one unanswerable alias fails the whole document. */
+/**
+ * A batch is one document, and a single unanswerable alias fails all of it, so these are
+ * refused up front.
+ */
 function repositoryParts(
   repository: string,
 ): { readonly owner: string; readonly name: string } | null {
@@ -1829,8 +1851,6 @@ function aliasedPullRequestsDocument(
   });
 }
 
-/** Use aliases because callers hold repository/number rather than node ids.
- * Null for unsafe selectors or an empty request. */
 export function buildPullRequestStatsGraphQlQuery(
   changeRequests: ReadonlyArray<{ readonly repository: string; readonly number: number }>,
 ): GraphQlDocument | null {
@@ -1871,7 +1891,6 @@ export function decodePullRequestStackMembershipsJson(
   return Result.succeed(memberships);
 }
 
-/** Counts keyed by alias index; missing nodes leave existing row values intact. */
 export function decodePullRequestStatsJson(
   raw: string,
 ): Result.Result<
@@ -1966,7 +1985,6 @@ export interface GitHubPullRequestSummary {
   readonly stack?: PullRequestStackMembership | null;
 }
 
-/** Missing/malformed summaries are absent rather than failing the rest of the batch. */
 export function decodePullRequestSummariesJson(
   raw: string,
 ): Result.Result<ReadonlyMap<number, GitHubPullRequestSummary>, DecodeFailure> {
@@ -2015,8 +2033,12 @@ const WATCH_FINGERPRINT_EDITS = "totalCount nodes { lastEditedAt }";
 const WATCH_FINGERPRINT_CHECK_COUNTS =
   "checkRunCountsByState { state count } statusContextCountsByState { state count }";
 
-/** Fingerprints gate full reads at one point per 25 PRs, versus 16 for one detail/activity read.
- * Edits to reviews older than the newest 100, and all thread-comment edits, wait for periodic full reads. */
+/**
+ * Comments come most recently updated first, since an edit moves `updatedAt`, so an edit to an
+ * old comment on a long pull request is still in the page. Reviews have no such order: an edit
+ * to a review older than the last hundred waits for the watch's periodic full read, as do edits
+ * to comments inside review threads, which cost a point per pull request to ask for.
+ */
 const PULL_REQUEST_WATCH_FINGERPRINT_SELECTION =
   "state mergeable headRefOid " +
   `comments(first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) { ${WATCH_FINGERPRINT_EDITS} } ` +
@@ -2035,7 +2057,10 @@ export function buildPullRequestWatchFingerprintsGraphQlQuery(
   );
 }
 
-/** Status changes need detail; remarks changes additionally need the costlier activity read. */
+/**
+ * Two parts, so a watch reads only what moved: `status` (state, mergeability, head, and checks)
+ * needs the detail read, and `remarks` also needs the far costlier activity read.
+ */
 export interface GitHubPullRequestWatchFingerprint {
   readonly status: string;
   readonly remarks: string;
@@ -2125,7 +2150,6 @@ export function decodePullRequestWatchFingerprintsJson(
 }
 
 export interface GitHubPullRequestCore extends GitHubPullRequestDetail {
-  /** Teams asked for a review. `reviewRequestLogins` holds the people. */
   readonly reviewRequestTeams: ReadonlyArray<PullRequestActor>;
   readonly viewerAccess: GitHubViewerAccess & GitHubRepositoryAccess;
   readonly comparison: GitHubBaseComparison | null;
@@ -2379,16 +2403,18 @@ export interface GitHubReviewThreadComments {
   readonly reactions: ReadonlyArray<PullRequestReaction>;
   readonly reactionsById: ReadonlyMap<string, ReadonlyArray<PullRequestReaction>>;
   readonly editedAtById: ReadonlyMap<string, string>;
-  /** Include completed reviewers: outstanding requests alone omit everyone who has already answered. */
   readonly reviewers: ReadonlyArray<PullRequestActor>;
-  /** Avatars keyed by login, including apps, collected from actors in the same query. */
   readonly avatarsByLogin: ReadonlyMap<string, string>;
   readonly botLogins: ReadonlySet<string>;
   readonly commitStats: ReadonlyMap<
     string,
     { readonly additions: number; readonly deletions: number }
   >;
-  /** Newest hundred commits, oldest first; empty on degraded reads means retain the fallback list. */
+  /**
+   * Empty wherever the read never happened (an install too old for the field, a degraded page),
+   * which the caller reads as "keep the `gh pr view` list" rather than as "this pull request has
+   * no commits".
+   */
   readonly commits: ReadonlyArray<PullRequestCommit>;
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
 }
@@ -2403,7 +2429,10 @@ export interface GitHubReviewThreadPage {
   readonly threads: ReadonlyArray<GitHubReviewThreadEntry>;
   readonly nextCursor: string | null;
   readonly reactions: ReadonlyArray<PullRequestReaction>;
-  /** Only node ids with reactions are included; absent ids have none. */
+  /**
+   * Reactions by node id, for the conversation comments and reviews `gh pr view --json` answers
+   * for without any. Only ids with a reaction are here; the rest carry none.
+   */
   readonly reactionsById: ReadonlyMap<string, ReadonlyArray<PullRequestReaction>>;
   readonly editedAtById: ReadonlyMap<string, string>;
   readonly reviewers: ReadonlyArray<PullRequestActor>;
@@ -2415,7 +2444,6 @@ export interface GitHubReviewThreadPage {
   >;
   readonly commits: ReadonlyArray<PullRequestCommit>;
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
-  /** Dismissal reasons by the dismissed review's node id, which the review itself never carries. */
   readonly dismissalsByReviewId: ReadonlyMap<string, string>;
   readonly nextDismissalCursor: string | null;
 }
@@ -2514,7 +2542,8 @@ export function decodeReviewThreadsJson(
         thread: {
           id,
           path,
-          // Outdated threads have no diff line, so list them without pinning to a nonexistent position.
+          // Null once the thread's line has left the diff, which is exactly when GitHub reports
+          // it outdated. Such a thread is listed rather than pinned to a line it no longer has.
           line:
             thread.line !== null && thread.line !== undefined && thread.line > 0
               ? thread.line
@@ -2559,7 +2588,6 @@ export function decodeReviewThreadsJson(
     ...(pullRequest.latestReviews?.nodes ?? []).map((node) => node.author),
   ]) {
     const actor = toActor(raw) ?? toRequestedTeam(raw);
-    // Keyed by login, so someone who was asked and then answered appears once.
     if (actor !== null && !reviewers.has(actor.login)) reviewers.set(actor.login, actor);
   }
   const commitStats = new Map<string, { readonly additions: number; readonly deletions: number }>();
@@ -2568,7 +2596,9 @@ export function decodeReviewThreadsJson(
     const commit = node.commit;
     const oid = trimmed(commit.oid);
     if (oid === null) continue;
-    // Merge commits compare to the first parent and include upstream changes; omit misleading per-commit stats.
+    // GitHub measures a merge commit against its first parent, so merging the base into the head
+    // reports every upstream change as if it belonged to the pull request. There is no useful
+    // per-commit stat to show for that integration commit without another comparison request.
     if (
       (commit.parents?.totalCount ?? 1) <= 1 &&
       commit.additions !== undefined &&
@@ -2689,14 +2719,20 @@ function toCanTriage(viewerPermission: string | null | undefined): boolean {
   return viewerPermission?.trim().toUpperCase() === "TRIAGE" || toCanWrite(viewerPermission);
 }
 
+/**
+ * `assignableUsers` is the list GitHub's own reviewer picker is built from — everyone with access
+ * to the repository — rather than `collaborators`, which the REST API refuses to anyone without
+ * push access and which would therefore be empty for exactly the reader most likely to be looking.
+ *
+ * The teams a repository could newly be sent to live on the owning organization and need
+ * `read:org`, which a repository-scoped token need not carry — and a query GitHub refuses fails
+ * whole, taking the people down with the teams.
+ */
 export interface GitHubBaseComparison {
-  /** Null where the host could not compare, which the page reads as "unknown". */
   readonly behindBy: number | null;
   readonly viewerCanUpdate: boolean;
 }
 
-/** Use assignableUsers: REST collaborators requires push access. Only fetch requested teams;
- * listing organization teams needs read:org, and a refusal would also fail the user candidates. */
 export const REVIEWER_CANDIDATES_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     assignableUsers(first: ${GRAPHQL_PAGE_SIZE}) {
@@ -2747,8 +2783,13 @@ const RawReviewerCandidatesSchema = Schema.Struct({
 
 const decodeReviewerCandidates = decodeJsonResult(RawReviewerCandidatesSchema);
 
-/** Exclude the author; keep requested users/apps first even when no longer assignable
- * so their requests can still be removed. */
+/**
+ * The author is dropped rather than shown as an unusable row: GitHub refuses a review request
+ * from the person who opened the pull request, so offering them is offering a failure.
+ *
+ * Whoever has been asked leads the list even where GitHub does not count them assignable — an
+ * outside collaborator, an app — because a request that cannot be seen cannot be taken back.
+ */
 export function decodeReviewerCandidatesJson(
   raw: string,
 ): Result.Result<PullRequestReviewerCandidateList, DecodeFailure> {
@@ -2768,7 +2809,6 @@ export function decodeReviewerCandidatesJson(
     candidates.set(`${slug === null ? "user" : "team"} ${id}`, {
       id,
       kind: slug === null ? "user" : "team",
-      // The same `org/slug` the reviewer row shows, so taking the request back finds that row.
       login: slug === null ? id : (trimmed(raw?.combinedSlug) ?? id),
       name: trimmed(raw?.name),
       avatarUrl: trimmed(raw?.avatarUrl),
@@ -2793,7 +2833,6 @@ export function decodeReviewerCandidatesJson(
   });
 }
 
-/** Requested-reviewer writes split users/teams; POST and DELETE use the same body. */
 const ReviewerRequestSchema = Schema.Struct({
   reviewers: Schema.Array(Schema.String),
   team_reviewers: Schema.Array(Schema.String),
@@ -2853,7 +2892,10 @@ const RawLabelCandidatesSchema = Schema.Struct({
 
 const decodeLabelCandidates = decodeJsonResult(RawLabelCandidatesSchema);
 
-/** Keep already-applied labels visible even if absent from the repository page so they can be removed. */
+/**
+ * A label the pull request wears that the repository no longer defines — deleted since, or past
+ * the page — leads the list anyway, because a label that cannot be seen cannot be taken off.
+ */
 export function decodeLabelCandidatesJson(
   raw: string,
 ): Result.Result<PullRequestLabelCandidateList, DecodeFailure> {
@@ -2895,19 +2937,23 @@ export function buildLabelRequest(labels: ReadonlyArray<string>): {
   return { labels };
 }
 
-/** canWrite is repository-wide; pull-request permissions distinguish an author with only read access. */
+/**
+ * `canWrite` is about the repository, the other two about this pull request in particular —
+ * which is why an author with only read access can still be told apart from a passer-by.
+ */
 export interface GitHubViewerAccess {
   readonly canWrite: boolean;
-  /** TRIAGE can label without merging; write-capable roles can label too. */
   readonly canTriage: boolean;
   readonly canUpdate: boolean;
   readonly didAuthor: boolean;
-  /** viewerCanUpdateBranch is false when current, so it includes both permission and work to do.
-   * Absent when the comparison was not read. */
+  /**
+   * GitHub's own `viewerCanUpdateBranch`, read with the base comparison rather than here: it is
+   * false for a branch that is already current, so it answers "may update, and there is
+   * something to update" at once. Absent where the comparison was not read.
+   */
   readonly canUpdateBranch?: boolean;
 }
 
-/** Core detail and write checks share one read of permissions and merge settings. */
 export const VIEWER_PERMISSIONS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
@@ -2955,14 +3001,20 @@ export interface GitHubPullRequestFilesPatch {
   readonly omittedFileStats: ReadonlyArray<PullRequestOmittedFileStat>;
 }
 
-/** Assemble per-file hunks into unified patches; rawCount lets callers continue despite skipped rows. */
+/**
+ * The files API returns hunks per file with no `diff --git` header, so the unified patch every
+ * diff viewer expects is assembled here. This decodes one page; walking pages is the caller's
+ * job, which is why the raw file count comes back with the patch.
+ */
 export function decodePullRequestFilesJson(
   raw: string,
 ): Result.Result<GitHubPullRequestFilesPatch, DecodeFailure> {
   return Result.map(decodeUnknownList(raw), toFilesPatch);
 }
 
-/** Commit files use the same entries inside an object; absent files means an empty commit. */
+/**
+ * An empty commit carries no `files` at all, which is a commit with nothing in it.
+ */
 export function decodeCommitFilesJson(
   raw: string,
 ): Result.Result<GitHubPullRequestFilesPatch, DecodeFailure> {
@@ -2984,7 +3036,9 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
     const hunks = value.patch ?? "";
     const status = value.status?.trim().toLowerCase();
     if (hunks.length === 0) {
-      // Keep header-only renames and binaries listed; only withheld hunks make the patch incomplete.
+      // A file with no hunks is still a file that changed: a pure rename has none to give, and
+      // a binary one has none that can be shown. Both are listed, and only the second is a hole
+      // in the patch — leaving them out entirely would drop them from the change altogether.
       const additions = value.additions ?? 0;
       const deletions = value.deletions ?? 0;
       if (additions + deletions > 0) {
@@ -2992,12 +3046,12 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
         omittedFileStats.push({ path: value.filename, additions, deletions });
       }
     }
-    // A rename counts its hunks against the old path, which is the only place it is named.
     const oldPath =
       status === "renamed" ? value.previous_filename || value.filename : value.filename;
     const header = [
       `diff --git ${quoteGitPatchPath(`a/${oldPath}`)} ${quoteGitPatchPath(`b/${value.filename}`)}`,
-      // GitHub omits modes; ordinary file modes still let the viewer recognize additions/deletions.
+      // The files API reports no file mode, so the ordinary one stands in: the viewer reads
+      // these lines as "added" and "removed" rather than for the mode they carry.
       ...(status === "added" ? ["new file mode 100644"] : []),
       ...(status === "removed" ? ["deleted file mode 100644"] : []),
       ...(status === "renamed"
@@ -3019,7 +3073,10 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
   };
 }
 
-/** Viewed state is GraphQL-only; the REST files endpoint used for patches does not carry it. */
+/**
+ * GraphQL only, since the REST files endpoint the patch is read from carries no viewed state, so
+ * this is a second read rather than a wider version of the first.
+ */
 export const PULL_REQUEST_FILES_VIEWED_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -3072,7 +3129,6 @@ export interface GitHubPullRequestFilesViewedPage {
   readonly nextCursor: string | null;
 }
 
-/** Anything this host does not name is treated as unread, which is the state that asks for least. */
 function toFileViewedState(raw: string): PullRequestFileViewedState {
   switch (raw.trim().toUpperCase()) {
     case "VIEWED":
@@ -3101,8 +3157,11 @@ export function decodePullRequestFilesViewedJson(
   });
 }
 
-/** Alias single-path mark/unmark mutations into one request; top-level mutation order
- * makes the last update to a path win. */
+/**
+ * GitHub has no bulk form of `markFileAsViewed`/`unmarkFileAsViewed`, which each take a
+ * single path, so the batching is done with aliases; top-level mutation fields run in write
+ * order, so the last word about a path is the one that sticks.
+ */
 export function buildSetFilesViewedGraphQlMutation(
   pullRequestId: string,
   files: ReadonlyArray<{ readonly path: string; readonly viewed: boolean }>,
@@ -3127,7 +3186,12 @@ const RawStackPullRequestSchema = Schema.Struct({
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
-/** Stacks are a moving preview: accept base as a ref object or bare branch, requiring identity and layers. */
+/**
+ * A stack as `GET /repos/{owner}/{repo}/stacks` answers it, in a public preview whose shape may
+ * still move. Only what a stack is made of is required — where it lives, what it stands on, and
+ * its pull requests — and `base` is accepted both as the ref object the preview sends today and
+ * as the bare branch name it started out as.
+ */
 const RawStackSchema = Schema.Struct({
   id: Schema.optional(Schema.NullOr(Schema.Union([Schema.Int, Schema.String]))),
   number: Schema.Int,
@@ -3158,7 +3222,10 @@ export interface GitHubPullRequestStack {
   readonly layers: ReadonlyArray<GitHubPullRequestStackLayer>;
 }
 
-/** A pull request belongs to at most one native stack; the listing array can only mean one or none. */
+/**
+ * The first stack of a `?pull_request=` listing, or null for an empty one: a pull request is in
+ * at most one stack, so the array is GitHub's way of saying "none" rather than a page.
+ */
 export function decodePullRequestStacksJson(
   raw: string,
 ): Result.Result<GitHubPullRequestStack | null, DecodeFailure> {
@@ -3169,7 +3236,6 @@ export function decodePullRequestStacksJson(
   return Result.succeed({
     id: stack.id == null ? (trimmed(stack.node_id) ?? String(stack.number)) : String(stack.id),
     number: stack.number,
-    // The page a person opens where the preview reports one; the API URL is what it always has.
     url: trimmed(stack.html_url) ?? stack.url,
     base: typeof stack.base === "string" ? stack.base : stack.base.ref,
     layers: stack.pull_requests.map((pullRequest) => ({

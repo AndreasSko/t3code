@@ -9,8 +9,12 @@ import {
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 
 /**
- * Call-time t3.json reads share the per-environment/cwd cache and optimistic overlays used by the UI.
- * Missing, truncated, or invalid files return null.
+ * Imperative counterpart to `useT3ProjectFileState` for the new-thread path,
+ * which resolves defaults at call time rather than render time. The file
+ * query atom caches per (environment, cwd), so repeat calls don't re-fetch.
+ * Optimistic in-app writes overlay the query result, matching what
+ * `useProjectFileQuery` renders. Missing, truncated, or invalid files
+ * resolve to null.
  */
 export async function readT3ProjectFile(
   environmentId: EnvironmentId,

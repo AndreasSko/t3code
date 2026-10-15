@@ -63,7 +63,6 @@ type CodexRateLimitsProbe =
         | null
         | undefined;
       readonly resetCredits: CodexResetCreditsSummary | null | undefined;
-      /** The ChatGPT workspace the usage belongs to, when the backend names it. */
       readonly accountId?: string | null | undefined;
     }
   | { readonly failure: string };
@@ -100,7 +99,6 @@ const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
 
 const DEFAULT_SERVICE_TIER_ID = "default";
 
-/** Shorter copy for tiers whose catalog description wraps in the traits menu. */
 const SERVICE_TIER_DESCRIPTIONS: Readonly<Record<string, string>> = {
   ultrafast: "Even faster, more expensive",
 };
@@ -243,7 +241,6 @@ function parseCodexModelListResponse(
   }));
 }
 
-/** Uses the preferred ranking when available; otherwise preserves Codex's advertised default. */
 export function applyPreferredCodexDefaultModel(
   models: ReadonlyArray<ServerProviderModel>,
 ): ReadonlyArray<ServerProviderModel> {
@@ -265,7 +262,11 @@ export function applyPreferredCodexDefaultModel(
   });
 }
 
-/** Bare custom slugs borrow built-in descriptors because Codex has no static default capability set. */
+/**
+ * Codex has no static default capability set, so a bare custom slug borrows
+ * the first built-in's descriptors; an entry with its own capabilities keeps
+ * them.
+ */
 function appendCustomCodexModels(
   models: ReadonlyArray<ServerProviderModel>,
   customModels: ReadonlyArray<CustomModelSetting>,
@@ -347,9 +348,16 @@ const readCodexModelsCacheFetchedAt = Effect.fn("readCodexModelsCacheFetchedAt")
   );
 });
 
-/** model/list can reuse another originator's five-minute shared cache, losing client-specific tiers.
- * Retry after a post-spawn cache write; retain the first answer if refresh times out.
- * Another client can still win the write race; the next probe corrects it. */
+/**
+ * `model/list` serves `CODEX_HOME/models_cache.json` while it is under five
+ * minutes old. Every Codex client on the machine shares that file, and the
+ * backend tailors the catalog to each client's originator: the plain CLI does
+ * not get Sol Ultrafast. So the first answer can be another client's catalog.
+ * App-server refreshes the catalog online at startup, so wait until a write
+ * newer than this process's spawn lands, then list again. If no refresh
+ * lands in time, keep the first answer. Another client writing in the same
+ * few hundred milliseconds can still win; the next probe corrects it.
+ */
 const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(function* (input: {
   readonly client: CodexClient.CodexAppServerClient["Service"];
   readonly codexHome: string;
@@ -372,8 +380,13 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
   return yield* requestAllCodexModels(input.client);
 });
 
-/** Startup refresh precedes initialize, so set originator at spawn for the right model catalog.
- * Explicit user environment values still win. */
+/**
+ * Codex sends its client name as the `originator` header, and the backend
+ * tailors the model catalog to it. App-server starts its catalog refresh
+ * before `initialize` names the client, so that first fetch goes out as the
+ * plain CLI, misses tiers like Sol Ultrafast, and overwrites the shared
+ * `models_cache.json`. Naming the originator at spawn closes that race.
+ */
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv => ({
@@ -394,7 +407,6 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   };
 }
 
-/** Returns an initialized app-server client whose process dies when the caller's scope closes. */
 export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string | undefined;
@@ -402,7 +414,10 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   readonly cwd: string;
   readonly environment?: NodeJS.ProcessEnv | undefined;
 }) {
-  // Spawned env vars do not shell-expand ~; expand configured CODEX_HOME like CodexTextGeneration.
+  // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
+  // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
+  // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
+  // Expand here for parity with `CodexTextGeneration`.
   const resolvedHomePath = input.homePath
     ? expandHomePath(input.homePath, yield* HostProcess.HomeDirectory)
     : undefined;

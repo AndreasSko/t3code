@@ -1,8 +1,5 @@
 import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
 
-/** Prompt links fill a draft for the user to review before sending.
- * They cannot select a runtime mode, branch, or worktree. */
-
 /** URLs stay well under the limits browsers and link shorteners apply. */
 export const PROMPT_LINK_MAX_PROMPT_LENGTH = 8_000;
 
@@ -17,7 +14,6 @@ export interface PromptLinkPullRequest extends PromptLinkRepository {
 
 export interface LinkedPrompt {
   readonly text: string;
-  /** How many invisible characters were removed. Any count above zero is a warning sign. */
   readonly hiddenCharacters: number;
 }
 
@@ -40,8 +36,9 @@ export type PromptLinkResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: string };
 
-// Remove invisible prompt instructions; U+FE0E/U+FE0F stay for emoji.
-// Line and paragraph separators become visible newlines.
+// Zero-width and bidi controls, tag and variation-selector blocks, and other characters that
+// render as nothing. A model reads them; the person checking the draft cannot see them, which
+// makes them the usual way to hide instructions in a prompt. U+FE0E/U+FE0F stay: emoji use them.
 const HIDDEN_CHARACTERS =
   // oxlint-disable-next-line no-control-regex, no-misleading-character-class -- these are the characters it removes.
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0D\uFEFF\uFFA0\uFFF0-\uFFFB\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}\u{E0000}-\u{E0FFF}]/gu;

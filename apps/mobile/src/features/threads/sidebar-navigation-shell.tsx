@@ -12,11 +12,11 @@ import { useMobileNavigationTheme } from "../../lib/useMobileNavigationTheme";
 const SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
 type SidebarScreenOptions = NativeStackNavigationOptions & {
-  // The patched iOS 26 editor item style leading-aligns the inline title.
+  // Same patched RNS option the GLASS/SOLID presets in Stack.tsx use — the
+  // iOS 26 "editor" navigation-item style leading-aligns the inline title.
   readonly unstable_navigationItemStyle?: "editor";
 };
 
-/** Only dynamic search callbacks and header items are configured by the screen content. */
 const SIDEBAR_SCREEN_OPTIONS: SidebarScreenOptions = {
   contentStyle: { backgroundColor: "transparent" },
   headerLargeTitle: false,
@@ -31,7 +31,14 @@ const SIDEBAR_SCREEN_OPTIONS: SidebarScreenOptions = {
 
 const SidebarStack = createNativeStackNavigator();
 
-/** This navigation-inert stack owns native sidebar chrome; all destination navigation stays on the root stack. */
+/**
+ * The stack is navigation-inert — nothing is ever pushed onto it. It exists so the sidebar
+ * column owns a real UINavigationBar (large title, native bar button items,
+ * UISearchController), mirroring how each column of a UISplitViewController has its own
+ * UINavigationController. All real navigation still flows through the root stack via callbacks
+ * minted in AdaptiveWorkspaceLayout; NavigationIndependentTree only isolates the navigation
+ * hooks used for header configuration inside the pane.
+ */
 export function SidebarNavigationShell(props: { readonly children: ReactNode }) {
   const navigationTheme = useMobileNavigationTheme("sidebar");
 

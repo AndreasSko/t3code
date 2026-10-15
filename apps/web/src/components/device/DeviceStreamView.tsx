@@ -41,12 +41,12 @@ export interface DeviceViewControls {
 export interface DeviceStreamHandle {
   readonly pressButton: (button: DeviceHardwareButton) => void;
   readonly rotate: () => void;
-  /** False while the input socket is down; controls should disable. */
   readonly inputConnected: boolean;
 }
 
-/** `visible=false` tears down the stream so hidden panels decode nothing;
- * keyboard input is forwarded only while the surface is focused. */
+/**
+ * `visible=false` tears the stream down so a hidden panel decodes nothing.
+ */
 export function DeviceStreamView(props: {
   readonly environmentId: EnvironmentId;
   readonly platform: DevicePlatform;
@@ -55,7 +55,6 @@ export function DeviceStreamView(props: {
   readonly deviceDescription?: string;
   readonly visible: boolean;
   readonly hostId: string;
-  /** Full device panels opt into the phone presentation; compact viewers stay flat. */
   readonly allowPhoneView?: boolean;
   readonly renderControls?: (view: DeviceViewControls) => ReactNode;
   readonly axOverlay?: boolean;
@@ -129,7 +128,6 @@ export function DeviceStreamView(props: {
           onScreen?.(next);
         },
         onUnauthorized: () => {
-          // A fresh ticket re-runs this effect through the access dependency.
           refreshDeviceHubAccess(props.environmentId);
         },
         onMjpegFallback: (url) => {
@@ -207,8 +205,10 @@ export function DeviceStreamView(props: {
   }, [retainingFrame, showPhone]);
   const controlsInset = props.renderControls && !showPhone ? CONTROLS_RAIL_WIDTH : 0;
 
-  // With height pinned to 100%, CSS aspect-ratio lets the width clamp distort
-  // the frame; calculate the largest box that fits instead.
+  // The frame is the largest box at `aspect` that fits the container, so a
+  // narrow panel shows a shorter phone rather than a squeezed one. CSS
+  // `aspect-ratio` alone cannot do this: with the height pinned to 100% the
+  // width clamp wins and distorts the drawn frame.
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [host, setHost] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -245,7 +245,6 @@ export function DeviceStreamView(props: {
     }
   }, [props.platform, screen]);
 
-  // Sideways rotation requires transposing the raw portrait frame dimensions.
   const sideways = rotation === 90 || rotation === -90;
   const mediaStyle: React.CSSProperties = sideways
     ? {
@@ -275,9 +274,7 @@ export function DeviceStreamView(props: {
       try {
         const tree = await fetchDeviceAxTree(target, controller.signal);
         if (!stopped) setAxElements(tree.elements);
-      } catch {
-        // Keep the last good tree; the next poll retries.
-      }
+      } catch {}
       if (!stopped) timer = setTimeout(() => void poll(), AX_POLL_INTERVAL_MS);
     };
     void poll();

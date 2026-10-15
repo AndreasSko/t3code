@@ -33,7 +33,8 @@ function textFromBlocks(value: unknown, depth: number): string | null {
     if (typeof resource.uri === "string") return resource.uri;
   }
   const keys = Object.keys(value).filter((key) => key !== "isError" && key !== "is_error");
-  // structuredContent often duplicates MCP/provider content blocks; show it only when text is absent.
+  // `structuredContent` usually repeats it as data, so it only shows when the
+  // text is empty.
   if (keys.length === 1 && keys[0] === "content") return textFromBlocks(value.content, depth + 1);
   if (keys.length === 2 && keys.includes("content") && keys.includes("structuredContent")) {
     const text = textFromBlocks(value.content, depth + 1);
@@ -78,7 +79,6 @@ function formatToolValue(value: unknown, hasImagePreview = false): string | null
   return json;
 }
 
-/** Shows full commands, flat key-value arguments, or formatted structured input. */
 export function toolCallLines(input: {
   readonly command?: string | undefined;
   readonly args?: unknown;
@@ -124,7 +124,10 @@ const LIVE_TURN_ITEM_STATUSES: ReadonlySet<OrchestrationV2TurnItem["status"]> = 
   "waiting",
 ]);
 
-/** Running items keep a revision key until completion to avoid fetching on every stream update. */
+/**
+ * Cache key for a fetched item. A running item keeps one key, so an open row
+ * fetches once while it streams and again when it finishes, not on every update.
+ */
 export function turnItemDetailRevision(item: OrchestrationV2TurnItem): string {
   return LIVE_TURN_ITEM_STATUSES.has(item.status) ? "live" : DateTime.formatIso(item.updatedAt);
 }
@@ -141,7 +144,7 @@ export function turnItemNeedsDetailFetch(item: OrchestrationV2TurnItem): boolean
   }
 }
 
-// Legacy Claude bash output may be a structured stdout/stderr result.
+/** Older Claude bash rows stored the raw `{ stdout, stderr, interrupted, ... }` result. */
 function commandOutputText(output: string): string {
   if (!output.trimStart().startsWith('{"stdout"')) return output;
   const parsed = parseJson(output.trim());
@@ -198,7 +201,10 @@ export function turnItemOutputText(item: OrchestrationV2TurnItem): string | null
   }
 }
 
-/** Detail reads omit image bytes; fetch each asset over HTTP by output index. */
+/**
+ * Images in a fetched item's tool output, as assets. The detail read leaves
+ * the bytes out, so each loads over HTTP by its index.
+ */
 export function turnItemOutputImages(
   item: OrchestrationV2TurnItem,
 ): ReadonlyArray<Extract<AssetResource, { readonly _tag: "tool-output-image" }>> {
@@ -211,7 +217,6 @@ export function turnItemOutputImages(
   }));
 }
 
-/** Empty items must not offer disclosures that open blank panels. */
 export function turnItemHasDetail(item: OrchestrationV2TurnItem): boolean {
   switch (item.type) {
     case "reasoning":

@@ -30,17 +30,13 @@ export interface ComposerAttachmentStripProps {
   readonly environmentId?: EnvironmentId;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly onRemove: (imageId: string) => void;
-  /** Called when the user taps an image or PDF to preview it. */
   readonly onPressPreview?: (source: FilePreviewSource) => void;
   readonly onPressVideo?: (
     attachment: DraftComposerFileAttachment,
     sourceIdentifier: string,
   ) => void;
-  /** Called when the user taps a document that is not a picture, video or PDF. */
   readonly onPressDocument?: (attachment: DraftComposerFileAttachment) => void;
-  /** Image thumbnail size in points. */
   readonly imageSize?: number;
-  /** Image thumbnail radius in points. */
   readonly imageBorderRadius?: number;
   readonly removeButtonPlacement?: "overlay" | "gutter";
 }
@@ -97,11 +93,19 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
   );
 }
 
-// File-backed previews rebase because iOS data-container UUIDs change across installs.
+/**
+ * File-backed previews rebase into the current iOS data container (its UUID
+ * changes across installs); the raw persisted URI renders meanwhile, which is
+ * correct everywhere but after a container move.
+ */
 const PREVIEW_CACHE_DIRECTORY = "t3-composer-previews";
 
-// Fabric reparses image URLs on every layout; large data URLs can starve commits.
-// Cache inline bytes as a file instead.
+/**
+ * Fabric re-parses an image source URL on every layout pass of the node, and a
+ * multi-megabyte data URL makes each Fabric commit slow enough that concurrent
+ * UI-thread commits (the question card's coverage animation) win the race every
+ * time until the renderer aborts.
+ */
 /** Roughly 192KB of base64: small enough that re-parsing it per layout stays imperceptible. */
 const INLINE_PREVIEW_FALLBACK_MAX_CHARS = 256_000;
 
@@ -147,7 +151,6 @@ function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): s
       })
       .catch((error: unknown) => {
         console.warn("[composer-attachments] could not cache an image preview", error);
-        // Record the failure so the thumbnail stops waiting on a file that will never arrive.
         if (!cancelled) setMaterialized({ id, uri: null });
       });
     return () => {
@@ -158,9 +161,8 @@ function useComposerImagePreviewUri(attachment: DraftComposerImageAttachment): s
   if (fileUri !== undefined) return previewUri.startsWith("data:") ? fileUri : previewUri;
   if (inlinePreview) {
     if (materialized?.id !== id) return null;
-    // Falling back to the data URL is a last resort: a large one re-parses on every layout and
-    // starves the Fabric commit, which is what the cache file exists to avoid. Small ones are
-    // cheap enough to render directly rather than leaving the thumbnail blank forever.
+    // Small ones are cheap enough to render directly rather than leaving the thumbnail
+    // blank forever.
     return (
       materialized.uri ??
       (previewUri.length <= INLINE_PREVIEW_FALLBACK_MAX_CHARS ? previewUri : null)
@@ -213,9 +215,8 @@ function ComposerImageAttachment(
 
 function ComposerAttachmentContent(props: ComposerAttachmentThumbnailProps) {
   const { attachment } = props;
-  // The document picker types pictures as plain files, so also inspect their MIME type.
+  // The document picker types every pick as a plain file, so a picture arrives here as one.
   if (attachment.type === "image" || imageMimeType(attachment) !== null) {
-    // A pasted-text marker does not fit the snapshot source a picture carries.
     const { source: _droppedSource, ...rest } = attachment;
     return (
       <ComposerImageAttachment

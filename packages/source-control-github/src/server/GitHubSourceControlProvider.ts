@@ -80,7 +80,10 @@ function authAccounts(accounts: ReadonlyArray<GitHubAuthStatusAccount>) {
   }));
 }
 
-/** Reports the account requests will use, honoring host pins/disablement and environment-token precedence. */
+/**
+ * The headline account is the one GitHub requests will use: Settings can pin a login per host or
+ * turn a host off, and an environment token beats both.
+ */
 export function parseGitHubAuth(
   input: SourceControlAuthProbeInput,
   settings: GitHubClient.GitHubSettings = readSourceControlHostSettings(GitHubClient.settings, {}),
@@ -89,7 +92,6 @@ export function parseGitHubAuth(
   const authStatus = parseGitHubAuthStatus(input.stdout);
   const hosts = [...new Set(authStatus.accounts.map((entry) => entry.host))];
   const fallback = findAuthenticatedGitHubAccount(authStatus.accounts);
-  // Lead with the host gh would pick, unless Settings turned it off.
   const orderedHosts = fallback
     ? [fallback.host, ...hosts.filter((host) => host !== fallback.host)]
     : hosts;
@@ -181,8 +183,10 @@ function environmentTokenVariable(environment: NodeJS.ProcessEnv): string | null
   return ["GH_TOKEN", "GITHUB_TOKEN"].find((name) => environment[name]?.trim()) ?? null;
 }
 
-/** Read saved/environment tokens or gh logins afresh on discovery; verify environment tokens
- * via API because gh auth status may not know them. */
+/**
+ * An environment token is checked against the API, since `gh auth status` may
+ * not know it.
+ */
 export const makeDiscovery = Effect.gen(function* () {
   const api = yield* GitHubApi.GitHubApi;
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
@@ -252,7 +256,10 @@ export const makeDiscovery = Effect.gen(function* () {
         },
       } satisfies SourceControlProviderDiscoveryItem;
     }),
-    /** Claim credentialed custom hosts, including disabled ones, so errors explain disablement. */
+    /**
+     * A host turned off in Settings is claimed too, so its error says so
+     * instead of "unsupported host".
+     */
     refineUnknownRemote: ({ context }) => {
       // Identity resolution also probes providers before a web base URL is known.
       const url = URL.parse(context.provider.baseUrl);
@@ -275,7 +282,10 @@ export const makeDiscovery = Effect.gen(function* () {
   } satisfies SourceControlManagedCliDiscoverySpec;
 });
 
-/** Raw failures stay in cause for logs; request context and transport-safe detail reach clients. */
+/**
+ * The provider methods attach the operation and request context; `cause` keeps the raw
+ * failure for logs, never for transport.
+ */
 class GitHubFailure extends Data.TaggedError("GitHubFailure")<{
   readonly detail: string;
   readonly cause: unknown;
@@ -298,7 +308,6 @@ function fromGitHubApiError(
       );
     case "GitHubNotSignedInError":
     case "GitHubHostDisabledError":
-      // A missing or turned-off credential already says what to do about it.
       return failure(error.message, error);
     case "GitHubApiAuthenticationError":
       return failure(
@@ -316,7 +325,6 @@ function fromGitHubApiError(
     case "GitHubCliFailedError":
     case "GitHubApiResponseError":
     case "GitHubApiRequestError":
-      // GitHub's own reason ("A pull request already exists…") when it gave one.
       return failure(error.message.trim() || "GitHub request failed.", error);
   }
 }
@@ -349,18 +357,32 @@ const GRAPHQL_STATES: Record<PullRequestListState, ReadonlyArray<string>> = {
   merged: ["MERGED"],
   all: ["OPEN", "CLOSED", "MERGED"],
 };
-/** Fifty aliased heads cost the same quota point as one while keeping answers near half a second. */
+/**
+ * Head lookups per GraphQL document. A document of a hundred costs one point, the same as one
+ * single lookup, but half that keeps each answer near half a second.
+ */
 const HEAD_LOOKUPS_PER_DOCUMENT = 50;
-/** Git reads stagger background head lookups by up to ~300ms; wait longer
- * to amortize one GraphQL point per document. */
+/**
+ * Branch discovery reaches GitHub only after each branch's own git reads, so lookups started
+ * together arrive tens of milliseconds apart. A background sweep's lookups spread over up to
+ * ~300ms, and every document costs a point no matter how few heads it holds, so reads
+ * without reserve wait longer.
+ */
 const HEAD_LOOKUP_BATCH_WINDOW = "50 millis";
 const BACKGROUND_HEAD_LOOKUP_BATCH_WINDOW = "500 millis";
-/** For heads with 100 pull requests each, 25 lookups measured ~7s;
- * 50 approached GitHub's ~10s processing limit. */
+/**
+ * Background documents fill up under the longer window, and a failed document fails every head
+ * in it. Fifty `main`-like heads of a hundred pull requests each took up to ~10s, GitHub's own
+ * processing limit; twenty-five took ~7s.
+ */
 const BACKGROUND_HEAD_LOOKUPS_PER_DOCUMENT = 25;
 /** A full document is 5,000 rows of well under 2 KB each. */
 const HEAD_LOOKUP_MAX_RESPONSE_BYTES = 16_000_000;
-/** Bound owner-filtered fork scans; GitHub filters by branch name only, including busy default branches. */
+/**
+ * Rows read for a fork's `owner:branch` head, which GitHub cannot filter by owner. A branch
+ * named like a busy default (`main`) is the case this bounds; the owner's own row is near the
+ * top because the newest come first.
+ */
 const OWNER_HEAD_SCAN_LIMIT = 100;
 
 class PullRequestsByHeadRead extends Request.Class<
@@ -582,7 +604,11 @@ export const make = Effect.gen(function* () {
     RequestResolver.setDelay(BACKGROUND_HEAD_LOOKUP_BATCH_WINDOW),
   );
 
-  /** Batch branch/fork head lookups on the same repository into one GraphQL document. */
+  /**
+   * Pull requests whose head is `headSelector` (a branch, or `owner:branch` for a fork), in the
+   * repository `gh pr list` would read in `cwd`. Lookups on one repository that arrive together
+   * share one GraphQL document.
+   */
   const listByHead = Effect.fn("GitHubSourceControlProvider.listByHead")(function* (input: {
     readonly cwd: string;
     readonly headSelector: string;
@@ -709,8 +735,12 @@ export const make = Effect.gen(function* () {
       args,
     });
 
-  /** Match gh checkout naming/tracking; fetch deleted heads from refs/pull/<n>/head.
-   * Existing branches fast-forward, or reset when force is set. */
+  /**
+   * `gh pr checkout` in plain git: the head branch is fetched from the remote that holds it (a
+   * fork gets a remote of its own), checked out under the name gh would give it, and set to
+   * track the head. A head branch that is gone is read from the base's `refs/pull/<n>/head`.
+   * An existing branch fast-forwards, or with `force` is reset to the pull request.
+   */
   const checkoutPullRequest = Effect.fn("GitHubSourceControlProvider.checkoutPullRequest")(
     function* (input: {
       readonly cwd: string;
@@ -745,7 +775,9 @@ export const make = Effect.gen(function* () {
         const known = remoteFor(baseNameWithOwner);
         return known === null ? git.resolvePrimaryRemoteName(input.cwd) : Effect.succeed(known);
       });
-      // A fork/default-branch collision could reset local main; fail if the base default branch is unknown.
+      // A fork's branch named like the base's default branch is checked out under the owner's
+      // prefix. Without the default branch that collision cannot be ruled out, and the checkout
+      // would reset the local default branch to the fork's commit, so it fails instead.
       const defaultBranch = isCrossRepository
         ? yield* readRepository(base).pipe(
             Effect.map((repository) => repository.default_branch ?? null),
@@ -900,9 +932,12 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: SourceControlProviderKind.make("github"),
-    // gh treats owner:branch as a literal head name and silently returns no matches.
-    // Use bare heads and verify owners in returned rows.
-    // first:100 costs the same as first:1, so read enough to find the right fork.
+    // `gh pr list --head` filters on the head ref name alone and accepts anything, so an
+    // `owner:branch` or `remote:branch` selector silently lists zero pull requests while
+    // spending a GraphQL call; the bare branch is always among the selectors. Without the owner,
+    // a bare branch also lists same-named branches on other forks (`main`, `patch-1`), so read a
+    // full page and let the owner check pick the right head. gh fetches up to 100 in one
+    // request, and GitHub prices a first:100 connection like first:1.
     headBranchProbe: ({ headSelectors }) => ({
       headSelectors: headSelectors.filter((selector) => !selector.includes(":")),
       limit: 100,

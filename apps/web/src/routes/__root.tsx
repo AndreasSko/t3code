@@ -186,8 +186,6 @@ function RootRouteView() {
     );
   }
 
-  // Show onboarding over the workspace, keeping automatic thread navigation
-  // and other startup dialogs suspended until setup finishes.
   if (pathname === "/welcome") {
     return (
       <ToastProvider>
@@ -226,8 +224,6 @@ function RootRouteView() {
     </CommandPalette>
   );
 
-  // Gate EventRouter until first-run state settles or its automatic navigation can flash the workspace before
-  // onboarding.
   return (
     <ToastProvider>
       <AnchoredToastProvider>
@@ -265,7 +261,6 @@ function RootRouteView() {
           ) : null}
           {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
           {isElectron ? <DesktopUpdateLaunchNotice /> : null}
-          {/* Hosted Nightly is "hosted-static", not authenticated, and needs it too. */}
           <NightlyMobileBetaNotice />
           {appShell}
           {/* Above the router: a theme draft is judged by walking the app, so the
@@ -474,7 +469,9 @@ function errorDetails(error: unknown): string {
 
 const MAX_ERROR_CAUSE_DEPTH = 5;
 
-/** Accept pathname only so query tokens cannot enter copied error reports. */
+/**
+ * Takes the pathname only so tokens in the query never land on the clipboard.
+ */
 function errorReport(error: unknown, pathname: string): string {
   const lines = [
     `${APP_DISPLAY_NAME} ${APP_VERSION}`,

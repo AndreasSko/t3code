@@ -7,8 +7,6 @@ const GENERIC_ERROR_PREFIXES = [
   "Provider adapter failed while dispatching orchestration command ",
 ];
 
-// Capability toasts need provider-named explanations; internal command IDs
-// and capability codes belong in logs.
 const CAPABILITY_REJECTION_MESSAGES: Record<string, (provider: string) => string> = {
   queued_messages: (p) => `${p} cannot queue messages behind an active run.`,
   active_steering: (p) =>

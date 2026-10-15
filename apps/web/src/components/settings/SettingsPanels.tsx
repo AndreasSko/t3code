@@ -286,7 +286,6 @@ function AboutVersionSection() {
   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
   const selectedUpdateChannel = updateState?.channel ?? "latest";
   const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
-  // Show the beta app links as soon as someone picks Nightly, before the update installs.
   const showNightlyMobileBeta =
     IS_NIGHTLY_BUILD || (hasDesktopBridge && selectedUpdateChannel === "nightly");
 
@@ -742,18 +741,24 @@ export function useSettingsRestore(onRestored?: () => void) {
     );
     if (!confirmed) return;
 
-    // Reset only dirty theme keys so storage failures cannot block unrelated settings.
-    // Re-read preferences after confirmation so rollback preserves concurrent changes.
+    // Only touch the theme keys that are actually dirty, so a theme-storage
+    // failure cannot block restoring unrelated settings. Preferences are
+    // re-read after the confirmation dialog: they may have changed (another
+    // tab, an OS flip) while it was open, and rollback must restore the live
+    // values rather than the ones captured at render time.
     let previousTheme = theme;
     try {
       previousTheme = readThemePreference();
     } catch {
       // Storage is unreadable; the render-time value is the best rollback.
     }
+    // The mix may have changed while the confirmation dialog was open; both
+    // the dirty check and the rollback must see the live value.
     const liveHalves = readThemeHalves();
     const needsThemeReset = previousTheme !== "system";
     const needsMixReset = liveHalves !== null;
-    // Read live appearance mode so reset cannot falsely succeed with a concurrent non-system preference.
+    // Same for the appearance mode: trusting the render-time value would skip
+    // the reset and report success while a non-system mode stayed in storage.
     const needsFollowSystemReset = readAppearanceModePreference(previousTheme) !== "system";
     const notifyThemeRestoreFailure = () => {
       toastManager.add(
@@ -764,7 +769,9 @@ export function useSettingsRestore(onRestored?: () => void) {
         }),
       );
     };
-    // Restore base preference before its mix because setting the base clears the mix.
+    // Rollback restores the base preference first (which clears any mix) and
+    // then re-applies the captured mix on top, so no failure path can leave
+    // the pair of keys half-restored.
     const previousHalves = liveHalves;
     const rollbackThemeState = () => {
       if (needsThemeReset) setTheme(previousTheme);
@@ -847,7 +854,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       browserRecordingShowMousePresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowMousePresses,
       browserLinkTarget: DEFAULT_UNIFIED_SETTINGS.browserLinkTarget,
       browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
-      // Default restoration explicitly lists agent-browser access before re-granting it.
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
     });
     onRestored?.();
@@ -1517,7 +1523,9 @@ export function AppearanceSettingsPanel() {
 
 function useFontDefaultFamilies() {
   const settings = useScopedSettings();
-  // Probe platform default stacks instead of hardcoding their resolved font names.
+  // An unset preference shows the font it resolves to on this machine; the
+  // default stacks are the platform's own faces, so the name is probed, not
+  // hardcoded.
   const defaults = useMemo(
     () => ({
       sans: resolveDefaultFamilyLabel(DEFAULT_SANS_FONT_STACK) ?? "System default",
@@ -1773,7 +1781,8 @@ function SimpleFontRows() {
   );
 }
 
-// macOS-only font smoothing cannot be a search-expansion target on other platforms.
+// Font smoothing only renders on macOS, so a search jump to it elsewhere
+// must not flip the section - the target would never mount to be scrolled to.
 const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
   "prompt-font",
   "terminal-font",
@@ -1782,7 +1791,6 @@ const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
     : []),
 ]);
 
-/** Persist Advanced locally; settings-search jumps unfold hidden override rows. */
 function TypographySection() {
   const [advanced, setAdvanced] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
@@ -1790,7 +1798,9 @@ function TypographySection() {
     Schema.Boolean,
   );
   const searchTargetId = useSettingsSearchTargetId();
-  // Handle each search jump once so turning Advanced off cannot immediately reopen it.
+  // Flip Advanced on once per search jump so the hidden target can mount and
+  // scroll; tracking the handled id lets the user turn it back off without
+  // the still-set target immediately re-expanding the section.
   const lastExpandedTargetRef = useRef<string | null>(null);
   useEffect(() => {
     if (searchTargetId === null || !ADVANCED_TYPOGRAPHY_TARGET_IDS.has(searchTargetId)) return;
@@ -1837,6 +1847,7 @@ function FontFamilySettingsRow({
   description: string;
   /** What an unset preference renders as, e.g. "Menlo". */
   defaultFamily: string;
+  /** The persisted family value supplied by the unified settings defaults. */
   defaultValue: string;
   preview?: ReactNode;
   value: string;
@@ -1853,13 +1864,16 @@ function FontFamilySettingsRow({
   };
 }) {
   const trimmed = value.trim();
-  // Delay valid-family commits until typing pauses so layout cannot reflow mid-word.
+  // The fallback input edits a draft; the preference only commits once typing
+  // pauses and the text probes as an available font (or is an explicit
+  // clear), so the current font holds and nothing reflows mid-word.
   const [draft, setDraft] = useState(value);
   const [draftSettled, setDraftSettled] = useState(true);
   const commitTimerRef = useRef<number | null>(null);
   const lastValueRef = useRef(value);
   if (lastValueRef.current !== value) {
-    // External committed changes cancel pending writes of stale font drafts.
+    // The committed value changed externally (hydration, reset, picker
+    // selection); adopt it and drop any pending commit of a stale draft.
     lastValueRef.current = value;
     if (commitTimerRef.current !== null) {
       window.clearTimeout(commitTimerRef.current);
@@ -1878,7 +1892,8 @@ function FontFamilySettingsRow({
     isFontFamilyAvailable(candidate) && (!requireMonospace || isMonospaceFamily(candidate));
   const commitDraft = (next: string) => {
     setDraftSettled(true);
-    // Reject invalid families visibly rather than claiming the terminal accepted its silent fallback.
+    // A rejected name stays in the field, flagged: the terminal would silently
+    // fall back to its default, so the row must not claim it took the value.
     if (next.trim().length === 0 || acceptsFamily(next)) {
       onValueChange(next);
     }
@@ -1890,8 +1905,6 @@ function FontFamilySettingsRow({
     commitDraft(draft);
   };
   const draftTrimmed = draft.trim();
-  // Flag an unknown name only once typing pauses, and never for an empty
-  // field - that is the starting state, not a rejected entry.
   const draftPending = draftSettled && draftTrimmed.length > 0 && draftTrimmed !== trimmed;
   const resetToDefault = () => {
     if (commitTimerRef.current !== null) {
@@ -1907,8 +1920,10 @@ function FontFamilySettingsRow({
       <SettingResetButton label={title.toLowerCase()} onClick={resetToDefault} />
     ) : null;
   const fontEnumeration = useFontEnumeration();
-  // Discovery needs the focus gesture; upgrade under focus with the picker
-  // open so enumeration does not require a second click.
+  // Everyone starts on the plain input; focusing it is the user gesture that
+  // runs font discovery. Where the engine can enumerate, the control then
+  // upgrades to the picker - popped open when the swap happens under focus,
+  // so the interaction continues without a second click.
   const inputFocusedRef = useRef(false);
   const familyControl =
     fontEnumeration.status === "granted" ? (
@@ -1952,7 +1967,8 @@ function FontFamilySettingsRow({
         onKeyDown={(event) => {
           if (event.key === "Enter") flushDraft();
           if (event.key === "Escape") {
-            // Consume Escape so discarding a draft cannot navigate away from settings.
+            // Discard uncommitted typing without closing the settings page,
+            // which is what an unhandled Escape does.
             event.preventDefault();
             event.stopPropagation();
             if (commitTimerRef.current !== null) {
@@ -2018,7 +2034,8 @@ function AutoSettleDaysInput({
   value: number;
   onCommit: (days: number) => void;
 }) {
-  // Drafts permit temporary empty input; persist only valid values and restore on blur.
+  // Local draft so the field can be emptied mid-edit; the setting only moves
+  // on valid input and snaps back to the persisted value on blur.
   const [draft, setDraft] = useState(String(value));
   useEffect(() => {
     setDraft(String(value));
@@ -2034,7 +2051,9 @@ function AutoSettleDaysInput({
       value={draft}
       onChange={(event) => {
         setDraft(event.target.value);
-        // Number rejects 3.5 where parseInt would persist 3 while displaying a different value.
+        // Number(), not parseInt: "3.5" must be rejected (not truncated to a
+        // committed 3 while the field shows 3.5) — commit only when the
+        // persisted value matches the displayed one.
         const parsed = Number(event.target.value);
         if (
           Number.isInteger(parsed) &&
@@ -2050,6 +2069,8 @@ function AutoSettleDaysInput({
   );
 }
 
+// The legacy rows sit behind the fold, so a settings-search jump has to
+// expand the section before its target can mount and scroll.
 const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set([
   "legacy-plan-mode",
   "legacy-context-window-indicator",
@@ -2062,11 +2083,13 @@ function LegacyFeaturesSection() {
   const [open, setOpen] = useState(false);
   const searchTargetId = useSettingsSearchTargetId();
   const targetRef = useSettingsSearchTarget<HTMLElement>("legacy-features");
-  // Handle each search jump once so manually refolding cannot immediately reopen the section.
+  // Unfold once per search jump; tracking the handled id lets the user fold
+  // the section back up without the still-set target immediately reopening it.
   const lastExpandedTargetRef = useRef<string | null>(null);
   useEffect(() => {
     if (searchTargetId === null) {
-      // Forget cleared targets so later jumps to the same row can unfold again.
+      // A handled jump clears the target; forgetting it here lets a later
+      // jump to the same row expand the section again.
       lastExpandedTargetRef.current = null;
       return;
     }
@@ -2144,8 +2167,10 @@ export function GeneralSettingsPanel() {
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
   const { scope, environment, connectedEnvironments, target } = useSettingsScope();
-  // Representative models are validated across all write targets; machine-specific
-  // background activity still requires a single environment.
+  // The representative environment supplies the provider list for pickers;
+  // a fanned-out model choice is validated against every target before it
+  // is written. Per-machine tuning (background activity overrides) still
+  // needs exactly one environment.
   const environmentId = environment?.environmentId ?? null;
   const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
@@ -3285,10 +3310,7 @@ export function GeneralSettingsPanel() {
                 {textGenInstanceEntry ? (
                   <TraitsPicker
                     provider={textGenProvider}
-                    models={
-                      // Use exact instance models so custom instances cannot inherit the default provider catalog.
-                      textGenInstanceEntry?.models ?? []
-                    }
+                    models={textGenInstanceEntry?.models ?? []}
                     model={textGenModel}
                     prompt=""
                     onPromptChange={() => {}}

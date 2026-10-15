@@ -1,6 +1,5 @@
 "use client";
 
-/** Reach ChatView's URL-aware action handling from global keybindings without prop drilling. */
 export type PreviewAction =
   | "toggle-panel"
   | "refresh"

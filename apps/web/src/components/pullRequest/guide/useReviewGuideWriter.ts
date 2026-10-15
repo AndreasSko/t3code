@@ -11,8 +11,6 @@ import { toastManager } from "../../ui/toast";
 import { readableFailure } from "../pullRequestDetail.logic";
 import { guideRunKey, useGuideRunStore } from "./guideRunStore";
 
-/** Starting a guide run registers it with the coordinator so completion
- * remains visible after the reader leaves the guide. */
 export function useReviewGuideWriter({
   environmentId,
   reference,

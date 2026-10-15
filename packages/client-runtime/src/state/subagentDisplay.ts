@@ -8,7 +8,6 @@ import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/mod
 import { fileBasename } from "@t3tools/shared/path";
 import { isTerminalSubagentStatus } from "./subagentRuntime.ts";
 
-/** Summarizes one adjacent group, without changing its member identities or order. */
 export function subagentGroupSummary(
   members: ReadonlyArray<{ readonly status: OrchestrationV2TurnItemStatus }>,
 ) {
@@ -22,7 +21,6 @@ export function subagentGroupSummary(
   };
 }
 
-/** Counts running states before outcomes, using agents-panel labels. */
 export function summarizeSubagentStatuses(
   statuses: ReadonlyArray<OrchestrationV2TurnItemStatus>,
 ): string {
@@ -40,7 +38,6 @@ export function summarizeSubagentStatuses(
     .join(" · ");
 }
 
-/** Formats Codex task paths for display while leaving provider identity untouched. */
 export function formatSubagentDisplayTitle(title: string): string {
   const displayTitle = title.replace(/^Subagent:\s*/i, "");
   const path = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u.exec(displayTitle);
@@ -114,7 +111,6 @@ export function resolveSubagentMetadata(input: {
   return { modelLabel, workspace };
 }
 
-/** Live work leads with progress; settled work leads with its result. */
 export function subagentDetailPreview(input: {
   readonly status: OrchestrationV2TurnItemStatus;
   readonly result?: string | null | undefined;

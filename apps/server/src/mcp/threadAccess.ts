@@ -38,7 +38,11 @@ export const dispatchFailure = (
         })
       : unavailable();
 
-/** Cap threads by caller modes or the OAuth-approved ceiling. */
+/**
+ * The most a caller may hand to the threads it targets. A thread caller is
+ * capped by its own thread's modes; an OAuth client by the ceiling chosen
+ * when it was approved.
+ */
 export interface CallerLimits {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
@@ -47,7 +51,6 @@ export interface CallerLimits {
 export interface Caller {
   readonly scope: McpInvocationContext.McpInvocationScope;
   readonly threads: ThreadManagement.ThreadManagementService["Service"];
-  /** The calling thread, absent for a client signed in from outside T3. */
   readonly caller: OrchestrationV2ThreadShell | undefined;
   readonly limits: CallerLimits;
 }
@@ -63,7 +66,6 @@ export const readCaller = Effect.fn("mcp.readCaller")(function* () {
   return yield* loadCaller();
 });
 
-/** Load caller limits independently of capabilities; tools check their own access. */
 export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
   const scope = yield* McpInvocationContext.McpInvocationContext;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -95,7 +97,6 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
   } satisfies Caller;
 });
 
-/** Other target threads must run within caller modes; the caller's own thread always does. */
 export const assertTargetWithinLimits = (
   limits: CallerLimits,
   target: { readonly runtimeMode: RuntimeMode; readonly interactionMode: ProviderInteractionMode },
@@ -107,7 +108,11 @@ export const assertTargetWithinLimits = (
     Effect.asVoid,
   );
 
-/** Require a live, unarchived thread run; OAuth callers use their session and approved ceiling. */
+/**
+ * A thread caller acts only while it owns a live run of a thread that is not
+ * archived, so a provider token that outlived its session cannot act. An
+ * OAuth client has no run; its session and ceiling are its authority.
+ */
 export function assertLiveCaller({ caller, scope }: Caller) {
   if (caller === undefined) return Effect.void;
   return caller.archivedAt !== null ||
@@ -122,13 +127,16 @@ export function assertLiveCaller({ caller, scope }: Caller) {
     : Effect.void;
 }
 
-/** Environment changes require full-access/default thread modes or a full-access OAuth grant. */
+/**
+ * Actions that change the environment itself (projects, preferences) need full
+ * access: a thread caller in full-access/default mode, or a client approved
+ * with a full-access ceiling.
+ */
 export const assertFullAccess = (context: Caller, message: string) =>
   context.limits.runtimeMode === "full-access" && context.limits.interactionMode === "default"
     ? Effect.void
     : Effect.fail(new OrchestratorMcpFailure({ code: "capability_denied", message }));
 
-/** A target project: the one passed, else the calling thread's. */
 export const resolveProjectId = (context: Caller, projectId: ProjectId | undefined) =>
   projectId !== undefined
     ? Effect.succeed(projectId)
@@ -141,7 +149,6 @@ export const resolveProjectId = (context: Caller, projectId: ProjectId | undefin
           }),
         );
 
-/** A target thread: the one passed, else the calling thread. */
 const resolveThreadId = (context: Caller, threadId: ThreadId | undefined) =>
   threadId !== undefined
     ? Effect.succeed(threadId)
@@ -154,7 +161,6 @@ const resolveThreadId = (context: Caller, threadId: ThreadId | undefined) =>
           }),
         );
 
-/** Load a target thread anywhere in the environment; an omitted id means the calling thread. */
 export const readThread = Effect.fn("mcp.readThread")(function* <
   K extends ProjectionRecordField = never,
 >(threadId?: ThreadId, fields: ReadonlyArray<K> = []) {

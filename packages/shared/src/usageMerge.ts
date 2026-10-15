@@ -76,7 +76,10 @@ export interface CostQuality {
   readonly cacheSavingsUsd: number;
 }
 
-/** Category costs; unsplit holds costs whose rates cannot be separated. */
+/**
+ * `costUsd` by token category. `unsplit` is cost no rates could split,
+ * including all cost from servers that predate the split.
+ */
 export interface CategoryCost {
   readonly input: number;
   readonly cacheRead: number;
@@ -122,7 +125,10 @@ export interface MergedUsage {
   readonly contractMismatches: readonly UsageContractMismatch[];
 }
 
-/** Include volumeId so machines sharing a hostname and home path cannot collapse into one source. */
+/**
+ * `volumeId` is what stops two machines that happen to share a hostname and a home path, which is
+ * every Mac in a fleet, from collapsing into one source and having one of them silently dropped.
+ */
 function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
   return [
     fingerprint.hostId,
@@ -148,8 +154,6 @@ function bucketKey(bucket: UsageBucket): string {
   return JSON.stringify([bucket.day, bucket.hourStart ?? null, bucket.provider, bucket.model]);
 }
 
-/** Claim each physical directory once: complete before partial, then freshest, with stable id ties.
- * New partial scans may still contribute cells absent from the complete scan. */
 function claimSources(environments: readonly EnvironmentUsage[]): {
   readonly ownerByFingerprint: ReadonlyMap<string, EnvironmentId>;
   readonly supplementalBucketsByEnvironment: ReadonlyMap<EnvironmentId, ReadonlySet<UsageBucket>>;
@@ -317,8 +321,12 @@ const EMPTY_MERGED: MergedUsage = {
   contractMismatches: [],
 };
 
-/** Excludes incompatible summaries and reports which side needs updating.
- * Versions from {@link USAGE_MERGE_COMPATIBLE_SINCE} through expectedContractVersion still merge. */
+/**
+ * `expectedContractVersion` guards against incompatible server code: rather than blocking the page,
+ * its data is excluded and the mismatch direction is reported so the UI can identify which side
+ * needs updating. Versions in [{@link USAGE_MERGE_COMPATIBLE_SINCE}, expected] still merge, so an
+ * additive provider expansion does not drop Claude/Codex totals from older servers.
+ */
 export function mergeUsage(
   environments: readonly EnvironmentUsage[],
   expectedContractVersion: number,
@@ -587,7 +595,6 @@ export function mergeUsage(
         records === 0 ? 0 : (records - providerReportedRecords - unpricedRecords) / records,
       cacheSavingsUsd,
     },
-    // Clamped so float error never shows as a negative remainder.
     categoryCost: {
       ...categoryCost,
       unsplit: Math.max(

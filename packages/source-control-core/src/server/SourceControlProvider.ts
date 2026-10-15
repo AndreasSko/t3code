@@ -39,7 +39,10 @@ export interface SourceControlRefSelector {
 
 const MAX_ERROR_TRANSPORT_VALUE_LENGTH = 256;
 
-/** Strip URL secrets and bound identifiers in transported errors; this does not validate requests. */
+/**
+ * This is intentionally narrower than request validation: it only strips URL
+ * secrets and bounds diagnostic values sent over transport.
+ */
 export function transportSafeSourceControlErrorValue(value: string): string {
   let printable = "";
   for (const character of value) {
@@ -106,16 +109,15 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
-    /** Optional head selectors/limits; callers still verify the returned owner.
-     * Defaults: all selectors, one open result, twenty for any state. */
+    /**
+     * The caller checks the owner against what comes back, so a host that cannot search
+     * `owner:branch` can drop those selectors without losing anything. Absent asks about every
+     * selector, reading 1 for the open lookup and 20 for any state.
+     */
     readonly headBranchProbe?: (input: {
       readonly headSelectors: ReadonlyArray<string>;
       readonly state: "open" | "all";
     }) => { readonly headSelectors: ReadonlyArray<string>; readonly limit: number };
-    /**
-     * The repository's change request template at `treeish`, for change request content
-     * generation to follow. Absent means the host has no template convention.
-     */
     readonly readChangeRequestTemplate?: (input: {
       readonly cwd: string;
       readonly treeish: string;
@@ -125,8 +127,9 @@ export class SourceControlProvider extends Context.Service<
      * more than that (Forgejo's HTTP installation mount). Absent means the whole path.
      */
     readonly repositoryNameFromRemoteUrl?: (url: string) => string | null;
-    /** Refine identities using hosting-account context unavailable from git,
-     * only for repositories this provider may own. */
+    /**
+     * Only consulted for identities this host may own.
+     */
     readonly refineRepositoryIdentity?: (input: {
       readonly identity: RepositoryIdentity;
       readonly resolveContext: (input: {

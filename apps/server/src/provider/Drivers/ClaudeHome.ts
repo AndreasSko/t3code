@@ -9,8 +9,13 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
-/** Match CLI precedence: configured homePath, inherited CLAUDE_CONFIG_DIR, then ~/.claude.
- * Empty settings must use ~/.claude so continuation groups match explicitly configured defaults. */
+/**
+ * Resolve the Claude config directory the CLI would use: the instance's
+ * `homePath` (exported as `CLAUDE_CONFIG_DIR`), then an inherited
+ * `CLAUDE_CONFIG_DIR`, then Claude's default `~/.claude`. Empty must not
+ * fall back to bare `$HOME` — that leftover from the old HOME override
+ * produced a different continuation group than an explicit `~/.claude`.
+ */
 export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function* (
   config: Pick<ClaudeSettings, "homePath">,
   environment?: NodeJS.ProcessEnv,
@@ -39,16 +44,21 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   const resolvedHomePath = yield* resolveClaudeHomePath(config);
   return {
     ...resolvedBaseEnv,
-    // Overriding HOME relocates macOS keychain lookup and loses OAuth credentials.
-    // CLAUDE_CONFIG_DIR isolates config while preserving HOME and the keychain.
+    // Isolate this instance's config via CLAUDE_CONFIG_DIR rather than HOME.
+    // Overriding HOME also relocates the macOS login keychain lookup
+    // ($HOME/Library/Keychains), so the spawned CLI can't find its stored
+    // OAuth credentials and reports "Not logged in". CLAUDE_CONFIG_DIR points
+    // Claude Code at its config dir directly while leaving HOME (and the
+    // keychain) intact.
     CLAUDE_CONFIG_DIR: resolvedHomePath,
   };
 });
 
 /**
- * Claude rejects `--strict-mcp-config` when `managed-mcp.json` exists.
- * Managed config already excludes user, project and `--mcp-config` servers,
- * so callers can omit that flag. Paths match the ones Claude Code checks.
+ * While it exists Claude refuses `--strict-mcp-config` and exits before
+ * initializing, but it already ignores user, project and `--mcp-config` servers
+ * on its own, so callers that pass the flag for isolation can drop it. Paths
+ * match the ones Claude Code checks.
  */
 export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -83,7 +93,10 @@ export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesC
   },
 );
 
-/** Keep paths out of shell commands so inherited relative values remain literal. */
+/**
+ * Describe the spawned CLI's environment separately from the login command so
+ * paths remain literal on every shell, including relative inherited values.
+ */
 export const claudeSignedOutMessage = (input: {
   readonly configDir: string | undefined;
   readonly cwd: string;

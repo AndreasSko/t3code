@@ -52,7 +52,10 @@ export const ProviderOptionSelection = Schema.Struct({
 });
 export type ProviderOptionSelection = typeof ProviderOptionSelection.Type;
 
-// Older settings and unmigrated databases may retain object-form option selections.
+/**
+ * Legacy on-disk shape for provider option selections, kept readable by the
+ * decoder so we can tolerate stored data written before the v3 array shape.
+ */
 const LegacyProviderOptionSelectionsObject = Schema.Record(Schema.String, Schema.Unknown);
 
 const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsObject.pipe(
@@ -65,7 +68,11 @@ const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsO
   ),
 );
 
-/** Decodes canonical arrays or legacy option objects; always encodes the canonical array. */
+/**
+ * Always normalizes to the canonical array on decode and re-encodes as the
+ * canonical array, so any legacy storage gets cleaned up the next time the
+ * containing record is written back.
+ */
 export const ProviderOptionSelections = Schema.Union([
   Schema.Array(ProviderOptionSelection),
   ProviderOptionSelectionsFromLegacyObject,
@@ -85,6 +92,8 @@ function coerceLegacyOptionsObjectToArray(
     } else if (typeof rawValue === "boolean") {
       entries.push({ id, value: rawValue });
     }
+    // Drop anything else (numbers, null, nested objects/arrays) to match the
+    // permissive normalization performed by migration 026.
   }
   return entries;
 }
@@ -104,7 +113,11 @@ export const ModelCapabilities = Schema.Struct({
 });
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
-/** Bare slugs use driver presentation; supplied capabilities replace defaults in the picker. */
+/**
+ * `name` and `capabilities` are optional so a bare slug keeps its
+ * driver-default presentation; when `capabilities` is set, its descriptors
+ * replace the driver default in the model picker.
+ */
 export const CustomModelEntry = Schema.Struct({
   slug: TrimmedNonEmptyString,
   name: Schema.optional(TrimmedNonEmptyString),
@@ -112,7 +125,6 @@ export const CustomModelEntry = Schema.Struct({
 });
 export type CustomModelEntry = typeof CustomModelEntry.Type;
 
-/** On-disk custom model setting: the legacy bare slug, or a full entry. */
 export const CustomModelSetting = Schema.Union([Schema.String, CustomModelEntry]);
 export type CustomModelSetting = typeof CustomModelSetting.Type;
 
@@ -127,7 +139,11 @@ const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
 export const DEFAULT_MODEL = "gpt-6-astra";
 
-/** Prefer the first available model/list entry here; otherwise use Codex's isDefault flag. */
+/**
+ * The provider snapshot marks the first of these present in the live
+ * `model/list` response as default; when none are available, Codex's own
+ * `isDefault` flag wins.
+ */
 export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   DEFAULT_MODEL,
   "gpt-5.6-sol",

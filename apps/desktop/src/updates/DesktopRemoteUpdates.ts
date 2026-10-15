@@ -24,7 +24,6 @@ import {
 
 const { logInfo, logError } = DesktopObservability.makeComponentLogger("desktop-remote-updates");
 
-/** Pause before retrying an action the updater refused for a held reservation. */
 const ACTION_RETRY_DELAY = Duration.millis(250);
 const PREPARED_UPDATE_TTL = Duration.minutes(5);
 
@@ -42,7 +41,11 @@ type CommitClaim =
   | { readonly _tag: "committing" }
   | { readonly _tag: "claimed"; readonly prepared: PreparedUpdate };
 
-/** Prepare remote updates, then install only after the client confirms receipt of its preparation token. */
+/**
+ * Mirrors updater state, prepares downloads, cancels abandoned preparations,
+ * and commits installs after the remote client confirms that it received the
+ * preparation token.
+ */
 export const listen: Effect.Effect<
   void,
   never,
@@ -177,8 +180,12 @@ export const listen: Effect.Effect<
         const { latest, changes } = yield* updates.subscribe;
         const disabledReason = Option.getOrNull(yield* updates.disabledReason);
         let attempts: RemoteDesktopUpdateAttempts = { checks: 0, downloads: 0 };
-        // State events can precede reservation release, leaving a refused action with no
-        // later event to retry it; re-enqueue after the reservation has time to clear.
+        // The updater admits one action at a time. A state event can land
+        // while the action that produced it still holds the reservation
+        // (e.g. "available" before the check releases), so a forked action
+        // can be refused with no later state event to retry on. Rejected
+        // actions re-enqueue their state here after a short pause so the
+        // step runs again once the reservation is free.
         const retries = yield* Queue.unbounded<DesktopUpdateState>();
         const retryLater = (state: DesktopUpdateState) =>
           Effect.sleep(ACTION_RETRY_DELAY).pipe(
@@ -187,15 +194,15 @@ export const listen: Effect.Effect<
             Effect.forkScoped,
           );
 
-        // Returns true when the run reached a terminal outcome.
         const step = (state: DesktopUpdateState): Effect.Effect<boolean, never, Scope.Scope> =>
           Effect.gen(function* () {
             const next = nextRemoteDesktopUpdateStep(state, attempts, disabledReason);
             switch (next.action) {
               case "wait":
                 return false;
-              // Increment before acting so emitted state sees the attempt; roll back a
-              // reservation refusal because it did not execute the action.
+              // Counters increment before the action so the state event the
+              // action produces already sees it; a refusal for a held
+              // reservation rolls the count back, since it was not a try.
               case "check":
                 attempts = { ...attempts, checks: attempts.checks + 1 };
                 yield* updates.check("remote-update").pipe(
@@ -306,7 +313,6 @@ export const listen: Effect.Effect<
       ),
     );
 
-  // Handle remote update requests sequentially so runs cannot overlap.
   yield* Stream.runForEach(publisher.updateRequests, handleRequest).pipe(Effect.forkScoped);
 
   yield* Stream.runForEach(publisher.updateCancellations, (cancellation) =>
@@ -418,8 +424,11 @@ export const listen: Effect.Effect<
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&
         (yield* updates.isInstallActive)
       ) {
-        // Join the install that already owns shutdown; the client proves success by
-        // transport loss and the target version on reconnect.
+        // Another install (local, or an earlier remote request) already owns
+        // the shutdown and will relaunch the app on the same downloaded
+        // version. This commit joins it: no failure marker, and the client
+        // proves the handoff the same way, by transport loss then the
+        // target version on reconnect.
         yield* logInfo("remote update commit joining an in-progress install", {
           requestId: commit.requestId,
         });
@@ -432,8 +441,9 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      // Installation destroys this backend; success is transport loss followed by
-      // the target version, never a success marker from this old process.
+      // A successful install tears down this backend. Do not send a success
+      // marker from the old process: transport loss followed by the target
+      // version is the only proof that the handoff succeeded.
     }).pipe(
       Effect.ensuring(clearActiveRequest(commit.requestId)),
       Effect.catchCause((cause) =>

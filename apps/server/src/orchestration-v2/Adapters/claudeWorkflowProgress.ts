@@ -77,7 +77,11 @@ function parseAgent(entry: unknown): OrchestrationV2WorkflowAgent | null {
   };
 }
 
-/** Background Workflow acknowledgements are the only frames carrying the run's filesystem handles. */
+/**
+ * A background launch answers the model with an acknowledgement rather than the run's output, and
+ * that acknowledgement is the only place the run's filesystem handles appear — nothing later on
+ * the event stream repeats them.
+ */
 export function parseClaudeWorkflowRunHandles(
   toolUseResult: unknown,
 ): OrchestrationV2WorkflowRunHandles | undefined {
@@ -111,8 +115,13 @@ function parseClaudeWorkflowProgress(message: unknown): {
 }
 
 /**
- * Usage frames omit task_type, so create workflows only for identified coordinators.
- * Accumulate usage between snapshots and retain phases omitted by late frames.
+ * A frame without a snapshot still carries usage, so totals keep climbing between snapshots. A
+ * phase only ever joins the plan — the provider re-sends the full plan on every snapshot, but a
+ * late frame that omits an already-seen phase must not shorten the arc the user is looking at.
+ * Returns undefined when nothing identifies the task as a workflow. Progress frames do not repeat
+ * `task_type`, so this is the single place that decides whether a task is a coordinator; without
+ * it every ordinary subagent's usage frame would mint an empty workflow and render as a
+ * coordinator.
  */
 export function mergeClaudeWorkflowProgress(input: {
   readonly previous: OrchestrationV2SubagentWorkflow | undefined;

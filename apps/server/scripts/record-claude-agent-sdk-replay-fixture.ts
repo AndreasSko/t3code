@@ -475,8 +475,10 @@ const shouldRemoveCwd = process.env.T3_CLAUDE_REPLAY_CWD === undefined;
 const expectedAbsentWorkspacePaths =
   "expectedAbsentWorkspacePaths" in recording ? recording.expectedAbsentWorkspacePaths : [];
 
-// Verify denied writes against the workspace before and after the turn;
-// preserve those paths in transcript metadata before removing the workspace.
+// Scenarios that deny a tool call prove the denial by checking the real
+// recording workspace, not just the transcript: the target must be absent
+// before and after the turn, and the verified paths are preserved in the
+// transcript metadata before the temporary workspace is removed.
 async function assertWorkspacePathsAbsent(phase: "before" | "after"): Promise<void> {
   const presentPaths = await runFileSystem(
     Effect.gen(function* () {

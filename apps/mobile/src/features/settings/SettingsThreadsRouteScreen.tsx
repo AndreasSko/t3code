@@ -282,7 +282,6 @@ function BetaSettingsSection() {
   );
 }
 
-/** Mobile legacy preferences are device-local because client settings do not sync. */
 function LegacySettingsSection() {
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);

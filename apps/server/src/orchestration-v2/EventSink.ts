@@ -93,7 +93,12 @@ export interface EventSinkV2Shape {
     },
     EventSinkV2Error
   >;
-  /** Commit late provider-thread updates only while the expected attempt still owns the thread. */
+  /**
+   * Atomically commit only when the provider thread is still owned by the
+   * expected run attempt and ordinal. Used for late post-terminal
+   * provider_thread updates so a completed or superseded attempt cannot clobber
+   * a newer attempt that already claimed the thread.
+   */
   readonly writeIfProviderThreadOwner: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
     readonly commandId?: CommandId;
@@ -110,8 +115,10 @@ export interface EventSinkV2Shape {
     EventSinkV2Error
   >;
   /**
-   * Commit only if `expected` still matches the whole row, preventing lost updates.
-   * Some writers leave `updatedAt` unchanged.
+   * Atomically commit only while the stored provider thread still equals
+   * `expected`, the row its writer read, so a read-modify-write of the row
+   * cannot overwrite an update published in between. The whole row is
+   * compared because not every writer moves `updatedAt`.
    */
   readonly writeIfProviderThreadUnchanged: (input: {
     readonly expected: OrchestrationV2ProviderThread;
@@ -150,7 +157,10 @@ export interface EventSinkV2Shape {
     readonly rejectedAt: DateTime.Utc;
     readonly error: string;
   }) => Effect.Effect<CommandReceiptStore.CommandReceiptV2, EventSinkV2Error>;
-  /** Commit the project event, projection and receipt atomically; reused command ids return their receipt. */
+  /**
+   * Append a project event, fold it into its row and record the receipt in one
+   * transaction. A reused command id commits nothing and returns its receipt.
+   */
   readonly commitProjectCommand: (input: {
     readonly commandId: CommandId;
     readonly projectId: ProjectId;
@@ -161,7 +171,6 @@ export interface EventSinkV2Shape {
     { readonly receipt: CommandReceiptStore.ProjectCommandReceiptV2; readonly committed: boolean },
     EventSinkV2Error
   >;
-  /** Record a rejected project command, or return the receipt its command id already has. */
   readonly commitRejectedProjectCommand: (input: {
     readonly commandId: CommandId;
     readonly projectId: ProjectId;
@@ -227,8 +236,13 @@ const layerBase: Layer.Layer<
     const publishStoredEvents = (events: ReadonlyArray<OrchestrationV2StoredEvent>) =>
       eventStore.publishCommitted(events).pipe(Effect.andThen(publishLiveEvents(events)));
 
-    // Hold the publish lane from the transaction's last step through publication;
-    // out-of-order events would be dropped by clients that already applied a newer sequence.
+    // Transactions commit one at a time, but each writer publishes after its
+    // commit. If a writer is descheduled in between, a later commit reaches
+    // subscribers first, and clients drop any event at or below the newest
+    // sequence they have applied. So a writer takes this lane as the last step
+    // of its transaction and holds it until it has published. Publishing never
+    // waits, so a writer that holds the transaction while it waits for the
+    // lane is not blocked for long.
     const publishLane = yield* Semaphore.make(1);
     const commitThenPublish = <A, E, R>(
       transaction: Effect.Effect<A, E, R>,
@@ -913,7 +927,10 @@ const layerBase: Layer.Layer<
   }),
 );
 
-/** Share the worker's outbox instance so post-commit in-memory wakeups reach it. */
+/**
+ * Keeping the outbox instance shared with the worker is important because enqueue notifications
+ * are in-memory wakeups backed by the durable SQL queue.
+ */
 export const layerFromStores = layerBase;
 
 export const layer: Layer.Layer<

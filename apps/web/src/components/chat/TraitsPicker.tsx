@@ -57,7 +57,6 @@ function savedOptionLabel(id: string): string {
   );
 }
 
-/** Read-only descriptors for saved values whose OpenCode model metadata is unavailable. */
 export function buildUnavailableModelOptionDescriptors(
   selections: ProviderOptions | null | undefined,
 ): ReadonlyArray<ProviderOptionDescriptor> {
@@ -482,7 +481,6 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   );
 });
 
-/** Pair speed with reasoning while keeping other traits separated. */
 export function buildTraitsTriggerDisplay(input: {
   provider: ProviderDriverKind;
   descriptors: ReadonlyArray<ProviderOptionDescriptor>;

@@ -20,7 +20,12 @@ const threadOutboxShellStatusesAtom = Atom.make(
   },
 ).pipe(Atom.withLabel("mobile:thread-outbox:shell-statuses"));
 
-/** Hold editor-owned or unsaved message ids until their queued payload is current; delivery would send stale content. */
+/**
+ * Queued pending tasks the outbox drain must not deliver right now: the one
+ * open in the new-task editor, plus any whose latest edits could not be saved
+ * back yet (delivering those would send stale content). Editing sessions hold
+ * their message id here and release it once the queued payload is current.
+ */
 export const editingQueuedMessageIdsAtom = Atom.make<Readonly<Record<MessageId, true>>>({}).pipe(
   Atom.keepAlive,
   Atom.withLabel("mobile:thread-outbox:editing-message-ids"),
@@ -53,7 +58,11 @@ export function useThreadOutboxMessages() {
   return useAtomValue(threadOutboxManager.queuedMessagesByThreadKeyAtom);
 }
 
-/** Shared active-thread keys exclude creations, which have pending-task rows instead. */
+/**
+ * Creations are excluded: they have no thread row yet and surface as pending
+ * tasks instead. Derived once so list builders and reorder planners agree on
+ * which settled threads are pulled back to active.
+ */
 export const queuedThreadKeysAtom = Atom.make((get): ReadonlySet<string> => {
   const keys = new Set<string>();
   for (const [threadKey, queue] of Object.entries(

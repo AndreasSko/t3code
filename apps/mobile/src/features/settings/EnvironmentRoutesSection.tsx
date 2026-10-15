@@ -42,7 +42,6 @@ const ROUTE_ICONS: Record<ConnectionRouteKind, AppSymbolName> = {
   ssh: "terminal",
 };
 
-/** Preferred routes first; reconnects return to a reachable higher-priority route. */
 export function EnvironmentRoutesSection({
   environmentId,
   connected,
@@ -75,8 +74,9 @@ export function EnvironmentRoutesSection({
   );
   // Rows size to their content, so a drag measures how far it has moved past each one.
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  // Remount after a drop so reordered rows and cleared transforms land together.
-  // Reusing rows can briefly apply stale offsets and flash the card empty.
+  // Each drop remounts the rows so the new order and the cleared drag offsets
+  // land in one frame. Kept rows would show their old offsets in their new
+  // slots until the animated style catches up, and the card flashes empty.
   const [drops, setDrops] = useState(0);
   if (entry === undefined) return null;
 
@@ -98,7 +98,6 @@ export function EnvironmentRoutesSection({
     next.splice(to, 0, moved!);
     commit(next);
   };
-  // A lifted row takes a neighbour's slot once it has moved past half of that row.
   const dropIndex = (from: number, translation: number) => {
     const step = translation > 0 ? 1 : -1;
     let to = from;

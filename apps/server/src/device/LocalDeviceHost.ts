@@ -1,7 +1,15 @@
 import { pruneLocalDeviceTools } from "./deviceToolMaintenance.ts";
 import { deviceToolInstallMessage } from "@t3tools/contracts";
-// Start helpers only after setup consent; the hub runs at origin root and
-// the T3 proxy/panel own its public prefix.
+/**
+ * Runs expo-device-hub as a supervised child on a loopback port and starts the
+ * agent-device daemon in HTTP mode under a T3-owned state directory. Both are
+ * lazy: the device service requires explicit setup consent before it calls
+ * ensureReady to install tools or start helper processes.
+ *
+ * The hub runs in its standalone mode (origin root). The T3 proxy strips its
+ * own prefix, and the Device panel derives stream and socket URLs from the
+ * prefix itself rather than from anything the hub prints.
+ */
 import {
   type DeviceHostSummary,
   type DevicePlatform,
@@ -54,8 +62,11 @@ const DAEMON_POLL_MS = 100;
 const HUB_RESTART_STABLE_UPTIME_MS = 60_000;
 const HUB_RESTART_MAX_DELAY_MS = 30_000;
 
-// Persist hub identity so the next server can reap it after SIGKILL without
-// touching a recycled PID belonging to another process.
+/**
+ * Written beside the agent-device state so a server that dies without running
+ * its finalizers (SIGKILL, dev-runner restarts) does not leave a hub bound to a
+ * loopback port forever.
+ */
 const HubStateFile = Schema.Struct({
   pid: Schema.Int,
   port: Schema.Int,
@@ -303,7 +314,11 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       }
     });
 
-  // Match PID and entry path before reaping so recycled PIDs are never touched.
+  /**
+   * A hub left behind by a previous server is identified by pid plus the
+   * command line's entry path, so a recycled pid belonging to something else
+   * is never touched.
+   */
   const reapStaleHub = Effect.gen(function* () {
     const previous = yield* fs
       .readFileString(hubStatePath())
@@ -330,9 +345,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
         yield* Effect.sync(() => {
           try {
             process.kill(previous.value.pid, "SIGTERM");
-          } catch {
-            // Already gone.
-          }
+          } catch {}
         });
       }
     }
@@ -444,7 +457,10 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       Effect.ignoreCause,
     );
 
-  // Back off hub crashes so startup failures cannot spin.
+  /**
+   * Restart the hub when it dies under us, with the same doubling backoff the
+   * relay connector uses so a hub that crashes on boot cannot spin.
+   */
   const superviseHub = (hub: HubProcess, hubTool: DeviceToolPaths): Effect.Effect<void> =>
     Effect.gen(function* () {
       yield* Effect.result(hub.child.exitCode);
@@ -481,7 +497,6 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     return yield* decodeDaemonFile(raw);
   });
 
-  // agent-device auto-starts in HTTP mode via its devices command; read daemon.json afterwards.
   const startAgentDeviceDaemon = Effect.fn("LocalDeviceHost.startAgentDeviceDaemon")(function* (
     agentTool: DeviceToolPaths,
     nodePath: string,

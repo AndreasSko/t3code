@@ -1,5 +1,3 @@
-/** Track the current mounted URL per key and remember loaded keys to avoid stale-load churn.
- * Mounts load independently; persistence lives in projectFaviconDatabaseCache. */
 export interface ProjectFaviconRequest {
   readonly cacheKey: string;
   readonly faviconUrl: string;

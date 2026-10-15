@@ -1,4 +1,3 @@
-/** Each instance captures its config; closing its registry scope releases its processes and refresh fibers. */
 import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -65,7 +64,12 @@ function isCodexStandaloneCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).includes("/packages/standalone/");
 }
 
-/** Updates must use the shared home: auth overlays do not contain the standalone installation. */
+/**
+ * `codex update` replaces the standalone tree under `CODEX_HOME`. That tree
+ * lives in the shared home even when an auth-overlay shadow home is in use
+ * (the overlay only carries auth and a few local entries), so the updater
+ * runs against `sharedHomePath` rather than the instance's effective home.
+ */
 function makeCodexMaintenanceResolver(sharedHomePath: string) {
   return makePackageManagedProviderMaintenanceResolver({
     provider: DRIVER_KIND,
@@ -78,7 +82,6 @@ function makeCodexMaintenanceResolver(sharedHomePath: string) {
   });
 }
 
-/** The registry aggregates this environment with those of other drivers for the runtime to provide. */
 export type CodexDriverEnv =
   | CodexAdapterV2DriverEnv
   | ProviderHost.ProviderHost
@@ -187,8 +190,8 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         ),
       );
 
-      // Refresh the manifest off the check's critical path so a slow fetch cannot delay provider health.
-      // A refresh that lands mid-probe applies on the next check.
+      // Kick the TTL-gated manifest refresh in the background and classify with the in-memory
+      // manifest, so a slow or hung fetch never delays the provider check.
       const checkProvider = modelCatalog.refreshInBackground.pipe(
         Effect.andThen(
           Effect.zipWith(
@@ -271,8 +274,13 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
               ),
             );
 
-      // Serialize redemption by the home holding auth.json, keeping one idempotency key until an outcome.
-      // A bounded request prevents a hung app-server from holding the account lock.
+      // Redemption spends something on the user's account. It serialises on
+      // the account (instances sharing a Codex home share the credit), keeps
+      // one idempotency key until Codex reports an outcome, and is bounded so
+      // a hung app-server cannot hold the account lock.
+      // Keyed on the directory holding auth.json: an auth-overlay instance has
+      // its own account under `effectiveHomePath`, while plain instances share
+      // the common home. The continuation key would conflate the two.
       const accountKey = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
         resetCreditCoordinator
@@ -282,7 +290,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
                 binaryPath: effectiveConfig.binaryPath,
                 homePath: effectiveConfig.homePath,
                 launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
-                // Account-level request; any directory serves, same as the status probe.
                 cwd: process.cwd(),
                 environment: processEnv,
               });
@@ -303,8 +310,12 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
                   cause,
                 }),
             ),
-            // Failed probes retain old limits; only a newer checkedAt confirms the post-redemption refresh.
-            // Only reset outcomes require confirmation that the limits changed.
+            // The windows just changed; re-probe so the snapshot says so. A
+            // failed probe republishes the pre-redemption limits rather than
+            // marking them failed, so "confirmed" means `checkedAt` moved
+            // past what was published before the redemption started. Only a
+            // reset claims the limits changed, so only a reset reports an
+            // unconfirmed refresh.
             Effect.tap((outcome) =>
               Effect.gen(function* () {
                 const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;

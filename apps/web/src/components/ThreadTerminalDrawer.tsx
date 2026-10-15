@@ -163,7 +163,6 @@ function hexToGhosttyColor(hex: string): GhosttyColor {
   return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
 }
 
-// VS Code's default ANSI colors.
 const TERMINAL_PALETTES = {
   light: [
     "#000000",
@@ -328,7 +327,6 @@ export function terminalSelectionMenuItems(options?: {
   ];
 }
 
-/** Browsers cannot paste into canvas terminals; always offer our own Paste menu entry. */
 export function terminalContextMenuItems(options: {
   hasSelection: boolean;
   canAddToChat?: boolean;
@@ -346,7 +344,11 @@ export function terminalContextMenuItems(options: {
   ];
 }
 
-/** Cancel only the current selection flow: superseded popup promises may remain unsettled while newer menus are active. */
+/**
+ * A popup already superseded by a right-click keeps its menu promise unsettled
+ * for a moment; treating it as active would cancel the newer context-menu flow
+ * instead.
+ */
 export function shouldClearTerminalSelectionAction(options: {
   actionPending: boolean;
   openMenuRequestId: number | null;
@@ -444,7 +446,6 @@ export function TerminalViewport({
   });
   const hasHandledExitRef = useRef(false);
   const selectionActionRequestIdRef = useRef(0);
-  // Superseded menu promises may still be unsettled; track the popup that actually owns the current flow.
   const openSelectionMenuRequestIdRef = useRef<number | null>(null);
   const keybindingsRef = useRef(keybindings);
   const runtimeEnvKey = useMemo(() => runtimeEnvSignature(runtimeEnv), [runtimeEnv]);
@@ -594,7 +595,9 @@ export function TerminalViewport({
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
-        // WASM creation can still be pending when right-click arrives; wait for handler setup before exposing the ref.
+        // The surface listens from construction, so a right-click can land
+        // while `create` is still awaiting WASM — before the handler below it
+        // exists.
         onContextMenu: (event) => {
           if (terminalRef.current) void showTerminalContextMenu(event);
         },
@@ -611,7 +614,9 @@ export function TerminalViewport({
       setupTerminal = terminal;
       terminalRef.current = terminal;
       terminal.input.readOnly = !hasTerminalWriteAccess();
-      // Preferences can hydrate while WASM loads and terminalRef is null; reapply current font once it exists.
+      // Client settings hydrate asynchronously; a font preference that landed
+      // while the surface was loading found terminalRef null, so its setFont
+      // was dropped.
       const currentFont = terminalFontRef.current;
       if (currentFont.family !== setupFont.family || currentFont.size !== setupFont.size) {
         void terminal.setFont(terminalFontOptions(currentFont.family, currentFont.size));
@@ -627,7 +632,10 @@ export function TerminalViewport({
       }
       outputCursorRef.current = initialOutput.cursor;
       if (latestSession.error !== null) writeSystemMessage(terminal, latestSession.error);
-      // Start status sync at closed so already-exited sessions run exit handling once.
+      // Attaching to a session that already exited must still run exit handling
+      // once, so mount synchronization starts from the empty "closed" state.
+      // (A session that is "closed" at mount is indistinguishable from one that
+      // never started, so only "exited" triggers the message — as with xterm.)
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status, latestSession.version);
       // Startup may finish after the user has returned to the composer.
@@ -727,7 +735,9 @@ export function TerminalViewport({
         const activeTerminal = terminalRef.current;
         if (!activeTerminal) return;
         try {
-          // Let the surface claim the clipboard race so a paste shortcut supersedes the in-flight menu paste.
+          // The surface owns the read so it can claim the paste race before it
+          // starts: a paste shortcut fired while the menu read is in flight
+          // supersedes this paste instead of landing alongside it.
           await activeTerminal.pasteFromClipboard(
             () => readTextFromClipboard("terminal input"),
             () => requestId === selectionActionRequestIdRef.current,
@@ -741,7 +751,9 @@ export function TerminalViewport({
 
       const showTerminalContextMenu = async (event: MouseEvent) => {
         if (!localApi || !terminalRef.current) return;
-        // Prevent the native gesture synchronously: its Paste entry is always disabled over a canvas terminal.
+        // Own the gesture before anything async: leaving the default alive lets
+        // the browser (or Electron's editing menu) answer with a Paste entry
+        // that is permanently disabled over the terminal canvas.
         event.preventDefault();
         clearSelectionAction();
         const selectionAction = readSelectionAction();
@@ -1115,7 +1127,6 @@ interface ThreadTerminalDrawerProps {
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
-  /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
 }
 

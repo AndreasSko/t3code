@@ -2,7 +2,10 @@ import type { File } from "expo-file-system";
 
 let tempFileSequence = 0;
 
-/** Stage each write in its own sibling temp file: interruption cannot truncate the destination or clobber another writer's stage. */
+/**
+ * Each write stages through its own temp file so concurrent writers to the same
+ * destination cannot move or clobber each other's staging file mid-flight.
+ */
 export async function writeFileAtomically(file: File, contents: string): Promise<void> {
   const { File: FileConstructor } = await import("expo-file-system");
   tempFileSequence += 1;

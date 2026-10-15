@@ -1,6 +1,5 @@
 import type { PullRequestReaction, PullRequestReactionContent } from "@t3tools/contracts";
 
-/** The picker's order, which is GitHub's: the two verdicts first, then the rest as it lists them. */
 export const PULL_REQUEST_REACTION_ORDER: ReadonlyArray<PullRequestReactionContent> = [
   "thumbs-up",
   "thumbs-down",
@@ -42,7 +41,6 @@ export function pullRequestReactionName(content: PullRequestReactionContent): st
   return REACTION_NAME[content];
 }
 
-/** Past three names the sentence stops being readable and starts being a list. */
 const NAMED_ACTOR_LIMIT = 3;
 
 function joinNames(parts: ReadonlyArray<string>): string {
@@ -51,14 +49,19 @@ function joinNames(parts: ReadonlyArray<string>): string {
   return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
 }
 
-/** "others" only alongside somebody named; on its own a count is people, not other people. */
 function countRemainder(count: number, named: boolean): string {
   if (named) return `${count} ${count === 1 ? "other" : "others"}`;
   return `${count} ${count === 1 ? "person" : "people"}`;
 }
 
-/** Name the viewer as You only when actors leave room within count; otherwise
- * they may already include the viewer. Host count bounds names and the remainder. */
+/**
+ * The viewer reads as "You" and comes first, because that is the name they are looking for; a
+ * compliant host already leaves the viewer's own login out of `actors` when they have reacted,
+ * leaving room for "You" without ever exceeding `count`. This function has no viewer login to
+ * match against `actors`, so it cannot tell a non-compliant host apart by name — but such a host
+ * gives itself away by leaving no room: `actors` alone already accounts for everyone `count`
+ * claims.
+ */
 export function pullRequestReactionTooltip(reaction: PullRequestReaction): string {
   const viewerHasRoom = reaction.actors.length < reaction.count;
   const names =
@@ -69,7 +72,6 @@ export function pullRequestReactionTooltip(reaction: PullRequestReaction): strin
   return `${joinNames(parts)} reacted with ${pullRequestReactionName(reaction.content)} emoji`;
 }
 
-/** Optimistic reaction changes answer the press before the slow host reread. */
 export function applyPendingPullRequestReactions(
   reactions: ReadonlyArray<PullRequestReaction>,
   pending: ReadonlyMap<PullRequestReactionContent, boolean>,

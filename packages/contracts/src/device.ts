@@ -1,4 +1,3 @@
-/** Server-owned device hosts proxy streams to clients and configure agent-device access for agents. */
 import { Schema } from "effect";
 
 import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -9,7 +8,6 @@ export type DevicePlatform = typeof DevicePlatform.Type;
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type DeviceHostId = typeof DeviceHostId.Type;
 
-/** The environment server's local device host. */
 export const LOCAL_DEVICE_HOST_ID = "local" as DeviceHostId;
 
 /** SSH aliases and key paths are resolved on the environment server. */
@@ -42,14 +40,12 @@ export const DeviceSummary = Schema.Struct({
   id: DeviceId,
   platform: DevicePlatform,
   name: TrimmedNonEmptyString,
-  /** OS label such as "iOS 18.0" or "Android 15.0". */
   version: Schema.String,
   booted: Schema.Boolean,
   physical: Schema.Boolean,
 });
 export type DeviceSummary = typeof DeviceSummary.Type;
 
-/** Report missing platform toolchains explicitly so empty inventory can explain its cause. */
 export const DevicePlatformAvailability = Schema.Struct({
   platform: DevicePlatform,
   available: Schema.Boolean,
@@ -82,7 +78,6 @@ export const DeviceHostSummary = Schema.Struct({
 });
 export type DeviceHostSummary = typeof DeviceHostSummary.Type;
 
-/** First-use tool installation stays visible while helper processes become ready. */
 export const DeviceHostStatus = Schema.Literals([
   "disabled",
   "idle",
@@ -93,7 +88,10 @@ export const DeviceHostStatus = Schema.Literals([
 ]);
 export type DeviceHostStatus = typeof DeviceHostStatus.Type;
 
-/** One session per thread/device; streams are shared when several threads open the same device. */
+/**
+ * A device a thread is looking at. One session per (thread, device); the same
+ * device may be open in several threads, since the stream is shared.
+ */
 export const DeviceSession = Schema.Struct({
   threadId: ThreadId,
   hostId: DeviceHostId,
@@ -177,7 +175,6 @@ export type DeviceShutdownInput = typeof DeviceShutdownInput.Type;
 export const DeviceAppearance = Schema.Literals(["light", "dark"]);
 export type DeviceAppearance = typeof DeviceAppearance.Type;
 
-// iOS has twelve discrete content sizes and Android a continuous font_scale; expose four shared steps.
 export const DeviceTextSize = Schema.Literals(["small", "default", "large", "extra-large"]);
 export type DeviceTextSize = typeof DeviceTextSize.Type;
 
@@ -216,7 +213,6 @@ export const DeviceSettings = Schema.Struct({
 });
 export type DeviceSettings = typeof DeviceSettings.Type;
 
-/** The app in the foreground, when the platform can tell us. */
 export const DeviceForegroundApp = Schema.Struct({
   id: Schema.String,
   name: Schema.optional(Schema.String),
@@ -439,7 +435,6 @@ export const DeviceToolListResult = Schema.Struct({
   hostStatuses: DeviceServiceState.fields.hostStatuses,
   hosts: Schema.Array(DeviceHostSummary),
   devices: Schema.Array(DeviceSummary),
-  /** Devices already open in this thread's Device panel. */
   open: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
 });
 export type DeviceToolListResult = typeof DeviceToolListResult.Type;

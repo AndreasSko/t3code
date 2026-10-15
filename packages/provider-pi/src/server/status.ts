@@ -1,4 +1,3 @@
-/** Discover models and commands through ephemeral RPC so the user's Pi configuration remains authoritative. */
 import {
   type CustomModelSetting,
   type ServerProvider,
@@ -61,10 +60,13 @@ const PI_PRESENTATION = {
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const PI_RPC_DISCOVERY_TIMEOUT_MS = 15_000;
-/** Pi 0.80.5 first published both get_entries and agent_settled, required for rollback and turn settlement. */
+/**
+ * get_entries arrived in 0.80.3 and agent_settled landed in source at 0.80.4.
+ * Version 0.80.5 was the first published package containing both hooks. T3
+ * needs them for rollback boundaries and reliable turn terminalization.
+ */
 export const MINIMUM_PI_VERSION = "0.80.5";
 
-/** Deferring to the user's own settings.json default model. */
 const PI_DEFAULT_MODEL: ServerProviderModel = {
   slug: "default",
   name: "Pi default",

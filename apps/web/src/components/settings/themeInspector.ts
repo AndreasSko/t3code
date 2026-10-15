@@ -397,7 +397,6 @@ export function inspectThemeRoleFromUtilitiesAtElement(
   return null;
 }
 
-/** Probe token dependencies with a sentinel and restore synchronously before the browser can paint. */
 export function highlightThemeRoleUsage(roles: ReadonlyArray<ThemeColorRole>): number {
   const startedAt = performance.now();
   clearThemeInspectorAttribute(THEME_INSPECTOR_MATCH_ATTRIBUTE);
@@ -450,7 +449,9 @@ export function inspectThemeRoleAtElement(initialElement: Element): ThemeElement
 
   const candidates = themeInspectionCandidates(initialElement);
 
-  // Semantic utility classes avoid forced style recalculations; custom CSS uses the computed-style probe.
+  // Most app paint comes from Tailwind's semantic color utilities. Those class
+  // names express the token dependency directly and avoid dozens of forced
+  // style recalculations on every pointer-down.
   const utilityInspection = inspectThemeRoleFromUtilitiesAtElement(initialElement);
   if (utilityInspection) return utilityInspection;
 

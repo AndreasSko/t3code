@@ -1,8 +1,6 @@
-/** Shared follow-up semantics for web alternate send (Mod+Enter) and mobile send long-press. */
 export type ComposerDispatchMode = "auto" | "queue" | "steer" | "restart";
 export type ActiveTurnComposerAction = Exclude<ComposerDispatchMode, "auto">;
 
-/** The alternate switches between queue and steer relative to the configured action. */
 export function resolveComposerDispatchMode(input: {
   readonly running: boolean;
   readonly alternateModifier: boolean;
@@ -14,7 +12,6 @@ export function resolveComposerDispatchMode(input: {
   return defaultAction;
 }
 
-/** What the alternate would do, for labelling the affordance that triggers it. */
 export function alternateComposerDispatchAction(
   activeTurnDefault?: ActiveTurnComposerAction,
 ): ActiveTurnComposerAction {

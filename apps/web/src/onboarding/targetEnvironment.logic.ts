@@ -49,8 +49,9 @@ export function resolveOnboardingTargetEnvironment<TEnvironment extends Onboardi
 }
 
 /**
- * Wait only for first connection attempts; skip offline, failed, or unsupported targets so setup cannot
- * deadlock.
+ * Continue waits only on a first connection attempt, which settles on its own.
+ * Selected computers that are switched off, offline, failing, or unsupported
+ * are skipped so they can never lock the user out of onboarding.
  */
 export function resolveOnboardingSetup(
   environments: ReadonlyArray<Pick<OnboardingEnvironment, "environmentId" | "connection">>,

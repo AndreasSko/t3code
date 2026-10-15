@@ -84,7 +84,6 @@ const IDLE_SERVER_UPDATE_STATE: ServerUpdateState = { status: "idle" };
 const EMPTY_SERVER_UPDATE_STATE_ATOM = Atom.make<ServerUpdateState>(IDLE_SERVER_UPDATE_STATE).pipe(
   Atom.withLabel("environment-data:server:update-state:empty"),
 );
-/** Shared with the outdated-host update, which reports through the same state. */
 export const serverUpdateStateAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make<ServerUpdateState>(IDLE_SERVER_UPDATE_STATE).pipe(
     Atom.withLabel(`environment-data:server:update-state:${environmentId}`),
@@ -175,9 +174,22 @@ export function validateServerUpdateReadyEvent(
   );
 }
 
-/** Normal backoff can stretch a ~15s restart to ~30s; pace retries at ~1s to avoid instant-failure spins.
- * Restarted hosts may reject the first credential, so retry auth blocks only, not permission/configuration failures.
- * Fork under the update command so settlement interrupts this loop. */
+/**
+ * A restart takes the server down for ~15 seconds, but the supervisor's normal
+ * backoff assumes an unexpected failure and doubles its delay after each failed
+ * attempt, so a 15-second restart can be observed as a ~30-second "Resuming".
+ * Nudging on every backoff entry (not just the first)
+ * holds the retry cadence flat until the server answers again. The sleep before
+ * each nudge is the pacer: a connection that fails instantly re-enters backoff
+ * immediately and would otherwise spin a tight retry loop.
+ *
+ * A newly restarted server can also reject the first environment credential.
+ * Authentication blocks need the same paced retry during this known restart;
+ * permission and configuration failures remain blocked.
+ *
+ * Callers fork this as a child of the update command so it is interrupted as
+ * soon as the update settles, whether it succeeds, fails, or times out.
+ */
 export function nudgeReconnectDuringUpdateRestart(input: {
   readonly stateChanges: Stream.Stream<
     {
@@ -367,7 +379,6 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       ),
     );
     const state = yield* SubscriptionRef.make<Option.Option<ServerConfigProjection>>(
-      // Strip published themes on load too because existing caches may contain them.
       Option.map(cachedConfig, (cached) => ({
         config: withoutEnvironmentThemes(cached),
         latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
@@ -602,9 +613,12 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly initialConfigValueAtom: (
       environmentId: EnvironmentId,
     ) => Atom.Atom<ServerConfig | null>;
-    /** Mobile owns appearance locally and does not request or receive published themes. */
+    /**
+     * Whether this surface renders themes the environment publishes. Mobile
+     * keeps its own appearance settings, so it neither asks for the stream nor
+     * receives the payload.
+     */
     readonly environmentThemes?: boolean;
-    /** Whether this surface renders quota from configured usage-limit sources. */
     readonly usageLimitSources?: boolean;
     readonly usageLimitsCommand?: boolean;
   },
@@ -766,7 +780,9 @@ export function createServerEnvironmentAtoms<R, E>(
                     (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn") &&
                     isLegacyUpdateHandoffLoss(exit.cause)
                   ) {
-                    // Transport loss can precede unary acknowledgement; confirm the handoff by waiting for target ready.
+                    // Older servers can tear down the transport before their
+                    // unary acknowledgement arrives. Treat only that transport
+                    // loss as a handoff, then prove it by waiting for target ready.
                     return { targetVersion, method: selfUpdateMethod };
                   }
                   return yield* Effect.failCause(exit.cause);
@@ -805,7 +821,6 @@ export function createServerEnvironmentAtoms<R, E>(
           }),
         );
 
-        // Intentional restarts need flat retry cadence instead of the normal exponential ladder.
         yield* nudgeReconnectDuringUpdateRestart({
           stateChanges: environmentRegistry.stateChanges(target.environmentId),
           retryNow: environmentRegistry.retryNow(target.environmentId),
@@ -1070,13 +1085,14 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-task:webhook-delivery",
       tag: WS_METHODS.scheduledTasksGetWebhookDelivery,
     }),
-    /** Live scheduled-task list: snapshot on subscribe, fresh list after every server-side change. */
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
     }),
-    // Cold transcript scans take seconds; retain them across window changes. Cached summaries remain provisional
-    // until awaitRefresh replaces them.
+    // A cold transcript scan is measured in seconds, so keep the result around
+    // long enough that switching windows or re-rendering does not rescan.
+    // Slow sources answer from cache first: that summary stays on screen, with
+    // the query waiting, until one `awaitRefresh` request replaces it.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:usage-summary",
       tag: WS_METHODS.serverGetUsageSummary,
@@ -1179,7 +1195,9 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: configConcurrency,
     }),
     updateSettings,
-    // Share the settings lane and atomic provider map-entry boundary to avoid stale whole-map writes.
+    // Provider-instance mutations share the settings command and its
+    // environment-serial scheduler. The named boundary keeps clients on the
+    // atomic map-entry payload instead of rebuilding a stale whole map.
     mutateProviderInstance: updateSettings,
     prepareAcpRegistryAgent: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:acp-registry:prepare",
@@ -1290,7 +1308,9 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
-    // Dispatch may block on a slow run; keep it off the config lane so settings mutations continue.
+    // Deliberately not on the config lane: run-now blocks until the run is
+    // dispatched, and a slow run must not stall settings/keybinding/provider
+    // mutations (or other scheduled-task edits) queued behind it.
     runScheduledTaskNow: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:run-now",
       tag: WS_METHODS.scheduledTasksRunNow,

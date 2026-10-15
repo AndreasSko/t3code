@@ -26,7 +26,10 @@ export interface EnvironmentProject extends OrchestrationProjectShell {
   readonly isScratch?: true;
 }
 
-/** Keep the server projection nested to preserve structurally shared collection identities. */
+/**
+ * The projection stays nested so the server projection and all structurally
+ * shared collections retain their identities.
+ */
 export interface EnvironmentThread {
   readonly environmentId: EnvironmentId;
   readonly projection: OrchestrationV2ThreadProjection;
@@ -112,7 +115,6 @@ export interface EnvironmentThreadShell {
   >;
   /** Provider instances that have owned the root conversation, oldest first. */
   readonly providerInstanceHistory: ReadonlyArray<ProviderInstanceId>;
-  /** Native `/goal` on the active provider thread. */
   readonly goal: OrchestrationV2ProviderGoal | null;
   readonly itemCount: number;
   readonly visibleItemCount: number;
@@ -127,14 +129,16 @@ export interface EnvironmentThreadShell {
   readonly limitRecovery?: import("@t3tools/contracts").OrchestrationV2LimitRecovery | null;
   readonly pinnedAt: string | null;
   readonly autoSettleDisabledAt?: string | null;
-  /** Slot in the user-arranged pinned order; null for keyless (legacy) pins. */
   readonly pinOrderKey: string | null;
-  /** Slot in the user-arranged active order; null for keyless active threads. */
   readonly activeOrderKey: string | null;
   readonly pullRequests: ReadonlyArray<import("@t3tools/contracts").ThreadPullRequestLink>;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly branchPullRequest?: ThreadLinkedPullRequest | null;
-  /** Missing visited watermarks require fallback to local state on older servers. */
+  /**
+   * Server-tracked visited watermark. `undefined` means the environment's
+   * server predates visited tracking and clients should fall back to any
+   * local visited state they keep.
+   */
   readonly lastVisitedAt?: string | null;
   readonly titleRegeneration?: { readonly requestId: string; readonly startedAt: string } | null;
   readonly deletedAt: string | null;
@@ -159,9 +163,11 @@ function terminalRunStatus(status: OrchestrationV2RunStatus): boolean {
   );
 }
 
-// Work that wakes the agent parks runtime at idle; standalone commands retain the run status.
-// The server hides the roster during preparing/starting/running work, so a remaining roster outranks checkpoint waiting.
-// A failed latest run outranks background work, and latestRun preserves history status.
+// Only work that wakes the agent holds it: commands it left running, such as a
+// dev server, present the run's own status (#14872). The server suppresses the
+// roster while an interruptible activity run exists, so a remaining roster is
+// stronger than checkpoint-oriented waiting. A failed latest run outranks the
+// roster, so the failure stays visible.
 function shellRuntime(thread: OrchestrationV2ThreadShell): ThreadRuntimeSummary | null {
   const parkAtIdle =
     backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? []) &&
@@ -293,7 +299,11 @@ export function scopeThreadShell(
 
 const THREAD_PROVIDER_STACK_LIMIT = 3;
 
-/** Current provider is last; prior owners are oldest-first with newest history retained when space is limited. */
+/**
+ * Provider instances to draw in a thread row's trailing stack, back to front:
+ * the current one is always last, earlier owners precede it oldest first.
+ * Newest history wins when the thread has been handed off more times than fit.
+ */
 export function resolveThreadProviderStack(
   thread: Pick<EnvironmentThreadShell, "providerInstanceHistory" | "modelSelection" | "runtime">,
 ): ReadonlyArray<ProviderInstanceId> {
@@ -302,7 +312,10 @@ export function resolveThreadProviderStack(
   return [...previous.slice(-(THREAD_PROVIDER_STACK_LIMIT - 1)), current];
 }
 
-/** Timers follow the activity-owning work start, preserved across wakes, never last activity. */
+/**
+ * Both shell and detail timers count from the activity-owning run's work
+ * start, never last activity. A wake keeps the start of the work it continues.
+ */
 export function resolveThreadWorkingStartedAt(input: {
   readonly latestRun: Pick<
     ThreadRunSummary,

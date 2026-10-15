@@ -103,8 +103,6 @@ const layerDesktopEnvironment = Layer.unwrap(
   }),
 );
 
-// Use the app's self-contained release archive remotely so SSH needs no Node/npm.
-// Development uses a source checkout to allow paired iteration.
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
 ): RemoteT3RunnerOptions => {

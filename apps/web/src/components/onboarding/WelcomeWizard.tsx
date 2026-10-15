@@ -100,8 +100,6 @@ import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../timestampFormat";
 
-/** First-run onboarding at /welcome; steps after connection are skippable. */
-
 type WizardStep = "connection" | "agents" | "import";
 const NO_ENVIRONMENTS: readonly EnvironmentId[] = [];
 
@@ -652,7 +650,6 @@ interface AgentTerminalSession {
   readonly keybindings: ServerConfig["keybindings"];
 }
 
-/** Codex uses managed setup; existing CLI installs retain the terminal path. */
 function AgentsStep({
   environmentIds,
   onContinue,
@@ -711,7 +708,6 @@ function ConnectedAgentsStep({
   } | null>(null);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
 
-  // Re-probe on entry so newly installed CLIs appear without manual refresh.
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
@@ -1000,8 +996,12 @@ function AgentCard({
   );
 }
 
-/** Synthetic thread ids are valid PTY keys; pre-type commands without
- * submitting so the user can review them before pressing Enter. */
+/**
+ * Inline install terminal. Opens a PTY on the connected environment under a
+ * synthetic onboarding thread id (terminals are keyed by free-form thread id;
+ * the server validates only the cwd) and pre-types the install or login
+ * command without submitting, so the user reviews and presses Enter.
+ */
 function AgentInstallTerminal({
   session,
   onClose,
@@ -1203,7 +1203,6 @@ function ImportStep({
   );
   const importGenerationRef = useRef(0);
 
-  // Ignore command completions after leaving the import step.
   useEffect(() => {
     importGenerationRef.current += 1;
     return () => {
@@ -1297,8 +1296,8 @@ function ImportStep({
     const importGeneration = importGenerationRef.current;
     const importedProjects = importedProjectsRef.current;
     const projectAttempts = projectAttemptsRef.current;
-    // Interrupted imports must not report success; skip paths already imported
-    // this session so retries cannot trip the duplicate-root invariant.
+    // Retries skip paths that already landed this session (re-creating them
+    // would only trip the duplicate-root invariant and read as a failure).
     let importedProjectsCount =
       importedProjects.size > 0
         ? selection.filter((candidate) => importedProjects.has(candidate.key)).length
@@ -1536,7 +1535,6 @@ type ImportCandidate = AgentSessionProjectCandidate & {
   readonly key: string;
 };
 
-/** Group repository clones; collapse plain folders to keep them reachable without noise. */
 function ImportCandidateList({
   candidates,
   selectedKeys,
@@ -1664,7 +1662,10 @@ function ImportRepositoryGroup({
   );
 }
 
-/** Keep distinguishing folder names visible by truncating shared parent paths first. */
+/**
+ * Clones of one repository and plain folders differ only by folder name, so
+ * the name stays visible and the shared parent path truncates first.
+ */
 function ProjectPathText({
   path,
   className,
@@ -1690,7 +1691,6 @@ function ImportCandidateRow({
   onCheckedChange,
 }: {
   readonly candidate: ImportCandidate;
-  /** Text primary label. Nested rows omit it and are labelled by their path. */
   readonly label?: string;
   readonly path?: string;
   readonly nested?: boolean;
@@ -1730,7 +1730,6 @@ function ImportCandidateRow({
   );
 }
 
-/** Fixed columns and icon slots keep rows aligned across source and digit counts. */
 function ImportRowMeta({
   sources,
   threadCount,

@@ -13,7 +13,10 @@ export const EMPTY_INCOMING_SHARE_PRESENTATION_STATE: IncomingSharePresentationS
   dismissedShareId: null,
 };
 
-/** A dismissal suppresses only that durable share id until it is consumed or replaced. */
+/**
+ * Tracks presentation by durable share id rather than object identity. A user
+ * dismissal suppresses only that inbox item until it is consumed or replaced.
+ */
 export function transitionIncomingSharePresentation(
   state: IncomingSharePresentationState,
   input: {

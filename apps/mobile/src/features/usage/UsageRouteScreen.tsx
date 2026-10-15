@@ -62,7 +62,6 @@ const TAB_OPTIONS = [
   { value: "limits", label: "Limits" },
 ] as const satisfies readonly { value: UsageTab; label: string }[];
 
-// Short labels share the metric row; accessibility labels retain the full phrase.
 const WINDOW_OPTIONS = [
   { value: 1, label: "24h", accessibilityLabel: "Past 24 hours" },
   { value: 7, label: "7d", accessibilityLabel: "Past 7 days" },
@@ -298,7 +297,6 @@ export function UsageRouteScreen() {
             />
           ) : (
             <>
-              {/* Period and metric share a bar because both change every Usage value. */}
               <View className="gap-3 ios:flex-row ios:items-center">
                 <SegmentedControl
                   options={WINDOW_OPTIONS}
@@ -333,8 +331,6 @@ export function UsageRouteScreen() {
                     : "Select an environment to see usage."}
                 </Text>
               ) : !canReadDiagnostics ? (
-                // Each environment explains itself: a denied grant and a failed
-                // access check are different problems.
                 <View className="gap-2 py-16">
                   {selectedEnvironments.map((environment) => (
                     <Text
@@ -385,7 +381,6 @@ export function UsageRouteScreen() {
   );
 }
 
-/** Overlay the update status on the chart label row so it never shifts layout. */
 function UsageUpdating({
   dimmed,
   label,
@@ -751,7 +746,8 @@ function CostSection(props: { readonly merged: MergedUsage }) {
     { label: "Cache read", value: categoryCost.cacheRead, color: colors.cacheRead },
     { label: "Cache write", value: categoryCost.cacheWrite, color: colors.cacheWrite },
     { label: "Output", value: categoryCost.output, color: colors.output },
-    // Unsplit cost lacks rates; suppress rounding residuals below half a cent.
+    // Reported cost with no rates to split it, or from older servers. Below a
+    // cent it is rounding, not usage.
     {
       label: "Other",
       value: categoryCost.unsplit >= 0.005 ? categoryCost.unsplit : 0,
@@ -838,7 +834,8 @@ function ModelsSection(props: { readonly merged: MergedUsage; readonly metric: U
   const colors = useProviderColors();
   if (merged.models.length === 0) return null;
 
-  // Copy before sorting: Hermes lacks Array#toSorted.
+  // Ranked like the provider rows. .sort() on a copy, not .toSorted(): Hermes
+  // doesn't ship the ES2023 method.
   const ordered = [...merged.models].sort((a, b) =>
     metric === "cost"
       ? b.costUsd - a.costUsd || b.totalTokens - a.totalTokens
@@ -899,7 +896,6 @@ function usageEnvironmentStatus(environment: EnvironmentUsageStatus, refreshing:
           : "clientBehind",
     });
   }
-  // The reason matters: a denied grant and a failed scan need different fixes.
   if (environment.error)
     return environment.summary ? `${environment.error} Showing saved totals.` : environment.error;
   if (!environment.isConnected)

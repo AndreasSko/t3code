@@ -21,7 +21,6 @@ const preferences = [
 
 type LoadPreference = (typeof preferences)[number]["value"];
 
-/** Map any saved weight onto one of the four preferences. */
 export function loadPreferenceForWeight(weight: number | undefined): LoadPreference {
   if (weight === undefined || weight === 50) return 50;
   if (weight === 0) return 0;
@@ -32,7 +31,6 @@ function preferenceLabel(preference: LoadPreference): string {
   return preferences.find((entry) => entry.value === preference)!.label;
 }
 
-/** Null when all weights are Normal; otherwise summarize non-default machines. */
 export function summarizeLoadPreferences(
   environments: ReadonlyArray<Pick<EnvironmentPresentation, "environmentId" | "label">>,
   weights: Readonly<Record<string, number>>,
@@ -46,7 +44,6 @@ export function summarizeLoadPreferences(
   return parts.length === 0 ? null : parts.join(" · ");
 }
 
-/** One enabled machine has nothing to balance, so show only for multiple machines. */
 export function LoadBalancingSettings({
   environments,
 }: {

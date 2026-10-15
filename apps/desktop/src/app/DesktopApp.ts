@@ -149,7 +149,6 @@ const fatalStartupCause = <E>(stage: string, cause: Cause.Cause<E>) =>
 
 export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances")(
   function* (): Effect.fn.Return<void, never, DesktopBackendPool.DesktopBackendPool> {
-    // Bound teardown so a hung backend cannot block quitting.
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
     const instances = yield* pool.list;
     yield* Effect.forEach(
@@ -170,7 +169,8 @@ const bootstrap = Effect.gen(function* () {
   yield* logBootstrapInfo("bootstrap start");
 
   const settings = yield* desktopSettings.get;
-  // Serve the renderer independently so a window can open without a local backend.
+  // The renderer is served from the bundled client (or Vite in development)
+  // rather than through the local backend, so the window can open without one.
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
   yield* electronProtocol.registerDesktopProtocol({
     scheme: ElectronProtocol.getDesktopScheme(environment.isDevelopment),
@@ -241,7 +241,6 @@ const bootstrap = Effect.gen(function* () {
   }
 
   if (!(yield* Ref.get(state.quitting))) {
-    // A WSL-only primary can cold-boot slowly; show a splash before waiting for it.
     if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
       yield* desktopWindow.showConnectingSplash;
     }
@@ -251,7 +250,6 @@ const bootstrap = Effect.gen(function* () {
       Effect.tap(() => logBootstrapInfo("desktop app control socket ready")),
       Effect.catch((error) => logStartupError("desktop app control socket unavailable", { error })),
     );
-    // Reconcile in parallel so a slow first wsl.exe spawn cannot block primary readiness.
     yield* Effect.forkScoped(wslBackend.reconcile);
   }
 }).pipe(Effect.withSpan("desktop.bootstrap"));
@@ -343,8 +341,11 @@ const scopedProgram = Effect.scoped(
     const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
 
     yield* Effect.addFinalizer(() =>
-      // Quit can precede the layer-scope cascade; stop every backend here so WSL
-      // receives SIGTERM and a grace period instead of being hard-killed.
+      // Stop every backend in the pool, not just the primary. The
+      // electronApp.quit() path can race ahead of the layer-scope
+      // cascade, so leaving the WSL instance for its parent scope
+      // finalizer means it gets hard-killed by the OS instead of
+      // receiving SIGTERM + grace.
       stopAllPoolInstances().pipe(
         Effect.ensuring(rendererHistory.shutdown),
         Effect.ensuring(shutdown.markComplete),

@@ -9,7 +9,12 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
-/** Canonical t3-context links locate contextId payloads; image/file records reference attachment bytes by id. */
+/**
+ * A message's `text` carries position through canonical reference links
+ * (`[label](t3-context://v1/<kind>/<contextId>)`, see
+ * `@t3tools/shared/composerContextReferences`); these records carry the payload, keyed by
+ * `contextId`. Bytes never live here: image and file records bind to a `ChatAttachment` by id.
+ */
 
 export const COMPOSER_CONTEXT_KINDS = [
   "image",
@@ -127,7 +132,6 @@ export const ElementContextSource = Schema.Struct({
 });
 export type ElementContextSource = typeof ElementContextSource.Type;
 
-/** What a picked page element looks like to the agent; shared by element and annotation records. */
 export const ElementContextDetails = Schema.Struct({
   pageUrl: ShortString,
   pageTitle: NullableShortString,
@@ -147,7 +151,9 @@ export const ElementContextRecord = Schema.Struct({
 });
 export type ElementContextRecord = typeof ElementContextRecord.Type;
 
-// optionalKey rejects explicit undefined locally so one non-JSON record cannot fail the whole message.
+// Optional record fields are `optionalKey`: a record holding an explicit
+// `undefined` cannot be sent as JSON, so it fails its own check and is dropped
+// alone instead of failing the whole message.
 export const PreviewAnnotationContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("preview-annotation"),
@@ -157,11 +163,11 @@ export const PreviewAnnotationContextRecord = Schema.Struct({
   comment: BoundedString(COMPOSER_CONTEXT_PREVIEW_COMMENT_MAX_CHARS),
   targetSummary: ShortString,
   styleChanges: Schema.Array(ShortString).check(Schema.isMaxLength(200)),
-  /** Picked elements inside the annotation, with the detail the agent needs to find them. */
   elements: Schema.optionalKey(Schema.Array(ElementContextDetails).check(Schema.isMaxLength(50))),
   /** Original target ids and edits allow pasted annotations to retain exact style changes. */
   elementIds: Schema.optionalKey(Schema.Array(ShortString).check(Schema.isMaxLength(50))),
-  /** Lossy geometry retains counts so pasted annotations preserve their target summary. */
+  /** Region and stroke geometry is lossy on purpose, but their counts feed the target summary,
+      so a pasted annotation still says what it marked. */
   regionCount: Schema.optionalKey(NonNegativeInt),
   strokeCount: Schema.optionalKey(NonNegativeInt),
   styleChangeDetails: Schema.optionalKey(
@@ -210,7 +216,9 @@ export const SkillContextRecord = Schema.Struct({
 });
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
-/** Carries thread identity for t3_thread_read on the same server; titles are display snapshots. */
+/**
+ * Only identity travels; the title is a display snapshot.
+ */
 export const ThreadContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("thread"),
@@ -222,7 +230,10 @@ export type ThreadContextRecord = typeof ThreadContextRecord.Type;
 
 const isJson = Schema.is(Schema.Json);
 
-/** Unknown kinds preserve payloads; exclude known tags so malformed known records cannot bypass validation. */
+/**
+ * Known discriminators are excluded so a malformed known record fails its own schema instead of
+ * sliding through unchecked.
+ */
 export const UnknownContextRecord = Schema.Struct({
   ...recordBase,
   kind: ComposerContextKind.check(Schema.isPattern(KNOWN_KIND_PATTERN)),
@@ -232,7 +243,6 @@ export const UnknownContextRecord = Schema.Struct({
       try {
         encoded = JSON.stringify(payload);
       } catch {
-        // Cycles, bigints, and payloads nested deeper than this engine's stack.
         return false;
       }
       // Only JSON values, so a payload the wire cannot carry (a Date, NaN, an

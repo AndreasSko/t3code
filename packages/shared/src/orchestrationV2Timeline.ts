@@ -53,8 +53,9 @@ export function isOrchestrationV2TurnItemVisible(input: {
     return false;
   }
 
-  // Cancelled queued input never reached the provider, so it remains composer state
-  // rather than appearing as conversation history.
+  // A queued message is composer state, not conversation history. When its run
+  // is cancelled the input never reached the provider, so it must not surface
+  // as a transcript row.
   if (
     item.type === "user_message" &&
     item.inputIntent === "queued_turn" &&

@@ -66,10 +66,6 @@ function stableJson(value: unknown): string {
   }
 }
 
-/**
- * The turn item for one tool call. `completedMetadata` is the tool's metadata
- * once it succeeded: exit codes and diffs are only trusted from a finished call.
- */
 export function openCodeToolTurnItem(
   base: ToolItemBase,
   tool: {
@@ -94,7 +90,6 @@ export function openCodeToolTurnItem(
     case "file_change": {
       const oldStr = recordString(input, "oldString", "oldText");
       const newStr = recordString(input, "newString", "content", "newText");
-      // A failed edit has no diff; keep its error where the diff would be.
       const diffStr =
         recordString(tool.completedMetadata, "diff", "patch") ??
         (base.status === "failed" && output?.trim() ? output : undefined);
@@ -109,8 +104,6 @@ export function openCodeToolTurnItem(
     }
     case "file_search": {
       const pattern = recordString(input, "pattern", "query", "path", "filePath");
-      // OpenCode reports matches as plain text, so keep it as one result row
-      // under the searched path, like the ACP search projection.
       const searchRoot = (recordString(input, "path", "filePath") ?? pattern)?.trim();
       return {
         ...base,

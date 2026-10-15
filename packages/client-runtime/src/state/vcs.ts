@@ -114,7 +114,11 @@ export const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh"
   );
 });
 
-/** Cache only unfiltered branch lists; partial offline lists would mislead the picker. */
+/**
+ * Filtered or paginated lists intentionally stay live-only: treating a
+ * partial result as a complete offline list would make branch selection
+ * misleading.
+ */
 export const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChanges")(function* (
   input: VcsListRefsInput,
   expectedRevision?: number,
@@ -238,7 +242,11 @@ function cachedVcsRefsChanges(
 export function createVcsEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Persistence.EnvironmentCacheStore | R, E>,
 ) {
-  // Nested WeakRef families can be collected between lookups, collapsing paginated lists; use one flat family.
+  /**
+   * One flat family on purpose: families hold entries via WeakRef, so a nested
+   * per-environment family can be collected between lookups, dropping every
+   * cached page atom and collapsing paginated ref lists mid-scroll.
+   */
   const listRefsFamily = Atom.family((key: string) => {
     const [environmentId, input] = JSON.parse(key) as [EnvironmentId, VcsListRefsInput];
     return runtime
@@ -306,7 +314,9 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
-    // Short TTL releases closed-thread subscriptions; completed setup tracking returns null.
+    // Live stages of a bootstrap worktree setup. Null until the server begins
+    // tracking, then a snapshot per change, then null again after the setup is
+    // dropped.
     worktreeSetup: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:vcs:worktree-setup",
       tag: WS_METHODS.subscribeWorktreeSetup,

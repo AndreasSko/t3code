@@ -260,8 +260,9 @@ export function shouldShowThreadJumpHintsForModifiers(
   keybindings: ResolvedKeybindingsConfig,
   options?: ShortcutMatchOptions,
 ): boolean {
-  // Ghostty can write focused-terminal keys before window shortcuts run; jump hints would promise keys that
-  // instead type into the shell, regardless of the configured when clause.
+  // The embedded terminal owns keystrokes while it has focus: the Ghostty surface encodes the
+  // keydown and can write the pressed key into the shell before our window-level shortcut handling
+  // ever runs, regardless of any configured `when` clause on the jump command.
   if (resolveContext(options).terminalFocus) {
     return false;
   }
@@ -351,7 +352,11 @@ export function isOpenFavoriteEditorShortcut(
   );
 }
 
-/** Yield to Tiptap Mod+B when the rich composer is focused so captured app shortcuts cannot steal bold. */
+/**
+ * Whether the keypress is the rich-text bold chord (Mod+B without extra
+ * modifiers). Tiptap binds the same chord, so app shortcuts captured ahead
+ * of the editor must yield when the rich-text composer is focused.
+ */
 export function isRichTextBoldShortcut(event: ShortcutEventLike): boolean {
   if (event.type !== undefined && event.type !== "keydown") {
     return false;

@@ -109,9 +109,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      // Packaged desktop servers start in $HOME, where cwd-scoped `claude` wrappers refuse to run.
-      // Instance probes use the server state dir; workspace probes use the thread cwd
-      // via `snapshotForCwd`.
+      // Instance-level probes are not tied to a project, so they run in the
+      // server's own state dir. The server cwd is $HOME in packaged desktop
+      // builds, and `claude` wrappers that scope themselves to their cwd refuse
+      // to run there. Workspace probes use the thread cwd via `snapshotForCwd`.
       const { stateDir } = yield* ServerConfig.ServerConfig;
       const httpClient = yield* HttpClient.HttpClient;
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
@@ -186,7 +187,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         modelCatalog,
       );
 
-      // Each instance owns its capabilities cache so concurrent accounts cannot share auth metadata.
+      // Per-instance capabilities cache: keyed on binary + resolved HOME so
+      // account-specific probes never share auth metadata across instances.
       const capabilitiesProbeCache = yield* Cache.make({
         capacity: 1,
         timeToLive: CAPABILITIES_PROBE_TTL,
@@ -208,7 +210,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         processEnv,
       );
 
-      // Refresh the manifest in the background to avoid delaying provider readiness.
       const checkProvider = catalogService.refreshInBackground.pipe(
         Effect.andThen(
           modelCatalog.pipe(
@@ -271,7 +272,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ),
       );
 
-      // Serialize on the login's config directory and retain the request id until any provider answer.
+      // Same rules as Codex: serialised on the config directory that holds the
+      // login, one request id kept until Claude answers (a cooldown or rate
+      // limit is an answer), then a re-probe.
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
         Effect.gen(function* () {
           const current = yield* snapshot.getSnapshot;
@@ -306,7 +309,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
                 cause,
               }),
           ),
-          // Re-probe after every answer; only a reset requires confirmation that limits changed.
           Effect.tap((outcome) =>
             Effect.gen(function* () {
               const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;

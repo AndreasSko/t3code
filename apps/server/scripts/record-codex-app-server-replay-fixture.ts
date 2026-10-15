@@ -1527,7 +1527,8 @@ function runReplaySession({
       yield* Effect.gen(function* () {
         const client = yield* initializeClient;
         const resumeParams = { threadId, excludeTurns: true, ...threadRuntimeParams };
-        // A fresh app-server reports notLoaded, requiring resume before revert.
+        // Like the adapter: the fresh app-server reports the thread notLoaded,
+        // so it is resumed before thread/revert, and the next turn resumes it again.
         yield* client.request("thread/read", { threadId, includeTurns: false });
         yield* client.request("thread/resume", resumeParams);
         yield* revertCodexThread(client, threadId, rollback.numTurns);
@@ -1559,6 +1560,7 @@ function runReplaySession({
           if (sourceThreadId === undefined) {
             throw new Error(`Unknown replay thread alias '${step.from}'.`);
           }
+          // The adapter forks at the source's latest native turn.
           const lastTurnId = lastTurnIdByThread.get(sourceThreadId);
           const forked = yield* client.request("thread/fork", {
             threadId: sourceThreadId,

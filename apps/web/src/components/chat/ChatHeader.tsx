@@ -44,7 +44,6 @@ interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   activeThreadTitle: string;
-  /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
@@ -64,7 +63,12 @@ export function resolveRenameCommit(input: {
   return { action: "commit", title: trimmed };
 }
 
-// Native menus swallow the second click; wait through the OS double-click interval so rename can cancel opening.
+// How long a click on the thread title waits before opening the action menu,
+// so a double-click-to-rename can cancel it first. Only the native desktop
+// menu needs this: it swallows input while open, so the wait must cover the
+// OS double-click interval. The browser fallback menu keeps seeing DOM
+// events (the second click dismisses it and dblclick still fires), so it
+// opens immediately.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
@@ -94,7 +98,9 @@ export const ChatHeader = memo(function ChatHeader({
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
-  // Clear rename state on navigation so returning cannot revive an abandoned draft.
+  // Inline rename, keyed by thread: navigating away drops an in-progress
+  // rename instead of committing stale text. Cleared on thread change (not
+  // just hidden) so returning to the thread doesn't revive the old draft.
   const [renaming, setRenaming] = useState<{
     threadId: ThreadId;
     environmentId: EnvironmentId;
@@ -114,7 +120,6 @@ export const ChatHeader = memo(function ChatHeader({
     renaming.environmentId === activeThreadEnvironmentId
       ? renaming.title
       : null;
-  // Leaving rename swaps the input back for the title, which needs a fresh fit.
   const isRenamingTitle = renamingTitle !== null;
   useEffect(() => {
     const list = breadcrumbContainerRef.current?.querySelector("ol");
@@ -219,7 +224,6 @@ export const ChatHeader = memo(function ChatHeader({
   }, [cancelPendingTitleMenu, openMenu]);
   const openMenuFromTitle = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
-      // The trailing click of a double-click belongs to rename, not the menu.
       if (isTrailingDoubleClick(event.detail)) return;
       // Keyboard activation and the explicit chevron affordance can never be
       // the first half of a double-click, so they open without waiting.
@@ -240,7 +244,6 @@ export const ChatHeader = memo(function ChatHeader({
   const handleTitleDoubleClick = useCallback(
     (event: ReactMouseEvent) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      // The chevron is the explicit menu affordance; only the title text renames.
       if ((event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null) return;
       cancelPendingTitleMenu();
       closeMenu();
@@ -297,9 +300,6 @@ export const ChatHeader = memo(function ChatHeader({
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
-        {/* The project always leads the header: knowing which project a
-            thread lives in is priority zero, and the thread title alone
-            doesn't answer it. */}
         {activeProject ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">

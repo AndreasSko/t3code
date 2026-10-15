@@ -149,7 +149,9 @@ export default function FileBrowserPanel({
   const treeSelectionPathRef = useRef<string | null>(null);
   const handledRevealRef = useRef<{ path: string; revealId: number } | null>(null);
 
-  // Shadow DOM row rects are unreliable; capture composed contextmenu viewport coordinates.
+  // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
+  // capture the right-click position ourselves; contextmenu is a composed
+  // event, so a capture-phase listener sees it with viewport coordinates.
   const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
   useEffect(() => {
     const capturePointer = (event: MouseEvent) => {
@@ -295,7 +297,6 @@ export default function FileBrowserPanel({
   useEffect(() => {
     if (loadingDirectoriesRef.current === loadingDirectories) return;
     loadingDirectoriesRef.current = loadingDirectories;
-    // Re-render the rows with the current options so decorations update.
     model.setComposition(model.getComposition());
   }, [loadingDirectories, model]);
   const search = useFileTreeSearch(model);
@@ -425,7 +426,10 @@ export default function FileBrowserPanel({
     const selectedItem = model.getItem(selectedTreePath);
     if (!selectedItem) return;
 
-    // Re-revealing a tree selection closes search and clobbers context; sync only external opens.
+    // A selection that originated inside the tree (clicking a row, possibly
+    // in an active tree search) is already visible; re-revealing it would
+    // close the search and clobber the user's context. Only sync external
+    // opens (file picker, content search, chat links).
     const selectedInTree = model
       .getSelectedPaths()
       .some((path) => path.replace(/\/$/, "") === selectedPath);
@@ -465,8 +469,12 @@ export default function FileBrowserPanel({
     });
   }, [entryKinds, model, selectedPath, selectedPathRevealId]);
 
-  // Capture dragstart before the tree selects its dragged row so that selection
-  // cannot open a file; the composed path reaches rows through its open shadow root.
+  // Tag tree drags with the composer mention payload. The row is read from
+  // the composed event path (the tree's shadow root is open), so this does
+  // not depend on running after the tree's own dragstart handler; the drag
+  // data store is writable for every dragstart listener in the dispatch.
+  // The capture phase runs before the tree's own dragstart handler selects
+  // the dragged row, so the drag flag is up before that selection emits.
   const panelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     treeModelRef.current = model;

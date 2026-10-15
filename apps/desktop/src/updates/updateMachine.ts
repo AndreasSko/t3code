@@ -219,8 +219,9 @@ export interface DesktopUpdateInstallRecord {
 }
 
 /**
- * On startup, returns the unapplied target when the app still runs the source
- * version, or null if it runs the target or an unrelated version.
+ * Read on the next start: the version an install did not apply, because the
+ * app came back on the version it installed from. Null when the install
+ * applied, or when the app now runs some other version.
  */
 export function resolveNotAppliedInstallVersion(
   record: DesktopUpdateInstallRecord,

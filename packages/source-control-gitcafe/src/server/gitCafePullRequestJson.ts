@@ -1,4 +1,3 @@
-/** Conversions require the repository host so staging links stay on staging. */
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";

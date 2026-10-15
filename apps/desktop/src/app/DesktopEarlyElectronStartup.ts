@@ -130,9 +130,9 @@ const hasBrokenColorManager = (readHyprctlVersionJson: () => string): boolean =>
 };
 
 /**
- * Apply the returned --disable-features before ready; null leaves the command line alone.
- * Electron pre-resolves ozonePlatform. Only stock Hyprland releases with the known
- * Wayland connection crash need color management disabled.
+ * Returns the merged `--disable-features` value to apply before Electron is ready, or null to
+ * leave the command line alone. `ozonePlatform` is the resolved `--ozone-platform` value;
+ * Electron fills it in before app code runs.
  */
 export function resolveLinuxDisableFeaturesSwitch(input: {
   readonly env: NodeJS.ProcessEnv;

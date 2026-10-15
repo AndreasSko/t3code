@@ -37,7 +37,6 @@ export function resolveWizardTarget(
   };
 }
 
-/** The parent performs and classifies imports so wizard transitions stay pure. */
 export type ImportOutcome =
   | {
       readonly kind: "imported";
@@ -72,7 +71,6 @@ export function canCloseWizard(step: WizardStep): boolean {
   return step.step !== "importing";
 }
 
-/** Check known source availability up front; the import attempt discovers other failures. */
 export function initialWizardStep(source: BrowserImportSource): WizardStep {
   if (source.unavailable === "browserRunning") return { step: "quit" };
   if (source.unavailable === "needsFullDiskAccess") {
@@ -122,7 +120,13 @@ export function refreshedSourceProfileDirectory(
   return source.profiles[0]?.directory ?? "";
 }
 
-/** Keychain approval, sign-in, reads, and sessions can recover on retry; unsupported browsers cannot. */
+/**
+ * Whether retrying could clear a failure. The keychain prompt can be approved
+ * on a second try, a missing key appears once the user signs in to the
+ * browser (which is what its copy asks for), and a read or session error may
+ * be transient; an unsupported browser will not change, so it gets no retry
+ * button.
+ */
 export function isRetryableReason(reason: BrowserImportFailureReason): boolean {
   switch (reason) {
     case "needsKeychainApproval":

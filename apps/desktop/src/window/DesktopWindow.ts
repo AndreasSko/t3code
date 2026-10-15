@@ -57,9 +57,6 @@ const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
-// Renderer crash (usually V8 OOM on long sessions) recovery: reload after a
-// short delay, at most MAX_ATTEMPTS times per rolling WINDOW so a renderer
-// that dies on boot cannot reload-loop forever.
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
 const RENDERER_RECOVERY_MAX_ATTEMPTS = 3;
 const RENDERER_RECOVERY_WINDOW_MS = 60_000;
@@ -106,12 +103,12 @@ export class DesktopWindow extends Context.Service<
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
     readonly createMainIfBackendReady: Effect.Effect<void, DesktopWindowError>;
-    // Show the WSL-only splash before primary readiness; the first main-window reveal dismisses it.
     readonly showConnectingSplash: Effect.Effect<void>;
-    // Allow gated windows to open after primary readiness; httpBaseUrl is for logging.
-    // The renderer loads the local client and reaches the backend through the connection layer.
     readonly handleBackendReady: (httpBaseUrl: URL) => Effect.Effect<void, DesktopWindowError>;
-    // Clear readiness so macOS activation cannot open a window while the backend is down.
+    // Called when the backend transitions back to "not ready" (clean stop,
+    // restart, crash). Clears the latch that lets `activate` auto-create a
+    // window so a "macOS dock click" while the backend is down doesn't
+    // produce a stranded window pointing at nothing.
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
     readonly prepareCaptureReveal: Effect.Effect<void>;
@@ -120,16 +117,19 @@ export class DesktopWindow extends Context.Service<
       options?: { readonly reveal?: boolean },
     ) => Effect.Effect<void, DesktopWindowError>;
     /**
-     * Push a capture lifecycle event to the renderer. Only `started` reveals the
-     * window; the rest must not interrupt the app the user has switched to.
+     * Only `started` reveals the window; the rest must not interrupt the app
+     * the user has switched to.
      */
     readonly dispatchSnapShotEvent: (
       event: DesktopSnapShotEvent,
     ) => Effect.Effect<void, DesktopWindowError>;
-    // Native zoom roles target the focused guest or DevTools; route app zoom to
-    // the main window's webContents.
+    // The Electron `zoomIn`/`zoomOut` menu roles act on whichever webContents
+    // has keyboard focus, so with an embedded preview WebContentsView (or
+    // DevTools) focused they zoom the guest page instead of the app UI.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
-    // Native roles target focused guests; keep Reload and DevTools on the main window.
+    // Reload and DevTools for the main window's own webContents, for the same
+    // reason as zoomMain: the Electron roles act on the focused webContents,
+    // which is a preview guest whenever a browser page has focus.
     readonly runMainContentsCommand: (command: MainWindowContentsCommand) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
   }
@@ -193,7 +193,8 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
-// Inline the splash so it can render without bundled assets or a ready backend.
+// Inlined as a data URL so it needs no bundled asset and no backend — pure CSS,
+// no JS.
 function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
   const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
   const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
@@ -319,8 +320,6 @@ export const make = Effect.gen(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
   const backendReadyRef = yield* Ref.make(false);
-  // The transient "Connecting to WSL" splash window, tracked separately so it
-  // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
@@ -334,8 +333,11 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  // Electron's main-or-first helpers can return the WSL splash; exclude it so
-  // activation can create or retry the real main window after backend readiness.
+  // currentMainOrFirst / focusedMainOrFirst fall back to "any first window",
+  // which during WSL-only boot is the connecting splash. The splash is never
+  // registered via setMain, so it must be treated as "no real main window" --
+  // otherwise ensureMain/activate/dispatchMenuAction latch onto it and never
+  // open (or retry) the real main.
   const withoutSplash = (window: Option.Option<Electron.BrowserWindow>) =>
     Ref.get(splashWindowRef).pipe(
       Effect.map((splash) =>
@@ -393,15 +395,19 @@ export const make = Effect.gen(function* () {
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
-        // Hidden Chromium renderers throttle timers and rAF, stalling first paint.
-        // Disable throttling until first reveal, then restore it for hidden/minimized windows.
+        // The window boots hidden (show: false until ready-to-show), and
+        // Chromium throttles hidden renderers: timers coalesce and rAF stops,
+        // which stalls first paint. Boot unthrottled; the first-reveal trigger
+        // re-enables throttling so a hidden or minimized window goes back to
+        // being cheap after it has been shown once.
         backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
         webviewTag: true,
-        // Opt out on both embedder and guest so page fullscreen fills the webview
-        // without making the desktop window enter OS fullscreen.
+        // A preview guest's fullscreen request is mirrored onto this embedder,
+        // which would otherwise put the whole window into OS fullscreen. With
+        // both sides opted out the page fills its webview and the window stays.
         disableHtmlFullscreenWindowResize: true,
       },
     });
@@ -623,8 +629,9 @@ export const make = Effect.gen(function* () {
       }
     });
 
-    // Reject close-shortcut repeats that outlive their terminal before native window close.
-    // Intercept quit before its menu accelerator to apply the configured confirmation mode.
+    // Electron's windowMenu close role owns CmdOrCtrl+W. Holding the
+    // close-terminal shortcut can outlive the terminal that handled its first
+    // press, so reject repeats before they reach the native window accelerator.
     const quitShortcutHandler = makeQuitShortcutHandler({
       platform: environment.platform,
       getMode: () =>
@@ -772,8 +779,11 @@ export const make = Effect.gen(function* () {
         details.reason === "crashed" ||
         details.reason === "oom" ||
         details.reason === "abnormal-exit";
-      // Reload a dead renderer from the unaffected backend so agents remain accessible.
-      // Bound recovery attempts to prevent a boot-time crash loop.
+      // Without a reload the user is left staring at a dead white window while
+      // agents keep running invisibly, so recover by reloading — the renderer
+      // rehydrates from the backend, which is unaffected. Recovery attempts are
+      // bounded so a renderer that dies immediately on boot cannot reload-loop
+      // forever.
       runFork(
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
@@ -809,7 +819,8 @@ export const make = Effect.gen(function* () {
       if (!window.isDestroyed()) {
         window.webContents.setBackgroundThrottling(true);
       }
-      // Reveal the main window before dismissing the splash to avoid a blank gap.
+      // Reveal the real window, then close the connecting splash (if any) so the
+      // two don't overlap and there's no blank gap between them.
       if (persistedSettings.mainWindowMaximized) {
         window.maximize();
       }
@@ -904,7 +915,6 @@ export const make = Effect.gen(function* () {
     void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors));
     yield* logWindowInfo("connecting splash shown");
   }).pipe(
-    // The splash is best-effort UX — never let it fail startup.
     Effect.catch((error) =>
       logWindowWarning("failed to show connecting splash", { message: error.message }),
     ),
@@ -951,8 +961,6 @@ export const make = Effect.gen(function* () {
         yield* electronWindow.reveal(existingWindow.value);
         return;
       }
-      // While waiting, activation re-reveals the splash; after readiness, retry main
-      // creation even if a prior open failed. The splash must not become the main window.
       const backendReady = yield* Ref.get(backendReadyRef);
       if (!backendReady) {
         const splash = yield* Ref.get(splashWindowRef);

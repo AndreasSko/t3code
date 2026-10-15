@@ -1,4 +1,3 @@
-// Shared prompts, source control context, and sanitizing keep providers from drifting.
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -31,13 +30,14 @@ export interface Request<S extends Schema.Top> {
   /** The user's attachments, already listed in the prompt. Providers that accept images send them. */
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   /**
-   * Investigations may use only read-only tools; runners without that guarantee must fail.
-   * Without this option, the prompt carries all context and the runner must disable tools.
+   * Set when the model must investigate `cwd` before answering: it may read files and run
+   * read-only commands there, over as many turns as it needs, and must change nothing. Absent,
+   * the prompt carries everything and the model runs with no tools at all. A runner that cannot
+   * guarantee read-only tools fails rather than answering blind.
    */
   readonly investigate?: { readonly timeoutMs: number } | undefined;
 }
 
-/** How long an investigating run may take; a large change needs far longer than a title. */
 const INVESTIGATION_TIMEOUT_MS = 15 * 60_000;
 
 export const investigationUnsupported = (operation: Operation, provider: string) =>
@@ -77,7 +77,6 @@ export const decodeJsonReply = <S extends Schema.Top>(
   );
 };
 
-/** The text generation service over `run`. `name` prefixes each operation's span. */
 export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
   const generateCommitMessage: ProviderTextGeneration["generateCommitMessage"] = Effect.fn(
     `${name}.generateCommitMessage`,

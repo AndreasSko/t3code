@@ -38,7 +38,6 @@ export class BrowserImportFailedError extends Schema.TaggedError<BrowserImportFa
   {
     sourceId: Schema.String,
     reason: BrowserImportFailureReason,
-    /** Kept for the log; the user only ever sees the reason's copy. */
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -87,7 +86,8 @@ const unavailableReason = Effect.fn("BrowserImport.unavailableReason")(function*
   if (!definition.platforms.includes(context.platform)) return "unsupportedPlatform";
   if (!(yield* isSourceInstalled(definition, context))) return "notInstalled";
   if (yield* isSourceRunning(definition, context)) return "browserRunning";
-  // TCC allows stat on Safari's jar without Full Disk Access; probe reads here so listing can show the permission step.
+  // Safari's jar is found by `stat`, which TCC permits without Full Disk Access
+  // — so a Safari that lists as ready may still refuse the read.
   if (definition.engine === "safari") {
     const jar = yield* resolveCookieDatabase(definition, context, ".");
     if (jar !== undefined && (yield* safariAccessDenied(jar))) return "needsFullDiskAccess";
@@ -139,8 +139,11 @@ export const writeCookies = Effect.fn("BrowserImport.writeCookies")(function* (
       skippedDomains.add(cookieHost(cookie.url));
     }
   }
-  // Flush before reporting success: cookie set resolves in memory, before Chromium persists it.
-  // A failed flush remains recoverable through Chromium's next scheduled write.
+  // `set` resolves once the cookie is in memory; Chromium writes the store to
+  // disk on its own schedule. Flush before reporting "Done", so a crash right
+  // after does not lose what the user was just told was imported. A failed
+  // flush is logged rather than surfaced: the cookies are still in the
+  // session and land on disk at the next scheduled write.
   if (imported > 0) {
     yield* Effect.tryPromise(() => session.cookies.flushStore()).pipe(
       Effect.tapError((error) =>
@@ -171,8 +174,6 @@ export const make = Effect.gen(function* BrowserImportMake() {
       return {
         id: definition.id,
         name: definition.name,
-        // Listing profiles touches the source's own files, so skip it when the
-        // source is unusable anyway.
         profiles:
           unavailable === undefined ? yield* listSourceProfiles(definition, pathContext) : [],
         ...(unavailable === undefined ? {} : { unavailable }),
@@ -204,14 +205,19 @@ export const make = Effect.gen(function* BrowserImportMake() {
     }
 
     if (platform === "darwin" && definition.engine === "chromium") {
-      // macOS attributes Keychain prompts and ACL grants to the requesting executable, so log its identity.
+      // macOS attributes the Keychain prompt and the resulting ACL grant to the
+      // executable that asks, so record which one that was — in a packaged build
+      // it is the signed app, in dev whatever binary hosts the main process.
       yield* Effect.logInfo("Reading browser cookie key from the keychain", {
         sourceId: definition.id,
         executablePath,
       });
     }
 
-    // Only accept profiles reported by the source; an unchecked IPC path could read outside its user-data directory.
+    // The profile directory arrives over IPC, so it is only honoured when the
+    // source itself reported it. Forwarding it unchecked would let `..`
+    // segments walk out of the browser's user-data directory and read any
+    // cookie database reachable on disk.
     const sourceProfiles = yield* listSourceProfiles(definition, pathContext).pipe(
       Effect.provide(platformServices),
     );
@@ -233,7 +239,6 @@ export const make = Effect.gen(function* BrowserImportMake() {
       requestedProfile.directory,
     ).pipe(Effect.provide(platformServices));
     if (databasePath === undefined) {
-      // A listed profile can lose its database before import; report a read failure.
       return yield* new BrowserImportFailedError({ sourceId: definition.id, reason: "readFailed" });
     }
 

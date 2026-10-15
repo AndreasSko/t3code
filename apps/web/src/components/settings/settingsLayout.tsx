@@ -140,7 +140,6 @@ export function SettingsSearchTarget({
   );
 }
 
-/** Layout for the composer model/traits pickers in a settings row: drop the composer's max-width. */
 export const SETTINGS_PICKER_TRIGGER_CLASSNAME = "min-w-0 max-w-none shrink-0";
 
 export function PolicyTooltip({ children }: { readonly children: string }) {
@@ -168,7 +167,6 @@ export function useRelativeTimeTick(intervalMs = 1_000) {
   return nowMs;
 }
 
-/** Muted section headings have no descriptions; explanatory copy belongs to individual settings. */
 export function SettingsSection({
   title,
   hideTitle = false,
@@ -241,10 +239,6 @@ export function SettingsUnavailableGroup({
   );
 }
 
-/**
- * Use sm/icon-sm for row controls, xs/icon-xs for section/list actions, and icon-micro inline. Dialog
- * footers keep the default button size; descriptions may wrap instead of truncating.
- */
 export function SettingsRow({
   title,
   description,
@@ -372,9 +366,6 @@ export function SettingsRow({
       <TooltipPopup side="top">{message}</TooltipPopup>
     </Tooltip>
   );
-  // A mixed selection keeps the real control with "Mixed" as its placeholder
-  // (the multi-selection inspector convention): the popover shows who has
-  // what, and picking a value applies it to every target.
   const renderedControl =
     unavailable && control
       ? inertControl(

@@ -1,4 +1,3 @@
-// Shared with client settings; keep this schema browser-safe.
 import {
   CustomModelSetting,
   makeBinaryPathSetting,

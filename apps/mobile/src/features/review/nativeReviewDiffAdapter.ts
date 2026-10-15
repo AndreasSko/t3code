@@ -175,7 +175,8 @@ export function createNativeReviewDiffTheme(
   const terminalTheme = getMobileTerminalTheme(themeId, scheme);
   const [, terminalRed] = terminalTheme.palette;
   // Swift expects #RRGGBB/#RRGGBBAA while Android expects #RRGGBB/#AARRGGBB.
-  // Flatten alpha onto the code surface to share unambiguous six-digit colors.
+  // Flatten translucent app tokens onto the code surface so both native
+  // implementations receive the one unambiguous shared format.
   const screen = opaqueNativeHexColor(
     appTheme["--color-screen"],
     scheme === "dark" ? "#000000" : "#ffffff",
@@ -185,7 +186,6 @@ export function createNativeReviewDiffTheme(
 
   if (scheme === "dark") {
     return {
-      // Code surfaces share the desktop palette rather than the sheet behind them.
       background,
       text: nativeColor(appTheme["--color-md-code-text"]),
       mutedText: nativeColor(appTheme["--color-foreground-muted"]),
@@ -600,8 +600,8 @@ export function buildNativeReviewDiffData(
 }
 
 /**
- * Reuses source rows and word ranges across comment edits. Weak keys release
- * old parsed diffs; each file retains only its latest comment overlay.
+ * Each file retains only its latest comment overlay, and the weak key releases
+ * old parsed diffs.
  */
 export function getCachedNativeReviewDiffData(
   input: BuildNativeReviewDiffDataInput,

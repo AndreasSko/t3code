@@ -38,7 +38,8 @@ type InboxThreadInput = Pick<
   "id" | "environmentId" | "createdAt" | "unsettledAt" | "latestRun"
 >;
 
-/** Sorts by return-to-user time, including observed approvals and background completion missing server stamps. */
+/** `observedReturnAt` adds returns the server does not stamp, such as an
+    approval request mid-turn or background work ending. */
 export function sortInboxThreadsByReturn<T extends InboxThreadInput>(
   threads: readonly T[],
   observedReturnAt?: (thread: T) => number | undefined,
@@ -63,7 +64,10 @@ type WorkingSortInput = Pick<
   "id" | "environmentId" | "createdAt" | "latestRun" | "latestUserAuthoredMessageAt"
 >;
 
-/** Sorts by authored send time, falling back to run request time; completions and wakes leave order stable. */
+/** Runs ending and wakes (background results, delegated results,
+    PR watches) do not move a row, so the order stays put while agents finish
+    and resume. Servers without the authored stamp fall back to the latest
+    run's request time. */
 export function sortWorkingThreadsBySend<T extends WorkingSortInput>(threads: readonly T[]): T[] {
   const timestamps = new Map(
     threads.map((thread) => [
@@ -93,8 +97,13 @@ function sortNewestFirst<T extends Pick<EnvironmentThreadShell, "id" | "environm
   );
 }
 
-/** Keep at module scope and observe every shell rebuild (null resets);
- * the first call takes a baseline without reshuffling inbox order. */
+/**
+ * Remembers when this client saw each thread leave the Working section. Keep
+ * one at module scope so the inbox order survives routes that unmount the
+ * list. Call `observe` with every thread shell on each list rebuild, or with
+ * null to reset while the beta is off. The first call only takes a baseline,
+ * so mounting never reshuffles the inbox.
+ */
 export function createInboxReturnTracker() {
   const keyOf = (thread: Pick<EnvironmentThreadShell, "environmentId" | "id">) =>
     `${thread.environmentId}:${thread.id}`;
@@ -114,7 +123,6 @@ export function createInboxReturnTracker() {
         present.add(key);
         if (isThreadWorking(thread)) working.add(key);
       }
-      // Drop deleted threads so the map stays bounded by the live thread list.
       for (const key of returns.keys()) {
         if (!present.has(key)) returns.delete(key);
       }

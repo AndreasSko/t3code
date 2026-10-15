@@ -125,7 +125,10 @@ interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
   draftId?: DraftId;
-  /** Without a project to anchor the panel, opens in the browser instead. */
+  /**
+   * Opens the thread's own change request beside it. Absent when the thread has no project to
+   * place it against, in which case it still opens in the browser.
+   */
   onOpenPullRequest?: ((number: number) => void) | undefined;
   displayMode?: "toolbar" | "panel";
   compact?: boolean;
@@ -365,7 +368,6 @@ function GitActionProgressButtonContent({
       aria-live="polite"
       className={cn(
         "grid min-w-0 flex-1 items-center",
-        // Fix title height so output expands below; row gaps would give collapsed output extra height.
         isPanel
           ? "grid-cols-[auto_minmax(0,1fr)] grid-rows-[1.5rem] gap-x-3"
           : "grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[1.25rem] gap-x-2.5 sm:grid-rows-[1rem]",
@@ -455,7 +457,6 @@ interface PublishRepositoryDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly environmentId: ScopedThreadRef["environmentId"] | null;
-  /** Thread the dialog was opened from, so the new repository can open beside it. */
   readonly threadRef: ScopedThreadRef | null;
   readonly gitCwd: string;
 }
@@ -1305,7 +1306,6 @@ export default function GitActionsControl({
         ...(commitMessage ? { commitMessage } : {}),
         ...(featureBranch ? { featureBranch } : {}),
         ...(filePaths ? { filePaths } : {}),
-        // Drafts have no server thread yet, so their action cannot link a PR to one.
         ...(activeServerThread ? { threadId: activeServerThread.id } : {}),
         ...(activeDraftThread ? { projectId: activeDraftThread.projectId } : {}),
       });
@@ -1846,7 +1846,6 @@ export default function GitActionsControl({
             </ThreadDetailsControl>
           )}
           {isPanel && gitActionProgress ? (
-            // Disabled menus free the chevron slot for elapsed time; keep it pinned above expanding output.
             <GitActionElapsedTime
               startedAtMs={gitActionProgress.startedAtMs}
               className="flex h-8 shrink-0 items-center self-start pe-2.5 text-2xs font-normal tabular-nums text-muted-foreground"

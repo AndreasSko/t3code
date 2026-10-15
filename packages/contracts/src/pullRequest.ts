@@ -35,8 +35,8 @@ const PullRequestQualifierValues = Schema.Array(PullRequestQualifierValue).check
 );
 
 /**
- * `checks` is host-side only: rows carry no check state, so an unsupported host
- * returns an unfiltered listing.
+ * `checks` is host-side only: no row carries its own check state, so a host that cannot match it
+ * answers unnarrowed rather than the page pretending to know.
  */
 export const PullRequestListFilters = Schema.Struct({
   draft: Schema.optional(Schema.Literals(["only", "hide"])),
@@ -45,8 +45,9 @@ export const PullRequestListFilters = Schema.Struct({
   ),
   checks: Schema.optional(Schema.Literals(["passing", "failing"])),
   /**
-   * Each group is a GitHub label qualifier: match every group and any name within
-   * a group, e.g. `label:size:S,size:XS`. Bounds limit host search qualifiers.
+   * Labels as GitHub's own search reads them: each group is one `label:` qualifier, a row must
+   * satisfy every group, and a group holding several names is satisfied by any one of them —
+   * `label:size:S,size:XS` finds either size.
    */
   labels: Schema.optional(Schema.Array(PullRequestQualifierValues).check(Schema.isMaxLength(10))),
   excludedLabels: Schema.optional(PullRequestQualifierValues),
@@ -70,30 +71,16 @@ export const PullRequestAction = Schema.Literals([
   "close",
   "reopen",
   "update-branch",
-  /**
-   * The host waits for merge requirements and merges automatically; `merge`
-   * instead fails when those requirements are unmet.
-   */
   "enable-auto-merge",
   "disable-auto-merge",
-  /** Open a new change request that reverses a merged one. */
   "revert",
-  /** Allow Actions workflows from a fork pull request to begin running. */
   "approve-workflows",
 ]);
 export type PullRequestAction = typeof PullRequestAction.Type;
 
-/**
- * Use the host's offered update methods, narrowed by viewer permissions;
- * GitHub can refuse a rebase it cannot replay.
- */
 export const PullRequestUpdateMethod = Schema.Literals(["merge", "rebase"]);
 export type PullRequestUpdateMethod = typeof PullRequestUpdateMethod.Type;
 
-/**
- * Behind does not imply conflicting. Unknown means the host did not compare
- * the head repository with its base.
- */
 export const PullRequestBaseComparison = Schema.Literals(["up-to-date", "behind", "unknown"]);
 export type PullRequestBaseComparison = typeof PullRequestBaseComparison.Type;
 
@@ -101,7 +88,6 @@ export const PullRequestActor = Schema.Struct({
   isBot: Schema.optional(Schema.Boolean),
   login: TrimmedNonEmptyString,
   name: Schema.NullOr(Schema.String),
-  /** Null where a host does not report one, which is what the initials fall back to. */
   avatarUrl: Schema.NullOr(Schema.String),
 });
 export type PullRequestActor = typeof PullRequestActor.Type;
@@ -128,12 +114,15 @@ export const PullRequestCheck = Schema.Struct({
   status: PullRequestCheckStatus,
   description: Schema.NullOr(Schema.String),
   url: Schema.NullOr(Schema.String),
-  /** The base branch requires this check to merge. Absent where the host does not say. */
   required: Schema.optional(Schema.Boolean),
 });
 export type PullRequestCheck = typeof PullRequestCheck.Type;
 
-/** GitHub's eight reactions are the shared set; GitLab awards outside it are ignored. */
+/**
+ * GitHub's eight, which is also what the picker offers: GitLab accepts any emoji as an award,
+ * and the ones outside this set are read as nothing rather than shown under a name no other
+ * host would recognise.
+ */
 export const PullRequestReactionContent = Schema.Literals([
   "thumbs-up",
   "thumbs-down",
@@ -150,8 +139,10 @@ export const PullRequestReaction = Schema.Struct({
   content: PullRequestReactionContent,
   count: PositiveInt,
   /**
-   * May contain fewer logins than count. Excludes the viewer when viewerHasReacted
-   * is true, but count still includes them.
+   * A host that reports fewer names than it counts leaves the rest out, so this is never longer
+   * than `count` and may be shorter. When `viewerHasReacted` is true, the viewer's own login is
+   * left out of this list — the page names them "You" instead — but `count` still counts them
+   * along with everyone else.
    */
   actors: Schema.Array(TrimmedNonEmptyString),
   viewerHasReacted: Schema.Boolean,
@@ -178,17 +169,14 @@ export const PullRequestComment = Schema.Struct({
   /** Absent from a host with no reactions at all, which is a different thing from none on this. */
   reactions: Schema.optional(Schema.Array(PullRequestReaction)),
   /**
-   * Absent falls back to authorship. A host must set this identically on the
-   * comment's timeline and review-thread copies.
+   * Absent where the host doesn't say, which leaves the page to guess from authorship. A remark
+   * on a line appears both here and in its review thread; a host that sets this sets it on both
+   * copies alike.
    */
   canEdit: Schema.optional(Schema.Boolean),
 });
 export type PullRequestComment = typeof PullRequestComment.Type;
 
-/**
- * `left` is before the change; `right` is after. The same line number can
- * refer to different lines in a unified diff.
- */
 export const PullRequestDiffSide = Schema.Literals(["left", "right"]);
 export type PullRequestDiffSide = typeof PullRequestDiffSide.Type;
 
@@ -204,14 +192,19 @@ export const PullRequestThreadComment = Schema.Struct({
   url: Schema.NullOr(Schema.String),
   reactions: Schema.optional(Schema.Array(PullRequestReaction)),
   /**
-   * Absent falls back to authorship. A host must set this identically on the
-   * comment's timeline and review-thread copies.
+   * Absent where the host doesn't say, which leaves the page to guess from authorship. A remark
+   * on a line appears both here and in its review thread; a host that sets this sets it on both
+   * copies alike.
    */
   canEdit: Schema.optional(Schema.Boolean),
 });
 export type PullRequestThreadComment = typeof PullRequestThreadComment.Type;
 
-/** The same remarks appear flat in the timeline and grouped at their diff line. */
+/**
+ * The detail carries these alongside `comments` rather than instead of them: the timeline
+ * wants one flat, chronological list, and the diff wants whole threads pinned to their line
+ * — the same remarks, read two different ways.
+ */
 export const PullRequestReviewThread = Schema.Struct({
   id: TrimmedNonEmptyString,
   path: TrimmedNonEmptyString,
@@ -219,31 +212,27 @@ export const PullRequestReviewThread = Schema.Struct({
   line: Schema.NullOr(PositiveInt),
   side: PullRequestDiffSide,
   isResolved: Schema.Boolean,
-  /**
-   * The original line is absent from the diff; list separately to avoid
-   * pinning the thread to an unrelated line.
-   */
   isOutdated: Schema.Boolean,
   comments: Schema.Array(PullRequestThreadComment),
-  /** Host-reported total, when this thread was read in pages. */
   commentCount: Schema.optional(NonNegativeInt),
-  /** Opaque cursor for the next comment page. Absent once this thread is whole. */
   nextCommentsCursor: Schema.optional(TrimmedNonEmptyString),
-  /** Only narrows the repository-wide resolve permission; it cannot grant it. */
+  /**
+   * It can only narrow the reader's repository-wide `resolve` permission, never widen
+   * it. Absent where the host doesn't say per thread.
+   */
   canResolve: Schema.optional(Schema.Boolean),
 });
 export type PullRequestReviewThread = typeof PullRequestReviewThread.Type;
 
-/** GitHub accepts team reviewers; the other hosts only accept users. */
 export const PullRequestReviewerKind = Schema.Literals(["user", "team"]);
 export type PullRequestReviewerKind = typeof PullRequestReviewerKind.Type;
 
-/** Team candidates use their slug as the actor login. */
 export const PullRequestReviewerCandidate = Schema.Struct({
   ...PullRequestActor.fields,
   /**
-   * Opaque host address, sent back unchanged: GitHub login/team slug,
-   * GitLab numeric user id, or Bitbucket account uuid.
+   * How the host addresses this reviewer when a review is requested, which is not always the
+   * handle it shows: GitHub takes a login or a team slug, GitLab a numeric user id, Bitbucket an
+   * account uuid. Opaque to the page, which sends back whatever the candidate arrived with.
    */
   id: TrimmedNonEmptyString,
   kind: PullRequestReviewerKind,
@@ -252,12 +241,7 @@ export const PullRequestReviewerCandidate = Schema.Struct({
 export type PullRequestReviewerCandidate = typeof PullRequestReviewerCandidate.Type;
 
 export const PullRequestReviewerCandidateList = Schema.Struct({
-  /** Never includes the author: nobody is asked to review their own change request. */
   candidates: Schema.Array(PullRequestReviewerCandidate),
-  /**
-   * The host has more eligible reviewers than were read; missing names
-   * may still be requested.
-   */
   truncated: Schema.Boolean,
 });
 export type PullRequestReviewerCandidateList = typeof PullRequestReviewerCandidateList.Type;
@@ -271,7 +255,6 @@ export type PullRequestLabelCandidate = typeof PullRequestLabelCandidate.Type;
 
 export const PullRequestLabelCandidateList = Schema.Struct({
   candidates: Schema.Array(PullRequestLabelCandidate),
-  /** The repository defines more labels than the read asked for; the list is not all of them. */
   truncated: Schema.Boolean,
 });
 export type PullRequestLabelCandidateList = typeof PullRequestLabelCandidateList.Type;
@@ -283,93 +266,91 @@ export const PullRequestCommit = Schema.Struct({
   /** Per-commit line counts where the host can return them without a request per commit. */
   additions: Schema.optional(NonNegativeInt),
   deletions: Schema.optional(NonNegativeInt),
-  /** Optional because some hosts and older servers do not expose commit authors. */
   authors: Schema.optional(Schema.Array(PullRequestActor)),
 });
 export type PullRequestCommit = typeof PullRequestCommit.Type;
 
-/** GitLab cannot request changes; Azure DevOps' CLI provides no diff for inline comments. */
 export const PullRequestReviewCapabilities = Schema.Struct({
   inlineComment: Schema.Boolean,
   reply: Schema.Boolean,
   resolve: Schema.Boolean,
-  /** The verdicts a submitted review can carry. Empty means reviews cannot be submitted. */
   verdicts: Schema.Array(PullRequestReviewVerdict),
 });
 export type PullRequestReviewCapabilities = typeof PullRequestReviewCapabilities.Type;
 
-/** Azure DevOps can edit title/description but cannot post or edit comments here. */
 export const PullRequestEditCapabilities = Schema.Struct({
   changeRequest: Schema.Boolean,
   comment: Schema.Boolean,
 });
 export type PullRequestEditCapabilities = typeof PullRequestEditCapabilities.Type;
 
-/** Azure DevOps can request reviewers without listing eligible candidates. */
 export const PullRequestReviewerCapabilities = Schema.Struct({
   request: Schema.Boolean,
-  /** When false, accept a name directly instead of offering an incomplete candidate menu. */
+  /**
+   * False where the host has no such list to give, which leaves the page to take a name rather
+   * than offer a menu — a guessed list would be worse, because a name missing from it reads as a
+   * name that cannot be asked.
+   */
   listCandidates: Schema.Boolean,
 });
 export type PullRequestReviewerCapabilities = typeof PullRequestReviewerCapabilities.Type;
 
 /**
- * `host` shares viewed-file marks with the host's web UI; `environment`
- * keeps them on this server for hosts without a readable shared record.
+ * `host` is the host's own record, so the marks are the ones its web UI shows and a review can be
+ * carried on from either side. `environment` is this server's record, for a host that keeps none
+ * anything outside one browser can read.
  */
 export const PullRequestViewedFilesStore = Schema.Literals(["host", "environment"]);
 export type PullRequestViewedFilesStore = typeof PullRequestViewedFilesStore.Type;
 
-/**
- * Hide unsupported actions: Azure DevOps' CLI exposes no patch, and
- * Bitbucket cannot reopen a declined pull request.
- */
 export const PullRequestCapabilities = Schema.Struct({
   diff: Schema.Boolean,
   comment: Schema.Boolean,
-  /** The actions this host can carry out; anything absent is never offered. */
   actions: Schema.Array(PullRequestAction),
   /** Merge strategies the provider itself offers, before repository settings narrow them. */
   mergeMethods: Schema.Array(PullRequestMergeMethod),
-  /** Absent or empty means the host cannot update branches. */
   updateMethods: Schema.optional(Schema.Array(PullRequestUpdateMethod)),
-  /** False means the host returns unfiltered rows and the client must filter them. */
+  /**
+   * False means it answers unnarrowed and whoever asked has to do the narrowing — which is a
+   * different promise, so the page is told rather than left to show every change request on
+   * that host as a search result.
+   */
   search: Schema.Boolean,
-  /** Covers both reading and changing reactions. Absent means unsupported. */
   reactions: Schema.optional(Schema.Boolean),
-  /** Absent means viewed-file tracking is unsupported. */
   viewedFiles: Schema.optional(PullRequestViewedFilesStore),
   review: PullRequestReviewCapabilities,
   reviewers: PullRequestReviewerCapabilities,
-  /** Absent means editing is unsupported, including on older servers. */
   edit: Schema.optional(PullRequestEditCapabilities),
-  /** Absent means stacks can only be inferred from base branches. */
+  /**
+   * The host keeps stacks of change requests as objects of its own, so a linked thread can show
+   * the stack the host shows. Absent means chains are only ever inferred from base branches.
+   */
   stacks: Schema.optional(Schema.Boolean),
   stackActions: Schema.optional(Schema.Boolean),
-  /** Absent means listing and changing labels is unsupported. */
   labels: Schema.optional(Schema.Boolean),
 });
 export type PullRequestCapabilities = typeof PullRequestCapabilities.Type;
 
 /**
- * Viewer permissions narrow host capabilities. Unreported optional permissions
- * are granted unless the field specifies another fallback; the host enforces writes.
+ * A permission the host reports nothing about is granted rather than withheld. Hiding a control
+ * from someone who may in fact use it leaves them no way through and no reason given, while
+ * offering one they may not use ends in the host's own refusal — which at least says why.
  */
 export const PullRequestViewerPermissions = Schema.Struct({
   /** May request remote stack rebases, including when this layer is already current. */
   stackRebase: Schema.optional(Schema.Boolean),
-  /** Which of the actions this viewer may take; anything absent is theirs to look at only. */
   actions: Schema.Array(PullRequestAction),
   comment: Schema.Boolean,
   resolve: Schema.Boolean,
-  /** The verdicts this viewer may submit a review with. Empty means they may not review. */
   verdicts: Schema.Array(PullRequestReviewVerdict),
   requestReviewers: Schema.Boolean,
-  /** Narrowed from host capabilities; absent or empty denies branch updates. */
+  /** Absent or empty means they may not, which is also what a host with no such action says. */
   updateMethods: Schema.optional(Schema.Array(PullRequestUpdateMethod)),
-  /** Absent grants permission, but the host must also support label changes. */
   labels: Schema.optional(Schema.Boolean),
-  /** Absent falls back to authorship and merge access. */
+  /**
+   * Absent where the host doesn't say, which leaves the page to guess from
+   * authorship and merge access.
+   */
   editChangeRequest: Schema.optional(Schema.Boolean),
 });
 export type PullRequestViewerPermissions = typeof PullRequestViewerPermissions.Type;
@@ -392,7 +373,6 @@ export type PullRequestStackMembership = typeof PullRequestStackMembership.Type;
 export const PullRequestListEntry = Schema.Struct({
   stack: Schema.optional(PullRequestStackMembership),
   provider: SourceControlProviderKind,
-  /** Distinguishes accounts on github.com and GitHub Enterprise hosts. */
   host: TrimmedNonEmptyString,
   projectId: ProjectId,
   projectTitle: TrimmedNonEmptyString,
@@ -407,8 +387,8 @@ export const PullRequestListEntry = Schema.Struct({
   isDraft: Schema.Boolean,
   mergeability: PullRequestMergeability,
   /**
-   * Zero can mean counts were not read. GitHub list rows load counts separately
-   * through PullRequestListStatsInput.
+   * Zero where the host has not been asked for the counts yet, which on GitHub is every row a
+   * listing hands over: they are read afterwards, through `PullRequestListStatsInput`.
    */
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
@@ -418,16 +398,18 @@ export const PullRequestListEntry = Schema.Struct({
   observedAt: Schema.optional(Schema.Finite),
   viewerReviewRequested: Schema.Boolean,
   labels: Schema.Array(PullRequestLabel),
-  /** Absent where the host does not summarise its reviews, which is every host but GitHub. */
   reviewDecision: Schema.optional(PullRequestReviewDecision),
-  /** Absent where the host reports no check rollup, or the change request has no checks. */
   checksState: Schema.optional(PullRequestChecksState),
 });
 export type PullRequestListEntry = typeof PullRequestListEntry.Type;
 
 /**
- * Keyed by "<host> <repository>" to distinguish identically named repositories
- * on different hosts. Values are opaque provider cursors, returned unchanged.
+ * Where each repository a listing already reached carries on from, keyed `"<host> <repository>"`
+ * — which is how a listing tells two repositories apart, since the same `owner/repo` exists on
+ * github.com and on an Enterprise install at once.
+ *
+ * Each value is opaque: only the provider that issued one knows what it means, and the page hands
+ * back exactly what it was given rather than composing one.
  */
 export const PullRequestListCursors = Schema.Record(
   TrimmedNonEmptyString,
@@ -441,38 +423,38 @@ export const PullRequestListInput = Schema.Struct({
   involvement: Schema.optional(PullRequestInvolvement),
   filters: Schema.optional(PullRequestListFilters),
   projectId: Schema.optional(ProjectId),
-  /**
-   * Restrict to projects this client assigned to the connection to avoid duplicates
-   * across environments; absent means every project.
-   */
   projectIds: Schema.optional(Schema.Array(ProjectId).check(Schema.isMaxLength(100))),
   /**
-   * Use the host name, not provider kind, to distinguish GitHub Enterprise accounts.
-   * Absent means every workspace host.
+   * Narrows the listing to one host, named as the host itself rather than as its provider kind:
+   * github.com and a GitHub Enterprise install are two accounts, and a kind cannot tell them
+   * apart.
    */
   host: Schema.optional(TrimmedNonEmptyString),
   /** Rows to return per repository, which with a continuation is rows per slice. */
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
-  /** Only named repositories are read, one slice each; omit for a fresh listing. */
+  /**
+   * Only the repositories named here are read, one slice each — which is what makes a further
+   * page cost one slice rather than every repository over again at a larger size.
+   */
   cursors: Schema.optional(PullRequestListCursors),
   /**
-   * Search on the host because client rows only cover loaded pages; unsupported hosts
-   * return unfiltered rows. The bound limits CLI arguments and query strings.
+   * Free text the hosts themselves are asked to match, rather than a filter over the rows that
+   * have already arrived: a listing only ever holds a page per repository, so a search that
+   * never leaves the client can only find what happened to be loaded. Bounded because it
+   * travels into a CLI argument and a query string, and no host makes anything of a search
+   * term this long.
    */
   query: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
 });
 export type PullRequestListInput = typeof PullRequestListInput.Type;
 
-/** One summary per host because github.com and Enterprise accounts can fail independently. */
 export const PullRequestProviderSummary = Schema.Struct({
   host: TrimmedNonEmptyString,
   kind: SourceControlProviderKind,
   /** False where a search has to be applied to the rows after they arrive. */
   searchesOnHost: Schema.Boolean,
-  /** Allows row actions before detail loads; older servers omit it. */
   actions: Schema.optional(Schema.Array(PullRequestAction)),
   projectCount: PositiveInt,
-  /** False when the provider's CLI or credentials are missing, with `detail` saying which. */
   configured: Schema.Boolean,
   detail: Schema.NullOr(TrimmedNonEmptyString),
 });
@@ -488,31 +470,35 @@ export type PullRequestListProjectError = typeof PullRequestListProjectError.Typ
 
 export const PullRequestListResult = Schema.Struct({
   /**
-   * Signed-in logins keyed by host. Omit unreadable hosts: an open-keyed
-   * record cannot encode optional values through the JSON codec.
+   * A host that could not be read is absent rather than present-and-undefined, because an
+   * open-keyed record cannot carry an optional value through the JSON codec.
    */
   viewers: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
   providers: Schema.Array(PullRequestProviderSummary),
   /**
-   * Newest update first across repositories; re-sort after appending pages
-   * because one repository's older slice may be newer than another's rows.
+   * By update, newest first, across every repository this answer covers. A page that appends a
+   * continuation sorts what it then holds the same way: a repository's next slice is older than
+   * that repository's last row, but can still be newer than another repository's.
    */
   entries: Schema.Array(PullRequestListEntry),
   errors: Schema.Array(PullRequestListProjectError),
   /** At least one repository hit the per-repository listing cap. */
   truncated: Schema.Boolean,
   /**
-   * Return each cursor unchanged. An empty record with truncated=true means
-   * the host cannot paginate and more rows require raising limit.
+   * A repository is absent from this once it has nothing more to give, and also where its host
+   * could not be asked in an order a continuation means anything in — so an empty record beside
+   * `truncated` means more rows are only reachable by raising `limit`, the way they always were.
    */
   nextCursors: PullRequestListCursors,
 });
 export type PullRequestListResult = typeof PullRequestListResult.Type;
 
 /**
- * projectId selects the preferred checkout and, when its repository matches, credentials.
- * Explicit host allows routing through other projects on that host;
- * omitted host uses the project's own host.
+ * Addresses one pull request for reads and writes. `projectId` picks the checkout the host
+ * CLI runs in and, when its repository matches, the credentials; `host` lets the server
+ * route a pull request from another repository through any project on the same host
+ * (a frontend project's thread linking a backend PR). Absent `host` means "the project's
+ * own host", which is every reference from before thread links became host-level.
  */
 export const PullRequestRef = Schema.Struct({
   projectId: ProjectId,
@@ -575,7 +561,10 @@ export const PullRequestPreview = Schema.Struct({
 });
 export type PullRequestPreview = typeof PullRequestPreview.Type;
 
-/** Separate from detail so sidebar status reads skip permissions, checks and comparisons. */
+/**
+ * Keeping it separate from detail means a sidebar status check never loads permissions,
+ * repository settings, checks, or base comparison data.
+ */
 export const PullRequestSummary = Schema.Struct({
   provider: SourceControlProviderKind,
   projectId: ProjectId,
@@ -623,8 +612,9 @@ export const PullRequestStack = Schema.Struct({
 export type PullRequestStack = typeof PullRequestStack.Type;
 
 /**
- * Read line counts separately: measured across twelve GitHub repositories,
- * search took 7.1s with counts and 4.0s without; counts cost 40-60% of wall time.
+ * On GitHub the pair is 40-60% of the wall clock of the search that answers the whole page
+ * — measured over twelve repositories, 7.1s with it and 4.0s without — for two small
+ * numbers at the end of a row.
  */
 export const PullRequestDiffStat = Schema.Struct({
   projectId: ProjectId,
@@ -635,21 +625,30 @@ export const PullRequestDiffStat = Schema.Struct({
 });
 export type PullRequestDiffStat = typeof PullRequestDiffStat.Type;
 
-/** Bounded because each reference becomes a host lookup. */
+/**
+ * Bounded at the largest listing a page can hold, since each ref becomes a lookup of its own on
+ * the host.
+ */
 export const PullRequestListStatsInput = Schema.Struct({
   refs: Schema.Array(PullRequestRef).check(Schema.isMaxLength(500)),
 });
 export type PullRequestListStatsInput = typeof PullRequestListStatsInput.Type;
 
-/** Hosts without batched stats are omitted; their listing's counts remain valid. */
+/**
+ * Only the rows that could be answered for. A host with no batched stat read of its own — every
+ * one but GitHub, which all report the counts in the listing itself — is simply absent here, and
+ * the numbers its listing already carried stand.
+ */
 export const PullRequestListStatsResult = Schema.Struct({
   stats: Schema.Array(PullRequestDiffStat),
 });
 export type PullRequestListStatsResult = typeof PullRequestListStatsResult.Type;
 
 /**
- * With a reference, invalidates detail and diff; without one, listings.
- * Keep refresh explicit so ordinary reads share cached host requests.
+ * Forget what the server has cached, so the next read asks the host. With a reference it
+ * forgets that one change request's detail and diff; without one it forgets the listings.
+ * A separate request rather than a flag on the reads, so an explicit "refresh" one person
+ * presses is the only thing that spends host requests — every ordinary read shares.
  */
 export const PullRequestInvalidateInput = Schema.Struct({
   reference: Schema.optional(PullRequestRef),
@@ -659,8 +658,7 @@ export const PullRequestInvalidateInput = Schema.Struct({
 export type PullRequestInvalidateInput = typeof PullRequestInvalidateInput.Type;
 
 /**
- * A routed read supplies a hint; the receiving environment confirms it
- * with the host before changing thread links.
+ * A hint only: that environment confirms with the host before writing anything.
  */
 export const PullRequestReportStateInput = Schema.Struct({
   reference: PullRequestRef,
@@ -701,14 +699,17 @@ export const PullRequestDetail = Schema.Struct({
   labels: Schema.Array(PullRequestLabel),
   checks: Schema.Array(PullRequestCheck),
   mergeCapabilities: PullRequestMergeCapabilities,
-  /** Signed-in login used to authorize editing remarks; absent disables editing. */
+  /**
+   * Absent where the host could not say, which offers nothing rather than
+   * everything.
+   */
   viewer: Schema.optional(TrimmedNonEmptyString),
-  /** Absent does not establish that the branch is current. */
   baseComparison: Schema.optional(PullRequestBaseComparison),
   behindBy: Schema.optional(NonNegativeInt),
   /**
-   * Absent means unknown, not disabled; treating it as disabled could
-   * arm an auto-merge that is already armed.
+   * Whether the host is already armed to merge this on its own. Absent where the host does not
+   * report it, which is not the same as off: a page that reads silence as "not armed" offers to
+   * arm something that is already armed, and a second arming is a write nobody asked for.
    */
   autoMergeEnabled: Schema.optional(Schema.Boolean),
   autoMergeMethod: Schema.optional(PullRequestMergeMethod),
@@ -724,22 +725,30 @@ export const PullRequestChecks = Schema.Struct({
 export type PullRequestChecks = typeof PullRequestChecks.Type;
 
 /**
- * Load activity independently so paginated history cannot delay core detail.
- * GitHub's activity query can enrich avatars and completed reviewers.
+ * The slower, conversation-shaped half of a change request. It is read independently from the
+ * core detail so a host with a deeply paginated review history cannot hold the title, body,
+ * checks, and actions off screen.
  */
 export const PullRequestActivity = Schema.Struct({
   author: Schema.optional(Schema.NullOr(PullRequestActor)),
   reviewers: Schema.optional(Schema.Array(PullRequestActor)),
   comments: Schema.Array(PullRequestComment),
-  /** Host total, never below comments.length; equals it when the read is complete. */
+  /**
+   * How many remarks the host itself counts in the conversation, which is the number a surface
+   * showing a count has to show: `comments` carries what was read, and a reader who can see 225
+   * on the host is not reassured by a page that says 10. Never less than `comments` holds, and
+   * equal to it wherever the host was read to the end.
+   */
   commentCount: NonNegativeInt,
-  /** True only when the read hit its own bound before exhausting the host. */
+  /**
+   * The read stopped at a bound of its own before the host ran out, so `comments` holds less
+   * than `commentCount` counts.
+   */
   commentsTruncated: Schema.Boolean,
   /** Whether the thread listing itself is incomplete, apart from pages within a thread. */
   reviewThreadsTruncated: Schema.optional(Schema.Boolean),
   reviewThreads: Schema.Array(PullRequestReviewThread),
   commits: Schema.Array(PullRequestCommit),
-  /** Reactions on the change request's description, separate from comment reactions. */
   reactions: Schema.optional(Schema.Array(PullRequestReaction)),
 });
 export type PullRequestActivity = typeof PullRequestActivity.Type;
@@ -747,26 +756,26 @@ export type PullRequestActivity = typeof PullRequestActivity.Type;
 export const PullRequestDetailView = Schema.Struct({
   ...PullRequestDetail.fields,
   ...PullRequestActivity.fields,
-  // Restore required identity fields after activity's optional overrides.
+  // A composed view always has the core identity fields, even when the activity did not enrich
+  // them. Re-declare them as required after the activity's optional overrides.
   author: Schema.NullOr(PullRequestActor),
   reviewers: Schema.Array(PullRequestActor),
 });
 export type PullRequestDetailView = typeof PullRequestDetailView.Type;
 
 /**
- * GitHub refuses diffs beyond 300 files. Page by whole files so each slice
- * parses independently and the viewer can render before all files arrive.
+ * A diff arrives a slice at a time, because a large change is more than any host will hand over
+ * at once — GitHub refuses outright past 300 files — and more than a viewer can lay out in one
+ * go. A slice is a whole number of files, never a file cut in half, so each one parses on its
+ * own and the reader can start on the first while the rest is still coming.
  */
 export const PullRequestDiffInput = Schema.Struct({
   ...PullRequestRef.fields,
-  /** Opaque provider cursor; omit for the first slice. */
   cursor: Schema.optional(TrimmedNonEmptyString),
-  /** Omit for the whole change; otherwise read this commit's comparison. */
   commit: Schema.optional(TrimmedNonEmptyString),
 });
 export type PullRequestDiffInput = typeof PullRequestDiffInput.Type;
 
-/** Real line counts for a file whose hunks the host withheld from the patch. */
 export const PullRequestOmittedFileStat = Schema.Struct({
   path: TrimmedNonEmptyString,
   additions: Schema.Number,
@@ -776,18 +785,18 @@ export type PullRequestOmittedFileStat = typeof PullRequestOmittedFileStat.Type;
 
 export const PullRequestDiffResult = Schema.Struct({
   patch: Schema.String,
-  /** Content omitted within this slice, separate from further slices in nextCursor. */
+  /**
+   * Something inside this slice could not be shown — a binary file, or a hunk the host declined
+   * to inline. Not the same as there being more slices, which `nextCursor` answers.
+   */
   truncated: Schema.Boolean,
   nextCursor: Schema.NullOr(TrimmedNonEmptyString),
-  /** Use host counts for withheld hunks instead of inferring zero from the patch. */
   omittedFileStats: Schema.optional(Schema.Array(PullRequestOmittedFileStat)),
 });
 export type PullRequestDiffResult = typeof PullRequestDiffResult.Type;
 
-/** Full old/new contents let Pierre expand context omitted by a host-backed patch. */
 export const PullRequestDiffFileContentsInput = Schema.Struct({
   ...PullRequestRef.fields,
-  /** One commit's own comparison; absent means the whole change request. */
   commit: Schema.optional(TrimmedNonEmptyString),
   changeType: Schema.Literals(["change", "rename-pure", "rename-changed", "new", "deleted"]),
   oldPath: TrimmedNonEmptyString,
@@ -801,15 +810,22 @@ export const PullRequestDiffFileContentsResult = Schema.Struct({
 });
 export type PullRequestDiffFileContentsResult = typeof PullRequestDiffFileContentsResult.Type;
 
-/** Bound client paths to keep oversized values out of SQL and GraphQL writes. */
+/**
+ * Bounded because a path arrives from a client rather than from the host: one element of a write
+ * batch could otherwise carry a megabyte into a SQL statement or a GraphQL field.
+ */
 const MAX_FILE_PATH_LENGTH = 4096;
 /**
- * Do not trim: leading and trailing spaces are legal filename characters
- * and must match the host's viewed-file keys.
+ * Not trimmed: a leading or trailing space is a legal part of a file's name, and the mark is
+ * keyed by the name the host gave, so trimming files it under a name nothing else uses.
  */
 const FilePath = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(MAX_FILE_PATH_LENGTH));
 
-/** `dismissed` means a previously viewed file changed in a later push. */
+/**
+ * Where one file of a change request stands with the person reading it. `dismissed` is the file
+ * that was cleared and has since been pushed to, which is worth telling a reader apart from
+ * `unviewed`: this file and not the other forty is the one that moved.
+ */
 export const PullRequestFileViewedState = Schema.Literals(["unviewed", "viewed", "dismissed"]);
 export type PullRequestFileViewedState = typeof PullRequestFileViewedState.Type;
 
@@ -820,8 +836,9 @@ export const PullRequestFileViewed = Schema.Struct({
 export type PullRequestFileViewed = typeof PullRequestFileViewed.Type;
 
 /**
- * Read separately from the patch: viewed marks change on every click,
- * while the patch is cached and changes only on pushes.
+ * Its own read rather than a field on the patch: a patch changes when somebody pushes and is
+ * cached by the minute, this changes on every press, so one read would have to be wrong for the
+ * other to be right.
  */
 export const PullRequestFilesViewedResult = Schema.Struct({
   /** Only the files the host reported a state for. A file missing from this list is unviewed. */
@@ -831,12 +848,16 @@ export const PullRequestFilesViewedResult = Schema.Struct({
 export type PullRequestFilesViewedResult = typeof PullRequestFilesViewedResult.Type;
 
 /**
- * Matches the read cap: each mark is a SQL statement or GraphQL field,
- * and clients must be able to read back every mark in a write.
+ * How many presses one write carries. Every element is a statement of its own inside one
+ * transaction here, or a field of its own in one GraphQL document on GitHub. Matched to what a
+ * read of the marks carries, so a client cannot write more of them than it can ever read back.
  */
 const MAX_FILES_VIEWED_PRESSES = 500;
 
-/** Batch changes because clicks arrive faster than host responses. */
+/**
+ * Several at once because a reader working down a diff ticks boxes far faster
+ * than a host answers, so a burst is gathered into one request.
+ */
 export const PullRequestSetFilesViewedInput = Schema.Struct({
   ...PullRequestRef.fields,
   files: Schema.Array(
@@ -860,15 +881,20 @@ export const PullRequestActionInput = Schema.Struct({
   expectedStackHeads: Schema.optional(Schema.Array(PullRequestStackHead)),
   ...PullRequestRef.fields,
   action: PullRequestAction,
-  /** Applies to merge and enable-auto-merge; omitted means the host's default. */
+  /**
+   * Which strategy the merge uses, read for `merge` and for `enable-auto-merge` alike — a merge
+   * the host performs later is still a merge, and the strategy is chosen when it is armed rather
+   * than at the moment it happens. Absent means the host's own default.
+   */
   mergeMethod: Schema.optional(PullRequestMergeMethod),
-  /** Only read for `update-branch`, where absent means the host's own default. */
   updateMethod: Schema.optional(PullRequestUpdateMethod),
 });
 export type PullRequestActionInput = typeof PullRequestActionInput.Type;
 
-// Preserve markdown whitespace. GitHub caps bodies at 65,536 characters;
-// the service rejects whitespace-only bodies.
+// Not trimmed: the body is markdown, where leading spaces open a code block and two trailing
+// spaces are a line break. GitHub rejects bodies past 65536 characters, so that bound is
+// enforced here to keep oversized payloads off the wire and out of subprocess plumbing; the
+// service rejects a body that is only whitespace.
 const CommentBody = Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536));
 
 export const PullRequestCommentInput = Schema.Struct({
@@ -878,9 +904,13 @@ export const PullRequestCommentInput = Schema.Struct({
 export type PullRequestCommentInput = typeof PullRequestCommentInput.Type;
 
 /**
- * Omit unchanged fields; the service rejects a request with neither.
- * Preserve markdown whitespace and allow an empty body to clear the description.
- * GitHub caps titles at 256 characters; 1024 here bounds subprocess input.
+ * Each is optional because the page rewrites them apart — a title corrected on its own must not
+ * carry a description nobody opened — and the service refuses a request that carries neither.
+ *
+ * The title is bounded far past what any host takes, GitHub refusing one past 256 characters, so
+ * an oversized one is turned away before it reaches a subprocess. The body is not trimmed for the
+ * same reason a comment is not: it is markdown, where leading spaces open a code block. An empty
+ * one is allowed, which is how a description is cleared.
  */
 export const PullRequestUpdateInput = Schema.Struct({
   ...PullRequestRef.fields,
@@ -890,8 +920,13 @@ export const PullRequestUpdateInput = Schema.Struct({
 export type PullRequestUpdateInput = typeof PullRequestUpdateInput.Type;
 
 /**
- * kind selects the host endpoint. Review summaries are excluded because
- * some hosts, such as Bitbucket, represent votes without editable text.
+ * A remark already posted, rewritten by whoever wrote it. The kind travels beside the id because
+ * an id alone does not say which endpoint addresses it: GitHub rewrites a comment on the
+ * conversation and a comment on a line through two different mutations.
+ *
+ * A review's own summary is not among them. The hosts disagree about what one even is — the entry
+ * Bitbucket shows is a vote this page renders as a remark, with no words behind it to rewrite —
+ * and a control that worked on one host and failed on another is worse than one that is not there.
  */
 export const PullRequestCommentUpdateInput = Schema.Struct({
   ...PullRequestRef.fields,
@@ -922,7 +957,11 @@ export type PullRequestReviewPosition = typeof PullRequestReviewPosition.Type;
 
 export const PullRequestReviewCommentDraft = Schema.Struct({
   path: TrimmedNonEmptyString,
-  /** GitLab needs both paths to anchor a comment on a renamed file. */
+  /**
+   * What the file was called before the change, sent only when it differs. GitLab resolves a
+   * position against both sides of the diff, so a comment on a renamed file needs both names;
+   * the hosts that address a comment by one path ignore this.
+   */
   oldPath: Schema.optional(TrimmedNonEmptyString),
   position: PullRequestReviewPosition,
   body: CommentBody,
@@ -930,8 +969,9 @@ export const PullRequestReviewCommentDraft = Schema.Struct({
 export type PullRequestReviewCommentDraft = typeof PullRequestReviewCommentDraft.Type;
 
 /**
- * Submit verdict and line comments together so unfinished reviews stay private
- * and hosts without pending reviews behave consistently.
+ * The line comments travel with the verdict rather than being posted as they are written, so
+ * a half-finished review is never visible to anyone else — and so hosts with no notion of a
+ * pending review behave the same as the ones that have it.
  */
 export const PullRequestSubmitReviewInput = Schema.Struct({
   ...PullRequestRef.fields,
@@ -971,7 +1011,11 @@ export type PullRequestThreadResolutionInput = typeof PullRequestThreadResolutio
 
 export const PullRequestReactionInput = Schema.Struct({
   ...PullRequestRef.fields,
-  /** Omit to react to the change request itself rather than a comment. */
+  /**
+   * Which remark to react to, as it arrived in the conversation. Absent reacts to the change
+   * request itself, which is where its description's reactions live — the id a host uses for
+   * that is its own to work out.
+   */
   subjectId: Schema.optional(TrimmedNonEmptyString),
   content: PullRequestReactionContent,
   reacted: Schema.Boolean,
@@ -979,14 +1023,15 @@ export const PullRequestReactionInput = Schema.Struct({
 export type PullRequestReactionInput = typeof PullRequestReactionInput.Type;
 
 /**
- * Use requested=false to remove a request; requesting a completed reviewer again
- * is a re-request through the same operation.
+ * Asking for a review and taking the request back are one operation with `requested` turned
+ * around, and asking again somebody who has already reviewed is what a re-request is — so that is
+ * the same operation once more rather than a third one.
  */
 export const PullRequestReviewerRequestInput = Schema.Struct({
   ...PullRequestRef.fields,
   /**
-   * Use candidate IDs. Bound the batch for host limits and client-supplied payloads;
-   * GitHub refuses more than fifteen reviewers.
+   * Bounded because every host bounds it as well — GitHub refuses past fifteen — and
+   * because these travel into a request body a page composed.
    */
   reviewers: Schema.Array(
     Schema.Struct({ id: TrimmedNonEmptyString, kind: PullRequestReviewerKind }),
@@ -1010,8 +1055,8 @@ export const PullRequestUnavailableReason = Schema.Literals([
 export type PullRequestUnavailableReason = typeof PullRequestUnavailableReason.Type;
 
 /**
- * Keep cli-prefixed reasons for wire compatibility; for GitHub and Bitbucket
- * they describe missing or rejected credentials, not missing tools.
+ * The reason names keep their `cli-` prefix for wire compatibility; for GitHub and
+ * Bitbucket they mean "no credential" and "a refused credential", not a missing tool.
  */
 const PROVIDER_REQUIREMENT = new Map<
   string,
@@ -1063,8 +1108,8 @@ const PROVIDER_REQUIREMENT = new Map<
 ]);
 
 /**
- * Resolve the canonical remote's host, falling back to provider kind.
- * Shared by server and client so workspace host buckets agree.
+ * Shared between the server and the page so both bucket a workspace the same way — the page
+ * knows its hosts before the listing answers, and the two must agree on what they are called.
  */
 export function pullRequestHostOf(
   identity:
@@ -1090,8 +1135,10 @@ export function pullRequestHostOf(
 }
 
 /**
- * Resolve me/@me to the signed-in login before server and client author comparisons.
- * With no viewer, leave the filter unchanged.
+ * `author:me` names whoever is signed in to the host being read, GitHub's `@me` spelled either
+ * way. A host's own search would answer it, but the page and the server both re-check an author
+ * against the row's login, so the name is resolved before either comparison rather than being
+ * matched as the literal login "me".
  */
 export function resolvePullRequestAuthorFilter(
   author: string,
@@ -1102,7 +1149,6 @@ export function resolvePullRequestAuthorFilter(
   return viewer === null || viewer === undefined || viewer.trim().length === 0 ? trimmed : viewer;
 }
 
-/** Returns host setup guidance, or null when the failure has no setup remedy. */
 export function pullRequestProviderRequirement(
   provider: SourceControlProviderKind,
   reason: PullRequestUnavailableReason,
@@ -1120,8 +1166,9 @@ export function pullRequestProviderRequirement(
 }
 
 /**
- * Derive stable user-facing text from reason and host; raw provider failures
- * remain in cause.
+ * The message is derived from `reason` and the host rather than from whatever the CLI
+ * printed, so it stays a stable sentence the UI can show as-is; the underlying failure
+ * travels in `cause` (absent for `provider-unsupported`, which has none).
  */
 export class PullRequestUnavailableError extends Schema.TaggedError<PullRequestUnavailableError>()(
   "PullRequestUnavailableError",

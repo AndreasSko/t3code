@@ -1,5 +1,12 @@
-// Use the hub's normalized discovery/boot API so its streaming state agrees.
-// Server-owned sessions keep clients and device tools on the same device.
+/**
+ * Discovery and boot go through expo-device-hub's JSON API rather than
+ * shelling out to simctl and adb here: the hub already normalizes both
+ * platforms into one device shape and is the process that has to know a
+ * device is booted before it can stream it. Sessions are the server's own
+ * bookkeeping — which thread is looking at which device — so the panel and
+ * the `device_*` tools agree, and so a `device_open` from an agent surfaces in
+ * every connected client the way `preview_open` does.
+ */
 import {
   type DeviceActionInput,
   type DeviceCloseInput,
@@ -59,7 +66,6 @@ import * as SshDeviceHost from "./SshDeviceHost.ts";
 import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 
-/** Origin-relative prefix the hub is proxied under. See DeviceHubProxy. */
 export const DEVICE_HUB_ROUTE_PREFIX = "/api/device-hub";
 
 const BOOT_TIMEOUT = Duration.minutes(3);
@@ -124,14 +130,16 @@ export class DeviceService extends Context.Service<
     readonly close: (input: DeviceCloseInput) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
     readonly detail: (input: DeviceDetailInput) => Effect.Effect<DeviceDetail, DeviceError>;
-    /** Runs one action, then returns the refreshed detail. */
     readonly action: (input: DeviceActionInput) => Effect.Effect<DeviceDetail, DeviceError>;
     readonly screenshot: (input: {
       readonly hostId?: DeviceHostId | undefined;
       readonly deviceId: DeviceId;
     }) => Effect.Effect<DeviceScreenshot, DeviceError>;
     readonly readiness: (hostId?: DeviceHostId) => Effect.Effect<DeviceReadiness, DeviceError>;
-    /** Never install/start tools when the host lacks a supported simulator platform. */
+    /**
+     * `readiness` only when the host can run at least one platform; a machine
+     * with no simulator toolchain never installs or starts anything.
+     */
     readonly readinessIfSupported: (
       hostId?: DeviceHostId,
     ) => Effect.Effect<DeviceReadiness | null, DeviceError>;
@@ -584,8 +592,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     }
   });
 
-  // Boot through the hub to update streaming state; Android boot changes AVD
-  // names to emulator serials, so use the returned device id.
+  /**
+   * Boot through the hub so its device list and the streaming helper both see
+   * the device come up. Android AVDs change id when they boot (AVD name to
+   * emulator serial), so the returned id is authoritative.
+   */
   const boot = Effect.fn("DeviceService.boot")(function* (
     ready: DeviceReadiness,
     device: DeviceSummary,
@@ -746,8 +757,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               ),
         ),
       );
-    // serve-sim closes cached capture sessions before shutdown; the generic hub
-    // does not. Accept simctl failure only when the hub confirms the device is off.
+    // serve-sim's shutdown closes its in-process capture session before it runs
+    // `simctl shutdown`; the hub's generic shutdown can leave that session cached
+    // across a reboot. serve-sim runs simctl bare, though, so a simulator that is
+    // already off fails there. Accept that failure only when the hub confirms
+    // the simulator is off; a failure on a running one still surfaces.
     yield* platform === "ios"
       ? postShutdown(`${vendorPrefix("ios")}/grid/api/shutdown`, { udid: deviceId }).pipe(
           Effect.catch((cause) =>
@@ -809,7 +823,6 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     function* (input) {
       const host = yield* resolveHost(input.hostId);
       yield* shutdownDevice(host.id, input.deviceId, input.platform);
-      // Sessions on a powered-off device are stale in every thread.
       yield* publish((current) => ({
         ...current,
         sessions: current.sessions.filter(
@@ -969,7 +982,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   };
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const localHost = yield* DeviceHost.DeviceHost;
   const config = yield* ServerConfig.ServerConfig;

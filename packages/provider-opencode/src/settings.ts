@@ -1,4 +1,7 @@
-/** Shared with client settings forms; keep this schema browser-safe. */
+/**
+ * Shared by the server driver and the client settings form, so it holds only
+ * browser-safe schema code.
+ */
 import {
   CustomModelSetting,
   makeBinaryPathSetting,
@@ -11,7 +14,7 @@ import * as Schema from "effect/Schema";
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
     // Off by default (like Cursor and Grok): the binding is not yet stable
-    // enough to probe on every install. Users opt in from Settings.
+    // enough to probe on every install.
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),

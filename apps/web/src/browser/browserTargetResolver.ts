@@ -79,7 +79,12 @@ export function resolveBrowserNavigationTarget(
   return resolveEnvironmentPortTarget(environmentId, target, readEnvironmentUrl(environmentId));
 }
 
-/** Desktop-local backends can advertise LAN addresses while their dev servers only answer on loopback. */
+/**
+ * The desktop app draws tabs on the machine that runs its primary backend and
+ * any desktop-local backend (WSL). Its connection URL can still be a LAN
+ * address (WSL NAT mode binds the distro IP), but a dev server bound to
+ * loopback only answers on `localhost` there.
+ */
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   isElectron &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));

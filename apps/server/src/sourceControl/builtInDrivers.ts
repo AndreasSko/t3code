@@ -1,4 +1,3 @@
-/** Add hosts here and provide their service layers below so both source-control registries can use them. */
 import * as AzureDevOpsCli from "@t3tools/source-control-azure-devops/server/AzureDevOpsCli";
 import * as AzureDevOpsPullRequestCli from "@t3tools/source-control-azure-devops/server/AzureDevOpsPullRequestCli";
 import * as AzureDevOpsDriver from "@t3tools/source-control-azure-devops/server/driver";

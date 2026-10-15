@@ -80,7 +80,6 @@ export class GitHubStackRebaseFailedError extends Schema.TaggedError<GitHubStack
   { ...stackErrorIdentity, completed: Schema.Int, cause: Schema.Defect() },
 ) {
   override get message(): string {
-    // A conflict or a refused push already says which layer and what to do about it.
     return this.cause instanceof Error && this.cause.message !== ""
       ? this.cause.message
       : `Stack rebase stopped at PR #${this.number} after ${this.completed} layers. Earlier updates remain on GitHub; resolve the failing layer before retrying.`;

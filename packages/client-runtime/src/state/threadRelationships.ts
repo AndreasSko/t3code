@@ -51,7 +51,9 @@ export function deriveThreadRelationshipGraph(input: {
 }): ThreadRelationshipGraph {
   const threadsById = new Map<ThreadId, OrchestrationV2ThreadShell>();
   for (const thread of input.threads) {
-    // Callers supply authoritative shells first; live rows must beat stale archive copies.
+    // Callers order shells from most to least authoritative. In particular,
+    // live shells precede archived snapshots, which may still contain a stale
+    // copy during archive refresh.
     if (!threadsById.has(thread.id)) {
       threadsById.set(thread.id, thread);
     }
@@ -213,8 +215,16 @@ function threadCreatedAtMillis(node: ThreadRelationshipNode | undefined): number
   return Number.isFinite(millis) ? millis : null;
 }
 
-/** Web-only order pins parent and merge target, then uses immutable creation time descending.
- * Missing shells sink and ids break ties; mobile does not share the pinning rule. */
+/**
+ * Web-specific by design: the panel pins the parent row first and a distinct
+ * merge-back target second so their actions stay where the user expects, and
+ * only then falls back to newest-created-first. Mobile does not share that
+ * exception, so this is not the canonical relationship order and should not be
+ * reused as one.
+ *
+ * Ordering below the pins is `createdAt` descending, which is immutable, so
+ * rows never move when messages or status changes arrive on a related thread.
+ */
 export function orderWebThreadLineageRows(input: {
   readonly graph: ThreadRelationshipGraph;
   readonly rows: ReadonlyArray<ThreadRelationshipWalkRow>;

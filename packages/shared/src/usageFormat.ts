@@ -20,7 +20,6 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
-/** Three significant figures with a unit suffix (`19.9B`, `76.7M`, `804K`). */
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e12) return `${trim(value / 1e12)}T`;
@@ -52,7 +51,6 @@ export function formatUsageContractMismatch(
     : `This client is older than the server on ${environmentLabel}; its usage is excluded from totals.`;
 }
 
-/** `2026-08-07` to `Aug 7`. */
 export function formatDayShort(day: string): string {
   const [year, month, dayOfMonth] = day.split("-").map((part) => Number(part));
   if (year === undefined || month === undefined || dayOfMonth === undefined) return day;
@@ -105,7 +103,6 @@ function dateTimeFormatter(
   return formatter;
 }
 
-/** Every fixed-duration bucket start in an hourly rolling window. */
 export function enumerateHourStarts(sinceTime: string, untilTime: string): readonly string[] {
   const starts: string[] = [];
   const start = Date.parse(sinceTime);
@@ -118,7 +115,10 @@ export function enumerateHourStarts(sinceTime: string, untilTime: string): reado
   return starts;
 }
 
-/** Includes the short zone name for repeated fall-back hours so buckets remain distinct. */
+/**
+ * Repeated wall-clock hours during a fall-back transition include their short zone name so the
+ * two distinct buckets remain distinguishable.
+ */
 export function formatHourShort(hourStart: string, timeZone?: string): string {
   const instant = new Date(hourStart);
   if (Number.isNaN(instant.getTime())) return hourStart;
@@ -148,7 +148,6 @@ export function formatHourShort(hourStart: string, timeZone?: string): string {
   }).format(instant);
 }
 
-/** `2026-08-11T14:37:00Z` to `Aug 11, 2 PM` in the requested zone. */
 export function formatDateTimeShort(instant: string, timeZone?: string): string {
   const date = new Date(instant);
   if (Number.isNaN(date.getTime())) return instant;
@@ -206,7 +205,6 @@ export function makeWindow(
       day: "2-digit",
     });
   } catch {
-    // An unknown zone should degrade to UTC rather than crash the page.
     timeZone = "UTC";
     format = new Intl.DateTimeFormat("en-CA", {
       timeZone: "UTC",
@@ -217,7 +215,8 @@ export function makeWindow(
   }
   const untilDay = format.format(now);
   if (resolution === "hour") {
-    // Minute alignment keeps labels readable; fixed-duration buckets remain correct across DST.
+    // Fixed-duration buckets remain correct across offset changes and daylight-saving
+    // transitions.
     const untilTimeMs = Math.floor(now.getTime() / 60_000) * 60_000;
     const sinceTimeMs = untilTimeMs - 24 * HOUR_MS;
     const sinceTime = new Date(sinceTimeMs);
@@ -231,7 +230,9 @@ export function makeWindow(
       untilTime: untilTime.toISOString(),
     };
   }
-  // Calendar arithmetic in UTC avoids landing on the wrong local day around DST transitions.
+  // Subtracting fixed milliseconds from `now` lands on the wrong calendar day
+  // around a DST transition. The window start is pure calendar arithmetic on
+  // the local end day, done in UTC where days are uniform.
   const [year = 0, month = 1, dayOfMonth = 1] = untilDay
     .split("-")
     .map((part) => Number.parseInt(part, 10));

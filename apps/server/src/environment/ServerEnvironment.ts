@@ -198,8 +198,10 @@ export const make = Effect.gen(function* () {
     launcherManaged: launcher.managed,
   });
   const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
-  // App and server ship together, so a bootstrap control fd proves update
-  // protocol support. WSL backends lack the fd and must not advertise it.
+  // Static is correct: the control fd is known at bootstrap, and the desktop
+  // app and its bundled server ship in one artifact, so a present fd means
+  // the app speaks the requestDesktopUpdate protocol. WSL backends never get
+  // the fd and correctly do not advertise.
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
@@ -265,7 +267,9 @@ export const make = Effect.gen(function* () {
 
   return ServerEnvironment.of({
     getEnvironmentId: Effect.succeed(environmentId),
-    // Publish opt-in and link credentials change at runtime; read capability per descriptor request.
+    // The publish opt-in and relay link change at runtime (`t3 connect
+    // publish`, the client settings toggle), so the capability is read per
+    // descriptor request rather than baked in at startup.
     getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
       Effect.map((agentActivityPublishing) => ({
         ...descriptor,
@@ -277,8 +281,11 @@ export const make = Effect.gen(function* () {
 
 export const layerIdentity = Layer.effect(ServerEnvironmentIdentity, makeIdentity);
 
-// Require external platform/config/secret services; the descriptor depends
-// on persisted host state and runtime publishing credentials.
+/**
+ * It intentionally has no fallback Layer.succeed value: callers must provide the external
+ * platform services, a ServerConfig, and the ServerSecretStore backing the descriptor's
+ * publishing capability.
+ */
 export const layer = Layer.effect(ServerEnvironment, make).pipe(
   Layer.provideMerge(layerIdentity),
   Layer.provide(ProcessRunner.layer),

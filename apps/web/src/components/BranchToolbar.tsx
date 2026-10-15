@@ -405,7 +405,13 @@ const COMPOSER_CONTEXT_MOTION_DURATION_MS = 180;
 const COMPOSER_CONTEXT_MOTION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const COMPOSER_CONTEXT_LABEL_SELECTOR = "[data-composer-label]";
 
-/** Sum text runs: scrollWidth loses MiddleTruncate's tail when hidden or squeezed, causing compact-mode flapping. */
+/**
+ * Text keeps its full width when its box clips it, so each text run measures
+ * whole. A label can hold more than one run (MiddleTruncate splits a branch
+ * into a head and a tail), so the runs are added. Reading one element's
+ * scrollWidth drops the tail when the label is hidden or squeezed, and the
+ * strip then flips between labels and icons on every measure.
+ */
 function labelTextWidth(label: HTMLElement, range: Range): number {
   const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
   let width = 0;
@@ -418,12 +424,19 @@ function labelTextWidth(label: HTMLElement, range: Range): number {
   return Number.isFinite(maxWidth) ? Math.min(width, maxWidth) : width;
 }
 
-/** Measure hidden labels at natural width to avoid stale width estimates latching the strip compact. */
+/**
+ * Hidden labels stay measurable because their inner text keeps its natural
+ * width while the outer layout box collapses. This lets every pass recompute
+ * the expanded width without remembered values that could go stale or latch
+ * the strip compact. A small hysteresis keeps the boundary from flapping.
+ */
 function useLabelsOverflow(element: HTMLDivElement | null): boolean {
   const [overflows, setOverflows] = useState(false);
   const pendingLabelRectsRef = useRef<Map<HTMLElement, DOMRect> | null>(null);
   const labelAnimationsRef = useRef(new Map<HTMLElement, Animation>());
-  // The compiler memoizes useEffectEvent, so observers need a render-synced mirror of the element.
+  // A render-synced mirror instead of useEffectEvent: the compiler memoizes
+  // the event callback, which left observers reading the first render's null
+  // element forever.
   const stateRef = useRef({ element, overflows });
   stateRef.current = { element, overflows };
 
@@ -458,7 +471,11 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
     let groups = 0;
     for (const child of current.children) {
       if (!(child instanceof HTMLElement)) continue;
-      // Include overflow controls in natural width so label expansion cannot repeatedly hide them.
+      // The host itself flexes into all remaining room. Reserve the natural
+      // width of the controls inside it, blocks in overflow included, so Git
+      // labels compact before squeezing out the model picker. Reserving only
+      // the visible controls would let the labels expand into room the
+      // composer just freed, shrink the host, and hide the controls again.
       const hostedControls = child.matches('[data-chat-resting-composer-controls-host="true"]')
         ? child.querySelector<HTMLElement>('[data-chat-composer-resting-controls="true"]')
         : null;
@@ -615,7 +632,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   const effectiveEnvMode = forceNewWorktree ? "worktree" : envMode;
   const envModeLocked = envLocked || (serverThread !== null && activeWorktreePath !== null);
 
-  // Started threads have pinned workspaces, so only drafts can reuse a previous worktree.
+  // Only drafts can hop; started server threads have their workspace pinned.
   const canUsePreviousWorktree =
     draftThread !== null && serverThread === null && !envModeLocked && !forceNewWorktree;
   const projectRefsForWorktreeLookup = useMemo(

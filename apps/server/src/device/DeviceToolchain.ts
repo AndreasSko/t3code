@@ -1,6 +1,12 @@
 import type { DeviceToolVersions } from "@t3tools/contracts";
-// Pin tools to match agent instructions and avoid registry dependence on each
-// first use; mark installs complete only after npm succeeds, not when files appear.
+/**
+ * `expo-device-hub` streams simulator and emulator screens and `agent-device` drives them. Each is
+ * npm-installed separately after its matching consent step into `<baseDir>/tools/<name>/<version>`
+ * and executed from there with the resolved Node runtime, never `npx`: an ephemeral npx cache
+ * would make every first `device_open` after a reboot depend on the registry, and the pinned
+ * versions are part of the contract the injected agent instructions describe. npm extracts files
+ * before it finishes, so an entry file alone does not prove a usable tree.
+ */
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -210,7 +216,6 @@ export const isDeviceHubInstalled = (baseDir: string) =>
 export const isAgentDeviceInstalled = (baseDir: string) =>
   isToolInstalled(baseDir, AGENT_DEVICE_SPEC, (paths) => paths.agentDevice);
 
-/** Read completed installs without downloading or starting either tool. */
 export const deviceToolVersions = Effect.fn("DeviceToolchain.versions")(function* (
   baseDir: string,
   running: { hub?: string; agent?: string } = {},

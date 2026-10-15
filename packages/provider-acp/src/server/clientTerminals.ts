@@ -12,11 +12,6 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodeBuffer from "node:buffer";
 
-/**
- * Rewrite embedded terminal content through resolveEmbeddedTerminalContent
- * so provider-neutral tool projection shows live command output.
- */
-
 const MAX_LIVE_TERMINALS = 16;
 const MAX_UNRELEASED_TERMINALS = 64;
 const MAX_RETAINED_TERMINALS = 32;
@@ -97,7 +92,6 @@ interface ManagedAcpTerminal {
   readonly buffer: OutputBufferState;
   readonly exit: Deferred.Deferred<EffectAcpSchema.WaitForTerminalExitResponse>;
   readonly kill: Effect.Effect<void>;
-  /** Closes the terminal's scope, killing the process if still running. */
   readonly dispose: Effect.Effect<void>;
   exitStatus: EffectAcpSchema.TerminalExitStatus | undefined;
   released: boolean;
@@ -124,9 +118,7 @@ export interface AcpClientTerminals {
     sessionId: string,
     terminalId: string,
   ) => AcpTerminalOutputSnapshot | undefined;
-  /** Command line a terminal was created with; presentation-only lookup. */
   readonly readCommandLine: (terminalId: string) => string | undefined;
-  /** Kills every terminal that is still running. Safe to call repeatedly. */
   readonly disposeAll: Effect.Effect<void>;
 }
 
@@ -232,7 +224,6 @@ export const makeAcpClientTerminals = Effect.fn("makeAcpClientTerminals")(functi
             (request.env?.length ?? 0) === 0
               ? undefined
               : { ...options.environment, ...sessionEnvironment, ...requestEnvironment };
-          // Per-terminal scopes reap running commands and free their handles on close.
           const terminalScope = yield* Scope.make();
           const child = yield* restore(
             spawner
@@ -411,7 +402,10 @@ export const makeAcpClientTerminals = Effect.fn("makeAcpClientTerminals")(functi
   };
 });
 
-/** Rewrites embedded terminal content so provider-neutral projection can show live output. */
+/**
+ * Rewrites embedded `terminal` tool-call content into plain text content so
+ * the provider-neutral tool-call projection can display live command output.
+ */
 export function resolveEmbeddedTerminalContent(
   notification: EffectAcpSchema.SessionNotification,
   readOutputSnapshot: AcpClientTerminals["readOutputSnapshot"],

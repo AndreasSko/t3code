@@ -241,10 +241,9 @@ export class OpenCodeRuntime extends Context.Service<
   OpenCodeRuntime,
   {
     /**
-     * Spawns a local OpenCode server process. Its lifetime is bound to the caller's
-     * `Scope.Scope` — the child is killed automatically when that scope closes.
-     * Consumers that want a long-lived server must create and hold a scope explicitly
-     * (see {@link Scope.make}) and close it when done.
+     * Its lifetime is bound to the caller's `Scope.Scope` — the child is killed automatically
+     * when that scope closes. Consumers that want a long-lived server must create and hold a
+     * scope explicitly (see {@link Scope.make}) and close it when done.
      */
     readonly startOpenCodeServerProcess: (input: {
       readonly binaryPath: string;
@@ -360,8 +359,12 @@ export function parseModelsCliOutput(stdout: string): {
   };
 
   for (const line of lines) {
-    // JSON bodies can contain provider/model values that match SLUG_LINE_RE.
-    // Only bare headers may start a model, or compact JSON bodies are silently dropped.
+    // A model's JSON body is a single `JSON.stringify` line starting with `{`,
+    // while a provider/model slug is a bare `provider/model` header. Only the
+    // latter can be a slug: without this guard a body line with no interior
+    // whitespace and a `/` in one of its values (e.g. an OpenRouter model whose
+    // `id` is `vendor/model`) matches SLUG_LINE_RE, so flushModel runs against
+    // an empty body and the model is silently dropped.
     const slugMatch = line.trimStart().startsWith("{") ? null : SLUG_LINE_RE.exec(line);
     if (slugMatch) {
       flushModel();
@@ -453,12 +456,10 @@ export function openCodeQuestionId(
 }
 
 /**
- * Attachments OpenCode can hand to a model as a native file part. Anything
- * else (ZIP, binaries, image formats like BMP/AVIF/SVG that model APIs
- * reject, or files over the direct-attachment size limit) would make the turn
- * fail before it starts, so those ride only as the file path ProviderService
- * puts in the prompt. Text is native only as text/plain, which OpenCode reads
- * itself; other text types (HTML, Markdown, CSV) reach the model API as raw
+ * Anything else (ZIP, binaries, image formats like BMP/AVIF/SVG that model APIs reject, or files
+ * over the direct-attachment size limit) would make the turn fail before it starts, so those ride
+ * only as the file path ProviderService puts in the prompt. Text is native only as text/plain,
+ * which OpenCode reads itself; other text types (HTML, Markdown, CSV) reach the model API as raw
  * file parts, which Anthropic and OpenAI reject.
  */
 const OPENCODE_NATIVE_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
@@ -520,8 +521,10 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): Permissi
     ];
   }
 
-  // Auto-accept edits approves edits while shell commands still ask.
-  // Auto falls back to Supervised because OpenCode has no AI reviewer.
+  // "Auto-accept edits" is documented as "auto-approve edits, ask before other
+  // actions", so prompting for every edit ignores the mode the user picked.
+  // "auto" is left asking on purpose: the docs say providers without an AI
+  // reviewer, OpenCode among them, fall back to Supervised for that mode.
   const editAction = runtimeMode === "auto-accept-edits" ? "allow" : "ask";
 
   // Session rules override OpenCode's agent defaults. Allow reads and task
@@ -619,9 +622,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           : Effect.sync(() => {
               try {
                 signalProcessGroup(Number(child.pid), "SIGKILL");
-              } catch {
-                // The command and its process group may already have exited.
-              }
+              } catch {}
             });
       yield* Effect.addFinalizer(() => terminateCommandGroup.pipe(Effect.ignore));
       const collectOptions =
@@ -717,8 +718,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             env: {
               ...input.environment,
               ...(serverPassword !== undefined ? { OPENCODE_SERVER_PASSWORD: serverPassword } : {}),
-              // Preserve the user's config to keep their providers and models.
-              // Set it explicitly because providing input.environment disables environment inheritance.
+              // The value is set explicitly (rather than relying on inheritance) because
+              // `extendEnv` is false whenever `input.environment` is provided.
               OPENCODE_CONFIG_CONTENT: resolveOpenCodeConfigContent(input.environment),
             },
             extendEnv: input.environment === undefined,
@@ -1014,7 +1015,6 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       let agentsResult = initialAgentsResult;
       let skillsResult = initialSkillsResult;
 
-      // Retry once after 1s on transient failures (e.g. SQLite "database is locked")
       const needsModelsRetry = modelsResult._tag === "Failure" || modelsResult.value.code !== 0;
       const needsAgentsRetry = agentsResult._tag === "Failure" || agentsResult.value.code !== 0;
       const needsSkillsRetry = skillsResult._tag === "Failure" || skillsResult.value.code !== 0;

@@ -8,9 +8,7 @@ import type { FollowUpBehavior } from "../../lib/followUpBehavior";
 export interface ComposerSendPresentation {
   readonly label: string;
   readonly icon: "arrow.up" | "checkmark" | "list.number" | "arrow.turn.left.up";
-  /** What a plain tap does while a turn runs, or null when the turn is idle. */
   readonly action: ActiveTurnComposerAction | null;
-  /** What the long-press menu and the Command chord do instead. */
   readonly alternate: ActiveTurnComposerAction | null;
   readonly offersFollowUpChoice: boolean;
 }
@@ -21,7 +19,10 @@ const ACTION_LABEL: Record<ActiveTurnComposerAction, string> = {
   restart: "Restart",
 };
 
-/** Offer steering only when the provider supports it so the button cannot promise a downgraded action. */
+/**
+ * Steering is only offered when the provider can actually steer the live turn, so the button never
+ * promises something the server would have to silently downgrade.
+ */
 export function resolveComposerSendPresentation(input: {
   readonly editingQueuedMessage: boolean;
   readonly running: boolean;
@@ -47,7 +48,6 @@ export function resolveComposerSendPresentation(input: {
       offersFollowUpChoice: false,
     };
   }
-  // Without steering, every follow-up queues and a one-choice menu adds no action.
   const action: ActiveTurnComposerAction = input.canSteer ? input.followUpBehavior : "queue";
   const alternate = alternateComposerDispatchAction(action);
   return {

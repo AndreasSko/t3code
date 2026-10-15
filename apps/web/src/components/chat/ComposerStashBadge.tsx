@@ -4,7 +4,6 @@ import { memo } from "react";
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
 
-/** pulseKey remounts the count so each save replays the acknowledgement without a continuous animation. */
 export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   count: number;
   menuOpen: boolean;

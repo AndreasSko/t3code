@@ -13,7 +13,6 @@ import ChatMarkdown from "../ChatMarkdown";
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
-  /** Resolves file links in the question text. */
   cwd: string | undefined;
   threadRef: ScopedThreadRef;
   disabled?: boolean;
@@ -92,7 +91,6 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     questionId: string;
     optionValue: string;
   } | null>(null);
-  // Store collapsed question ids so advancing, including via composer sends, always reopens the next question.
   const [collapsedQuestionId, setCollapsedQuestionId] = useState<string | null>(null);
   const isCollapsed = collapsedQuestionId !== null && collapsedQuestionId === activeQuestion?.id;
 
@@ -153,7 +151,6 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     [activeQuestion, disabled, isResponding, onToggleOption],
   );
 
-  // Collapsed prompts opt out of numeric shortcuts because their numbered choices are not visible.
   useEffect(() => {
     if (!activeQuestion || responseDisabled || isCollapsed) return;
     const handler = (event: globalThis.KeyboardEvent) => {
@@ -220,7 +217,6 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
           ) : null}
           <ComposerBanner.ToggleIcon expanded={!isCollapsed} />
           {prompt.dismissible ? (
-            // Dismiss sits inside the disclosure trigger; keep its click from toggling the panel.
             <ComposerBanner.Dismiss
               render={<span role="button" tabIndex={0} />}
               aria-label="Dismiss question without answering"

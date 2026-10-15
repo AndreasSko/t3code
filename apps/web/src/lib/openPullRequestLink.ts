@@ -26,8 +26,10 @@ export {
 } from "@t3tools/shared/changeRequestUrl";
 
 /**
- * Match full host-relative repository paths for nested GitLab/Azure projects; distinguish host
- * installations.
+ * Matched the way the server matches: the repository identity is the full path below the host
+ * where one was recorded — which is what nested GitLab groups and Azure project paths need —
+ * and the host is the first segment of the canonical remote, so github.com and an Enterprise
+ * install stay apart.
  */
 export function findProjectForChangeRequest(
   projects: ReadonlyArray<EnvironmentProject>,
@@ -88,8 +90,9 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
 }
 
 /**
- * A project on the host can lend credentials even for an unchecked-out repository; prefer the link's own
- * project.
+ * Thread links are host-level, so a pull request from a repository nobody has checked out is
+ * still linkable as long as one project on that host can lend the server its credentials. The
+ * link's own project, when it exists, comes first.
  */
 export function findProjectOnChangeRequestHost(
   projects: ReadonlyArray<EnvironmentProject>,
@@ -112,7 +115,6 @@ export function shouldOpenPullRequestExternally(
   return event.metaKey || event.ctrlKey;
 }
 
-/** Match a configured repository/host before intercepting so lookalike hostnames remain ordinary links. */
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
   panelRef?: ScopedThreadRef,
@@ -139,8 +141,12 @@ export function useOpenChangeRequestLink(
       const reads = (environmentId: string) =>
         serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
         true;
-      // Thread panels must resolve projects on their own environment; standalone pages can search all, primary
-      // first.
+      // Beside a thread the panel reads on that thread's environment, so a project from another
+      // one could not be read there whatever its remote says: two environments can hold the same
+      // repository, and handing the panel the wrong one's id opens a surface that never loads.
+      //
+      // The page has no such tie — it lists every server at once — so the link is resolved
+      // against all of them, the primary first where two hold the same repository.
       const projects = resolvedThreadRef
         ? allProjects.filter((project) => project.environmentId === resolvedThreadRef.environmentId)
         : targetEnvironmentId
@@ -210,14 +216,11 @@ export function useOpenChangeRequestLink(
         to: "/pull-requests",
         search: {
           involvement: "all",
-          // Every state, so the pull request being opened is also in the list behind it whether
-          // it is open, merged or closed.
           state: "all",
           repository,
           number: parsed.number,
           selectedHost: parsed.authority ?? parsed.host,
           selectedProjectId: project.id,
-          // Named so the page opens the right one of two servers holding this project.
           selectedEnvironmentId: project.environmentId,
         },
       });
@@ -244,8 +247,6 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       event.preventDefault();
       if (!openInBrowser && openChangeRequest(event, prUrl, targetThreadRef)) return true;
 
-      // No project to show it in, so it is an ordinary link and follows the
-      // "Open links in" setting; the modifier still forces the system browser.
       void openLink(prUrl, { event, threadRef: targetThreadRef }).catch((error: unknown) => {
         console.error(error);
         toastManager.add(

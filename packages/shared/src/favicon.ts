@@ -1,6 +1,5 @@
 import { isPublicFaviconHost } from "./hostClassification.ts";
 
-/** Conventional origin favicon; callers fall back to a browser glyph if loading fails. */
 function faviconUrlForPage(rawUrl: string | null | undefined, _size = 32): string | null {
   if (!rawUrl || rawUrl.length > 4096) return null;
   try {
@@ -48,7 +47,10 @@ function explicitFaviconUrl(rawUrl: string | null | undefined): string | null {
   }
 }
 
-/** Site-owned theme variants keep conventional favicons legible without recoloring them. */
+/**
+ * A small site-owned fallback table covers websites whose conventional favicon
+ * is illegible in one appearance without recoloring full-color icons.
+ */
 export function toolActivityFaviconUrl(
   icon: {
     readonly pageUrl: string;
@@ -75,8 +77,7 @@ export function toolActivityFaviconUrl(
 
 /**
  * Return a public favicon URL that discloses only a public hostname, never the
- * port, path, or a private or internal-looking host. Callers show a generic
- * icon when this returns null.
+ * port, path, or a private or internal-looking host.
  */
 export function faviconUrlForOrigin(rawUrl: string | null | undefined, size = 32): string | null {
   if (!rawUrl) return null;

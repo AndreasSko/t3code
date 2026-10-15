@@ -72,7 +72,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
 export class ProjectStoreV2 extends Context.Service<
   ProjectStoreV2,
   {
-    /** Fold one committed project event into its row. Call inside the commit transaction. */
+    /** Call inside the commit transaction. */
     readonly apply: (event: ApplicationProjectEvent) => Effect.Effect<void, ProjectStoreV2Error>;
     readonly get: (
       projectId: ProjectId,
@@ -86,7 +86,6 @@ export class ProjectStoreV2 extends Context.Service<
     readonly findActiveByWorkspaceRoot: (
       workspaceRoot: string,
     ) => Effect.Effect<Option.Option<ProjectRow>, ProjectStoreV2Error>;
-    /** An active project's shell without enrichment such as repository identity. */
     readonly getShell: (
       projectId: ProjectId,
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectStoreV2Error>;

@@ -19,8 +19,9 @@ export type AttachmentUploadState =
       readonly environmentId: EnvironmentId;
       readonly reason: string;
       /**
-       * Only queue-minted attempt ids belong here; retry/release deletes them, so persisted draft ids are
-       * forbidden.
+       * A pending upload the queue minted for this failed attempt. Retry and
+       * release delete it, so it must never carry a draft's persisted
+       * attachment id.
        */
       readonly attachmentId?: string;
       readonly previous?: ReadyAttachmentUpload;

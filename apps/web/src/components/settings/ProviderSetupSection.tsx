@@ -34,7 +34,6 @@ interface ProviderSetupSectionProps {
   readonly onEnable: () => void;
 }
 
-/** Unknown auth-method values default to personal. */
 export function readAntigravityAuthMethod(config: unknown): AntigravityAuthMethod {
   const value =
     config !== null && typeof config === "object" && "authMethod" in config

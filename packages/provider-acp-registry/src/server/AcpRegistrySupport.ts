@@ -302,8 +302,9 @@ function withPreferredPath(
 }
 
 /**
- * Expose managed package and binary commands on terminal PATH.
- * Unreadable install directories yield no entries.
+ * Directories exposing installed ACP Registry commands. The integrated terminal
+ * appends them to PATH so managed package commands and managed binary agents
+ * are both available by name.
  */
 export const acpRegistryManagedBinaryDirectories = Effect.fn("acpRegistryManagedBinaryDirectories")(
   function* (input: {
@@ -507,8 +508,8 @@ const layer = (options: AcpRegistryCatalogOptions) =>
   Layer.effect(AcpRegistryCatalog, makeAcpRegistryCatalog(options));
 
 /**
- * Share one catalog and coordinator across setup, snapshots and turn launch
- * for the server lifetime.
+ * The server-lifetime catalog, with the runtime coordinator built alongside it
+ * so setup, snapshots, and turn launch share one of each.
  */
 export const layerFromHost = Layer.merge(
   Layer.unwrap(
@@ -660,8 +661,9 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     const target = path.isAbsolute(linkedTarget.value)
       ? linkedTarget.value
       : path.resolve(path.dirname(runner), linkedTarget.value);
-    // Service wrapper symlinks can point into a toolchain; npm-cli.js
-    // is not the global command directory.
+    // Some service installs expose npm/uv through a wrapper symlink into the
+    // actual toolchain bin directory. Do not mistake npm's internal
+    // `npm-cli.js` directory for the global command directory.
     return path.basename(target) === path.basename(runner)
       ? path.dirname(target)
       : path.dirname(runner);

@@ -15,6 +15,10 @@ import * as GitCafeHosts from "./gitCafeHosts.ts";
 const NO_REDIRECT: RequestInit = { redirect: "manual" };
 const TIMEOUT = Duration.seconds(30);
 
+/**
+ * Why a request failed, as far as a caller needs to act on it: a missing CLI or refused token
+ * disables the provider, a limit pauses the host, and the rest belong to the one request.
+ */
 export const GitCafeApiFailure = Schema.Literals([
   "missing-tool",
   "unauthenticated",
@@ -157,7 +161,6 @@ export const make = Effect.gen(function* () {
     return yield* fail({
       status,
       reason: reasonForStatus(status),
-      // GitCafe's own explanation is what the user acts on; it is kept short and single-line.
       detail:
         boundedProblemText(problem?.detail ?? problem?.title) ?? `GitCafe answered HTTP ${status}.`,
     });

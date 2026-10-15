@@ -52,7 +52,11 @@ export function decodeIncomingShareDraft(value: unknown): IncomingShareDraft {
   return decodeIncomingShareDraftSync(value);
 }
 
-/** Treat iOS /var and /private/var symlink paths as one file; null for non-file URIs. */
+/**
+ * `file:` path with the iOS `/private` prefix stripped, so URIs that reach the
+ * same file through the `/var` symlink and through `/private/var` compare
+ * equal.
+ */
 function normalizedFileUriPath(uri: string): string | null {
   try {
     const url = new URL(uri);
@@ -60,8 +64,9 @@ function normalizedFileUriPath(uri: string): string | null {
       return null;
     }
     const path = decodeURIComponent(url.pathname);
-    // Encoded separators bypass URL normalization ("..%2F.." becomes "../..")
-    // and can escape a root accepted by lexical containment checks.
+    // URL parsing collapses literal ".." segments, but an encoded separator
+    // survives it: "..%2F.." decodes to "../..", which the filesystem would
+    // resolve outside the root the lexical containment check accepted.
     if (path.split("/").includes("..")) {
       return null;
     }
@@ -72,8 +77,11 @@ function normalizedFileUriPath(uri: string): string | null {
 }
 
 /**
- * Checks strict containment in app-owned roots. iOS open-in-place shares can
- * reference the sender's document, which cleanup must never delete.
+ * Whether a shared `file:` URI points strictly inside one of the directories
+ * this app owns (its sandbox and its share-extension App Group container).
+ * Share cleanup must never delete anything else: an iOS open-in-place share
+ * hands over the sender's own file URL, and deleting it destroys the user's
+ * document.
  */
 export function isShareFileUriUnderOwnedRoots(
   uri: string,
@@ -231,9 +239,7 @@ function fallbackName(uri: string, index: number, mimeType: string): string {
     if (pathName) {
       return decodeURIComponent(pathName);
     }
-  } catch {
-    // Fall through to a deterministic attachment name.
-  }
+  } catch {}
   const family = mimeType.split("/")[0]?.toLowerCase();
   const kind = family === "image" || family === "audio" || family === "video" ? family : "file";
   const extension =
@@ -286,7 +292,8 @@ export async function buildIncomingShareDraft(input: {
       (payload.shareType === "image" ? "image/png" : "application/octet-stream")
     ).toLowerCase();
     if (payload.shareType !== "image") {
-      // Guard blank native display names because they violate the attachment name contract.
+      // The patched native module never emits a blank display name, but keep
+      // the guard: an empty name would fail the attachment name contract.
       const sharedFileName =
         typeof payload.originalName === "string" && payload.originalName.trim().length > 0
           ? payload.originalName
@@ -330,8 +337,9 @@ export async function buildIncomingShareDraft(input: {
         }
         if (persistedFileUri === undefined && input.fileReader.persistFile) {
           persistedFileUri = await input.fileReader.persistFile(uri, name);
-          // Android content sources can misreport size; record the stored copy's
-          // measured size because that is what uploads.
+          // An Android content: source can misreport its size while the stored
+          // copy is what uploads, so the copy's measured size is what the
+          // attachment must record.
           const storedSize = (await input.fileReader.readSize?.(persistedFileUri)) ?? null;
           if (storedSize !== null) {
             sizeBytes = storedSize;
@@ -358,7 +366,8 @@ export async function buildIncomingShareDraft(input: {
         retainedFileUri = persistedFileUri ?? uri;
       } catch (error) {
         warnings.push(error instanceof Error ? error.message : `Could not read '${name}'.`);
-        // Release unreferenced persisted copies to avoid leaking attachment files.
+        // A copy persisted before the failure has no attachment referencing
+        // it; release it or it leaks in the app's attachment directory.
         if (persistedFileUri !== undefined) {
           await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
         }

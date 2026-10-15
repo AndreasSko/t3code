@@ -6,14 +6,14 @@ export interface AssignableProject {
   readonly repositoryIdentity?: { readonly canonicalKey?: string | undefined } | null | undefined;
 }
 
-/** Canonical remote keys identify repositories across machines; case folding
- * also guards keys assembled outside normalizeGitRemoteUrl. */
 function repositoryKey(project: AssignableProject): string | undefined {
   return project.repositoryIdentity?.canonicalKey?.toLowerCase();
 }
 
-/** Deduplicate known repository copies; projects without identity cannot
- * be proven duplicates and must retain their rows. */
+/**
+ * A project with no identity is never de-duplicated: nothing proves it is a copy of anything, and
+ * dropping it would lose its rows outright.
+ */
 export function assignProjectsToEnvironments(
   projects: ReadonlyArray<AssignableProject>,
   environmentIds: ReadonlyArray<EnvironmentId>,
@@ -59,8 +59,11 @@ export interface PickableEnvironment {
   readonly machine?: EnvironmentMachineKind;
 }
 
-/** Listing chooses one repository copy, but acting may target any server
- * holding it. Return no choices until multiple matching environments are known. */
+/**
+ * Listing picks a single server per repository so each pull request appears once; acting is a
+ * different question. Checking the branch out, or handing it to a thread, happens wherever the
+ * reader means to work — and the copy the listing happened not to pick is just as real.
+ */
 export function resolvePickableEnvironments(
   current: { readonly environmentId: EnvironmentId; readonly projectId: ProjectId },
   projects: ReadonlyArray<AssignableProject & { readonly workspaceRoot: string }>,
@@ -81,7 +84,8 @@ export function resolvePickableEnvironments(
   if (own === undefined || !key || ownEnvironment === undefined) return [];
   const others = environments.flatMap((environment) => {
     if (environment.environmentId === current.environmentId) return [];
-    // The choice is a server, not a worktree; use its first matching repository copy.
+    // One entry per server, whichever copy comes first: a server holding two worktrees of the
+    // repository is still one place to act, and what is being picked here is the server.
     const copy = projects.find(
       (project) =>
         project.environmentId === environment.environmentId && repositoryKey(project) === key,

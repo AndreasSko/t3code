@@ -236,6 +236,7 @@ export function createPhoneViewer(options: {
         phone.setDisplay(texture, next);
         previous.dispose();
       }
+      // Learn the inner display shape from any unfolded frame, including before fold mode.
       const frameAspect = rawAspect();
       const innerChanged = isFoldInnerAspect(frameAspect) && frameAspect !== foldAspect;
       if (innerChanged) foldAspect = frameAspect;

@@ -179,8 +179,9 @@ function normalizeSchemaKeywords(value: Schema.Json): Schema.Json {
     normalizeSchemaKeywords(child),
   ]);
   const normalizedObject = Object.fromEntries(normalizedEntries) as Record<string, Schema.Json>;
-  // Effect's generator lacks not; use a string pattern for ACP's exclusion
-  // of known discriminators while preserving known-variant validation.
+  // ACP's forward-compatible variants exclude known discriminator values.
+  // The Effect generator does not support `not`; express this exact exclusion
+  // as a string pattern while preserving validation of the known variants.
   if (normalizedObject.not !== undefined) {
     const exclusion = normalizedObject.not;
     if (
@@ -307,7 +308,8 @@ const isAnnotationKeyword = (key: string): boolean =>
   ["description", "title", "$comment", "default", "examples", "discriminator"].includes(key) ||
   key.startsWith("x-");
 
-// Effect needs intersections distributed over unions to decode ACP's sibling properties/anyOf and allOf elicitation scopes.
+// Distribute object intersections over unions before handing schemas to Effect.
+// ACP uses sibling `properties`/`anyOf` and `allOf` references for elicitation scopes.
 function flattenCompositions(
   value: Schema.Json,
   definitions: Readonly<Record<string, Schema.Json>>,

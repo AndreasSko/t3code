@@ -1,6 +1,15 @@
 /**
- * Android's intrinsic layout pass overlaps shrink-to-fit bubble content; these blocks need a fixed width.
- * A four-space ordered marker counts as a nested list only after a less-indented list item.
+ * Fenced code blocks and tables report an intrinsic width equal to their widest
+ * line, which is effectively unbounded. A user bubble sizes itself from its
+ * content (`maxWidth` with no `width`), so Android lays the bubble's children
+ * out during the unclamped intrinsic pass — where the surrounding paragraphs
+ * collapse to a single line — and never repositions them once the width is
+ * clamped back to `maxWidth`. Pinning the bubble's width removes the intrinsic
+ * pass entirely, which is the same reason review-comment bubbles already carry
+ * an explicit width.
+ *
+ * Ordered lists hit the same Android layout bug because each item contains a
+ * flexing content column inside a shrink-to-fit row.
  */
 
 const FENCED_CODE_BLOCK = /^ {0,3}(?:```|~~~)/m;

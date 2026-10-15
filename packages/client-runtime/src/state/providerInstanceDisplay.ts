@@ -5,7 +5,6 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 
-// Split separators and camelCase so custom instance slugs read as labels.
 function humanizeSlug(slug: string): string {
   return slug
     .replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -14,7 +13,11 @@ function humanizeSlug(slug: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-/** Prefer explicit instance names; humanize non-default ids when the server supplies only a shared brand. */
+/**
+ * For non-default instances, a humanized `instanceId` — the server fell back to the driver-level
+ * label (the same for every instance of that kind), so the slug is what keeps "Codex" and "Codex
+ * Personal" apart.
+ */
 export function resolveProviderInstanceDisplayName(
   snapshot: Pick<ServerProvider, "instanceId" | "driver" | "displayName">,
 ): string {
@@ -28,7 +31,6 @@ export function resolveProviderInstanceDisplayName(
   return trimmedSnapshotName || kindLabel;
 }
 
-/** Uses code points so initials never split an emoji into surrogate halves. */
 export function providerInstanceInitials(label: string): string {
   const words = label.replace(/[_-]+/g, " ").split(/\s+/u).filter(Boolean);
   if (words.length === 0) return "";
@@ -39,14 +41,15 @@ export function providerInstanceInitials(label: string): string {
     .join("");
 }
 
-/** Only `#rrggbb` accent colors render; anything else is treated as unset. */
 export function normalizeProviderAccentColor(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   return /^#[0-9a-fA-F]{6}$/u.test(trimmed) ? trimmed : undefined;
 }
 
-/** Badge shared-provider instances or accent colors; ACP agents already have distinct glyphs. */
+/**
+ * ACP agents have distinct glyphs even though they share the registry driver.
+ */
 export function shouldShowInstanceBadge(
   entry: {
     readonly driverKind: ProviderDriverKind;

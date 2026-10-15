@@ -15,7 +15,10 @@ import { redactedPlaceholder } from "./RedactedSensitiveText";
 /** Sentinel select value for "follow gh's active login"; logins never contain spaces. */
 const ACTIVE_ACCOUNT = "active gh account";
 
-/** Use plain text so redacted logins can appear inside select options. */
+/**
+ * Plain text, not a button, so it can sit inside select options; one panel toggle
+ * reveals every login.
+ */
 function RedactedLogin(props: {
   readonly account: string;
   readonly revealed: boolean;
@@ -34,7 +37,6 @@ function RedactedLogin(props: {
   );
 }
 
-/** Per-host account choices save immediately on this environment. */
 export function GitHubAccountSettings({
   environmentId,
   auth,

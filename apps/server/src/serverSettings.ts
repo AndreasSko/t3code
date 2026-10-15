@@ -67,13 +67,18 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-/** Normalize duplicate enable flags on load and update; either false must preserve the user's disable. */
+/**
+ * Old settings files can hold both flags with conflicting values; an explicit false on either
+ * side wins so a user's disable is never silently undone.
+ */
 const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSettings => {
   let changed = false;
   const providerInstances: Record<string, ProviderInstanceConfig> = {};
   for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
     const config = instance.config;
-    // Preserve malformed flags for driver schema validation rather than silently repairing them.
+    // Only fold boolean flags: a malformed `enabled` (e.g. `"false"`) must
+    // stay in the blob so driver schema validation flags it instead of the
+    // fold silently repairing the config.
     if (
       config === null ||
       typeof config !== "object" ||
@@ -190,7 +195,11 @@ export class ServerSettingsService extends Context.Service<
 
     readonly streamChanges: Stream.Stream<ServerSettings>;
 
-    /** Subscribe before reading a snapshot so changes cannot fall into a lazily started stream's gap. */
+    /**
+     * Acquire a settings change subscription synchronously in the current
+     * fiber. Use this before reading a snapshot when changes between the
+     * snapshot and a lazily started stream must not be lost.
+     */
     readonly subscribeChanges: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
   }
 >()("t3/serverSettings/ServerSettingsService") {
@@ -304,7 +313,6 @@ const LEGACY_BITBUCKET_SECRET_NAMES: Readonly<Record<string, string>> = {
 const legacyGitHubTokenSecretName = (host: string) =>
   `github-token-${Buffer.from(host.trim().toLowerCase(), "utf8").toString("base64url")}`;
 
-/** Existing host entries win; returns credential renames for the caller to copy before removing old keys. */
 function migrateLegacySourceControlSettings(
   settings: ServerSettings,
   legacy: {
@@ -346,10 +354,6 @@ const HISTORY_RESTORED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
   ["cursor", "grok", "opencode"].map((driver) => ProviderDriverKind.make(driver)),
 );
 
-/**
- * Explicit instances win over migrated defaults; discard uncustomized blobs.
- * Restore implicit opt-ins from provider history only while the legacy map remains.
- */
 function migrateLegacyProviderSettings(
   settings: ServerSettings,
   legacyProviders: Readonly<Record<string, unknown>>,
@@ -499,7 +503,9 @@ interface LegacyProjectSettingsRow {
   readonly scripts: string;
 }
 
-/** Existing override keys win; projectSettingsFolded prevents UI resets from being undone on restart. */
+/**
+ * Marked with `projectSettingsFolded` so a later reset in the UI survives restarts.
+ */
 function foldLegacyProjectSettings(
   settings: ServerSettings,
   rows: ReadonlyArray<LegacyProjectSettingsRow>,
@@ -532,7 +538,8 @@ function foldLegacyProjectSettings(
   for (const [projectId, value] of Object.entries(settings.projectAutoPullOverrides)) {
     set(projectId, "defaultAutoPull", value);
   }
-  // A legacy null means inheritance; do not resurrect the project's aggregate scripts.
+  // A stored null meant "reset to machine defaults", which is now plain
+  // inheritance; the project's own aggregate scripts must not resurface.
   const resetScripts = new Set<string>();
   for (const [projectId, value] of Object.entries(settings.projectScriptOverrides)) {
     if (value === null) resetScripts.add(projectId);
@@ -626,7 +633,10 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  /** Failed credential moves remain usable and retry next load; client redaction is independent of migration. */
+  /**
+   * Failed moves stay usable from the file and are retried next time; client redaction does not
+   * depend on migration.
+   */
   const moveInlineSettingsSecrets = (settings: ServerSettings) =>
     Effect.gen(function* () {
       const pending: SettingsSecret[] = [];
@@ -749,7 +759,9 @@ const make = Effect.gen(function* () {
     const folded = settingsFileTrusted
       ? foldLegacyProjectSettings(loaded, legacyProjectRows)
       : loaded;
-    // Keep legacy keys until copied secrets and settings are durable so failures can retry without losing tokens.
+    // Copied, not moved: the old entry is removed only after the new file is written. A token
+    // that cannot be read or copied leaves the retired keys in place, so the migration runs again
+    // on the next load instead of dropping it.
     const legacySecretsCopied = yield* Effect.forEach(
       settingsFileTrusted
         ? migrateLegacySourceControlSettings(folded, legacySourceControl).secretMoves
@@ -1078,7 +1090,9 @@ const make = Effect.gen(function* () {
 
     const revalidateAndEmitSafely = revalidateAndEmit.pipe(Effect.ignoreCause({ log: true }));
 
-    // Atomic rewrites occur in the symlink target's directory; re-resolve it so repointing the link moves the watch.
+    // A symlinked settings file is rewritten in its destination's directory,
+    // which a watch on the link's directory never sees. The link is resolved
+    // again whenever it changes, so repointing it moves the watch along.
     const watchLinkTarget = Effect.gen(function* () {
       const linkTargetPath = yield* resolveSymlinkTarget(settingsPath).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
@@ -1106,7 +1120,9 @@ const make = Effect.gen(function* () {
       ),
     );
 
-    // Editors emit several events per save, and fs.watch can fire before content is flushed.
+    // Debounce watch events so the file is fully written before we read it.
+    // Editors emit multiple events per save (truncate, write, rename) and
+    // `fs.watch` can fire before the content has been flushed to disk.
     const debouncedSettingsEvents = Stream.merge(
       watchFileChanges(settingsPath),
       linkTargetEvents,

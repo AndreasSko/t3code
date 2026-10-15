@@ -23,7 +23,6 @@ function errorMessage(error: unknown): string {
     : "An error occurred.";
 }
 
-/** Create the project and open its draft; optional private publication runs without delaying the draft. */
 export function useNewProject() {
   const createNew = useAtomCommand(projectEnvironment.createNew, { reportFailure: false });
   const publishRepository = useAtomCommand(sourceControlEnvironment.publishRepository, {
@@ -94,7 +93,6 @@ export function useNewProject() {
       }
 
       const { projectId, workspaceRoot, commitError } = result.value;
-      // The folder sits in T3 Code's data directory, so always say where.
       toastManager.add(
         stackedThreadToast(
           commitError === undefined

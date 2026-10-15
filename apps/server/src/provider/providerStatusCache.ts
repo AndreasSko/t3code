@@ -20,7 +20,9 @@ const mergeProviderModels = (
   cachedModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const fallbackSlugs = new Set(fallbackModels.map((model) => model.slug));
-  // Current settings already carry custom models; cached custom rows must not resurrect removed entries.
+  // The fallback snapshot is built from current settings and already carries
+  // every custom model, so cached custom rows that are not in it were removed
+  // while the cache was stale and must not come back.
   return [
     ...fallbackModels,
     ...cachedModels.filter((model) => !model.isCustom && !fallbackSlugs.has(model.slug)),
@@ -92,7 +94,10 @@ export const hydrateCachedProvider = (input: {
     : hydratedProvider;
 };
 
-/** Hydration must check instance and driver identity; the filename alone is not a trusted routing key. */
+/**
+ * Cache contents must still carry matching `instanceId` + `driver` identity
+ * before hydration. The filename alone is not trusted as a routing key.
+ */
 export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCachePath")(
   function* (input: {
     readonly cacheDir: string;

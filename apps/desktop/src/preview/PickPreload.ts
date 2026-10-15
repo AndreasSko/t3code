@@ -187,7 +187,6 @@ const reportHumanKeyInput = (event: KeyboardEvent): void => {
 window.addEventListener("pointerdown", reportHumanPointerInput, true);
 window.addEventListener("keydown", reportHumanKeyInput, true);
 
-// Mouse thumb buttons: `button === 3` is Back, `button === 4` is Forward.
 const MOUSE_BUTTON_BACK = 3;
 const MOUSE_BUTTON_FORWARD = 4;
 
@@ -197,7 +196,11 @@ const navigationDirectionForButton = (button: number): "back" | "forward" | null
   return null;
 };
 
-// Chromium sends thumb-button navigation to focused WebContents; override it so the guest under the pointer navigates.
+// Chromium routes thumb-button history navigation to the *focused* WebContents,
+// so hovering this guest without focusing it sends the host app's router back
+// instead of the preview. Suppress Chromium's default here and drive this tab's
+// history explicitly so the buttons always navigate the browser the pointer is
+// over — never the host app.
 const suppressNavigationButton = (event: MouseEvent): void => {
   if (!event.isTrusted || navigationDirectionForButton(event.button) === null) return;
   event.preventDefault();
@@ -321,7 +324,6 @@ function positionBox(node: HTMLElement, rect: PreviewAnnotationRect): void {
   node.style.height = `${rect.height}px`;
 }
 
-/** Clamps a box to the viewport and clipping ancestors, so its border is never painted off-screen. */
 function visibleElementRect(element: Element): PreviewAnnotationRect {
   const rect = element.getBoundingClientRect();
   let left = Math.max(0, rect.left);
@@ -394,7 +396,11 @@ function toStackFrame(frame: {
   };
 }
 
-/** Some pages leave getElementContext pending forever; bound it so submit resolves to a DOM-only fallback. */
+/**
+ * `getElementContext` walks the inspected page's React internals, and some pages leave it
+ * pending forever. Without a bound, the whole submit chain stalls and the overlay sits on
+ * "Capturing…".
+ */
 function withCaptureTimeout<A>(promise: Promise<A>, millis: number): Promise<A | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
@@ -405,10 +411,13 @@ function withCaptureTimeout<A>(promise: Promise<A>, millis: number): Promise<A |
   ]).finally(() => clearTimeout(timer));
 }
 
-/** Truncation for the DOM-only preview used when React context is unavailable. */
 const HTML_PREVIEW_MAX_CHARS = 500;
 
-/** Keep the element's DOM data and rect when React context fails so annotation cropping stays on the selection. */
+/**
+ * The React context lookup can stall or throw on some pages, so the element is never dropped:
+ * without context it still carries its tag, a short HTML preview, and its rect so the crop
+ * stays on the pick instead of falling back to the whole viewport.
+ */
 async function captureElement(element: Element): Promise<PickedElementPayload> {
   const base = {
     pageUrl: location.href,
@@ -1384,7 +1393,9 @@ function startAnnotation(sendEnabled: boolean): void {
     pendingCapture = true;
     submit.disabled = true;
     submit.textContent = "Capturing…";
-    // Freeze submitted values before React lookup awaits; edits during capture must not change the annotation.
+    // Snapshot everything the annotation will carry before the capture runs.
+    // The element context lookup can take up to its timeout, and the user can
+    // keep editing meanwhile; the annotation must describe what they submitted.
     const submittedComment = comment.value.trim();
     const submittedRegions = [...regions];
     const submittedStrokes = [...strokes];
@@ -1438,7 +1449,8 @@ function startAnnotation(sendEnabled: boolean): void {
         );
       })
       .catch(() => {
-        // Settle with an empty pick on unexpected failure so main's promise and the capture button cannot remain pending.
+        // Last resort. Main is waiting on this message, so hand it an empty pick rather than
+        // leaving the button stuck on "Capturing…" and the renderer's pick promise pending.
         teardown(true);
       });
   };

@@ -26,7 +26,11 @@ import {
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-/** Fetch only when the popup opens to avoid one detail request per resting listing row. */
+/**
+ * Mounted by the popup, so the read starts when somebody opens it rather than once per row of a
+ * listing — the detail read is a request per pull request, and a page of them at rest would be a
+ * hundred.
+ */
 function LazyChecksBody({
   environmentId,
   reference,
@@ -118,8 +122,10 @@ function ChecksBody({
   );
 }
 
-/** Passing checks avoids a detail read; otherwise supply environment and
- * reference so the popup can fetch checks when opened. */
+/**
+ * `checks` decides between the two. Given them, nothing is read; without them, the popup reads
+ * the detail itself, which is why the row must also say which environment it came from.
+ */
 export function PullRequestChecksPopover({
   checksState,
   checks,
@@ -132,12 +138,10 @@ export function PullRequestChecksPopover({
   render,
 }: {
   checksState: PullRequestChecksState;
-  /** The checks already in hand, for the detail header. Absent on a listing row. */
   checks?: ReadonlyArray<PullRequestCheck>;
   stale?: boolean;
   environmentId?: EnvironmentId;
   reference?: PullRequestRef;
-  /** Thread the popover sits beside; a listing row has none. */
   threadRef?: ScopedThreadRef | null;
   variant?: "icon" | "count";
   className?: string;
@@ -151,7 +155,9 @@ export function PullRequestChecksPopover({
   const summary = checks === undefined || stale ? null : summarizePullRequestChecks(checks);
   return (
     <Popover>
-      {/* Listing rows are buttons, so use a span trigger and stop clicks from selecting the row. */}
+      {/* A listing row is itself a button, so the trigger renders as a span: a nested button is
+          not valid inside one. The click is stopped here so opening the checks does not also
+          select the row it sits on. */}
       <PopoverTrigger
         nativeButton={variant === "count"}
         aria-label={

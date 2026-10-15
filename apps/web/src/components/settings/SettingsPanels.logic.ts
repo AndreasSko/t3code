@@ -86,7 +86,6 @@ type TypographySettings = Pick<
   | "fontSizeTerminal"
 >;
 
-/** Labels the font rows whose family or size differs from the defaults. */
 export function getChangedTypographySettingLabels(settings: TypographySettings): string[] {
   return [
     ...(settings.fontFamilySans !== DEFAULT_UNIFIED_SETTINGS.fontFamilySans ||
@@ -120,8 +119,11 @@ export type BrowserDefaultSettings = Pick<
   | "browserAutoShowFloatingPreview"
 >;
 
-/** Compare viewport values structurally; tagged-union identity marks even
- * a stored default viewport as changed. */
+/**
+ * The setting is a tagged union rather than a scalar, so identity comparison
+ * reports every stored viewport as changed — including one that matches the
+ * default.
+ */
 function isSamePreviewViewport(
   left: PreviewViewportSetting,
   right: PreviewViewportSetting,
@@ -134,7 +136,6 @@ function isSamePreviewViewport(
     : true;
 }
 
-/** Labels the browser-default rows that differ from the defaults. */
 export function getChangedBrowserSettingLabels(settings: BrowserDefaultSettings): string[] {
   return [
     ...(isSamePreviewViewport(

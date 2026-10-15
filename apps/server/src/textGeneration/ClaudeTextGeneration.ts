@@ -45,10 +45,15 @@ const CLAUDE_INVESTIGATION_ALLOWED = [
   "Bash(git log:*)",
   "Bash(git show:*)",
 ].join(",");
-/** Deny rules override allowed git commands' arbitrary arguments so --output cannot write files. */
+/**
+ * The allowed git commands accept any trailing arguments, and `--output` makes each of them write
+ * a file anywhere. Deny rules win over allow rules, so this keeps the investigation read-only.
+ */
 const CLAUDE_INVESTIGATION_DENIED = ["Bash(git * --output*)", "Bash(git * -o *)"].join(",");
 
-/** Verbose Claude output wraps the result in an array of conversation messages. */
+/**
+ * Verbose mode wraps the result in an array of conversation messages.
+ */
 const ClaudeOutputEnvelope = Schema.Struct({
   structured_output: Schema.Unknown,
 });
@@ -207,8 +212,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           ...(cliEffort ? ["--effort", cliEffort] : []),
           "--settings",
           settingsJson,
-          // Metadata needs no tools, even for skill names. Investigations use dontAsk
-          // with read-only allow rules so every other executable call is refused.
+          // Metadata prompts need no executable capabilities, even when they contain a skill name.
           ...(investigate
             ? [
                 "--tools",

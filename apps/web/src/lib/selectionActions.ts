@@ -26,8 +26,8 @@ export function resolveSelectionActionPosition(options: {
 }
 
 /**
- * Observe DOM or canvas selection changes after release; delay for multi-clicks. Pass getActionElement for
- * popovers so editing their fields preserves the captured source selection.
+ * Opens selection actions after release, leaving multi-clicks time to finish. Interactive popovers
+ * pass getActionElement to keep editing their fields from replacing the captured source selection.
  */
 export function observeSelectionActions({
   element,

@@ -28,7 +28,7 @@ import { isGitImport, parseTurnDiffFilesFromNumstat, type TurnDiffFileSummary } 
 // Windows limits a command line to 32,767 characters. Leave room for the rest of git's arguments.
 const MAX_PATHSPEC_CHARS = 24_000;
 
-/** Keep rename pairs in the same command-line-sized pathspec batch. */
+/** Splits files into pathspec lists that each fit on one git command line. Renames keep both paths together. */
 function batchFilePaths(files: ReadonlyArray<TurnDiffFileSummary>) {
   const batches: string[][] = [];
   let batch: string[] = [];
@@ -52,12 +52,10 @@ function batchFilePaths(files: ReadonlyArray<TurnDiffFileSummary>) {
 export class CheckpointDiffQuery extends Context.Service<
   CheckpointDiffQuery,
   {
-    /** Verify checkpoint availability in both projection state and filesystem. */
     readonly getTurnDiff: (
       input: OrchestrationGetTurnDiffInput,
     ) => Effect.Effect<OrchestrationGetTurnDiffResultType, CheckpointServiceError>;
 
-    /** Uses turn-diff semantics with fromTurnCount = 0. */
     readonly getFullThreadDiff: (
       input: OrchestrationGetFullThreadDiffInput,
     ) => Effect.Effect<OrchestrationGetFullThreadDiffResult, CheckpointServiceError>;

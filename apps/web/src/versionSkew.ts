@@ -46,8 +46,13 @@ function versionCore(version: string): string {
   return version.replace(/[-+].*$/, "");
 }
 
-/** Compares full nightly versions, otherwise semver cores; only older servers need an update.
- * Unparseable versions fall back to string inequality. */
+/**
+ * Two nightly builds compare their full versions, including the date and run.
+ * Other combinations compare their core `major.minor.patch` only, so a stable
+ * build and a nightly build with the same core do not cause an update warning.
+ * A server ahead of the client does not need an update. Versions that do not
+ * parse as semver fall back to plain string inequality.
+ */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
   clientVersion: string = APP_VERSION,

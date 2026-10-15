@@ -28,7 +28,6 @@ type FontEnumerationState =
   | { readonly status: "granted"; readonly families: readonly string[] }
   | { readonly status: "unavailable" };
 
-// Share enumeration and permission outcomes across rows to avoid repeated discovery.
 let enumerationState: FontEnumerationState = supportsFontEnumeration()
   ? { status: "unknown" }
   : { status: "unavailable" };
@@ -60,8 +59,13 @@ export function discoverInstalledFonts(): void {
 
 let grantedProbeStarted = false;
 
-/** Already-granted font access needs no gesture, including Electron silent
- * approval; prompt and denied states retain gesture-driven discovery. */
+/**
+ * Electron's default permission handler approves silently (it has no prompt
+ * UI), and a browser that granted once reports "granted" on later visits — in
+ * both, no user gesture is needed. "prompt" and "denied" states change nothing:
+ * the focus-driven flow stays, because raising the browser prompt still
+ * requires a gesture.
+ */
 function probeAlreadyGrantedPermission(): void {
   if (grantedProbeStarted || enumerationState.status !== "unknown") return;
   grantedProbeStarted = true;
@@ -78,8 +82,6 @@ function probeAlreadyGrantedPermission(): void {
   );
 }
 
-/** Render plain input until Local Font Access grants enumeration; granted
- * permission starts discovery on mount without waiting for focus. */
 export function useFontEnumeration(): FontEnumerationState {
   useEffect(probeAlreadyGrantedPermission, []);
   return useSyncExternalStore(subscribeToEnumeration, readEnumerationState);
@@ -94,22 +96,23 @@ export function FontFamilyPicker({
   onSelect,
 }: {
   ariaLabel: string;
-  /** What an unset preference renders as, e.g. "Menlo". */
   defaultFamily: string;
   /** Committed family name; empty string means the default is in use. */
   selectedFamily: string;
   requireMonospace?: boolean;
-  /** Open the popup on mount — set when the control upgrades under focus. */
   initialOpen?: boolean;
   onSelect: (family: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  // Mounting open skips Base UI entrance styles, so closing has no transitionend
-  // and leaves the popup stuck; open only after mount.
+  // Open after mount rather than mounting open: a popup that first renders in
+  // its open state never receives Base UI's entrance style baseline, so the
+  // exit transition on close has no style delta, never fires transitionend,
+  // and the popup lingers on screen forever.
   useEffect(() => {
     if (initialOpen) setOpen(true);
-    // initialOpen is mount-only so later prop changes cannot reopen the popup.
+    // The prop is only meaningful at mount - the control just swapped in
+    // under an active focus - so later changes are deliberately ignored.
   }, []);
   const listRef = useRef<LegendListRef | null>(null);
   const enumeration = useFontEnumeration();

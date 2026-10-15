@@ -17,7 +17,11 @@ import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
 
-/** Spawn ssh directly: cmd.exe would re-tokenize identity-file paths containing spaces. */
+/**
+ * ssh is a real executable everywhere (`ssh.exe` on Windows), so it is always
+ * spawned directly — cmd.exe shell mode would re-tokenize arguments such as
+ * identity-file paths containing spaces.
+ */
 const sshCommandForPlatform = (platform: NodeJS.Platform): string =>
   platform === "win32" ? "ssh.exe" : "ssh";
 
@@ -68,7 +72,6 @@ export function targetConnectionKey(target: DesktopSshEnvironmentTarget): string
   return `${target.alias}\u0000${target.hostname}\u0000${target.username ?? ""}\u0000${target.port ?? ""}`;
 }
 
-/** Names the remote state directory for a target: the first 16 hex chars of its SHA-256 key. */
 export const remoteStateKey = Effect.fn("ssh/command.remoteStateKey")(function* (
   target: DesktopSshEnvironmentTarget,
 ): Effect.fn.Return<string, never, Crypto.Crypto> {

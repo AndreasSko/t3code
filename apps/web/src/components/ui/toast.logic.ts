@@ -1,6 +1,10 @@
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
-/** Base UI ignores undefined updates; clear actions with defined actionProps containing empty children. */
+/**
+ * Base UI toast updates omit `undefined` fields, so callers that need to remove
+ * an action must pass a defined `actionProps` whose `children` are empty.
+ * Treat that payload (and missing children) as "no visible action".
+ */
 export function hasVisibleToastAction(actionProps: unknown): boolean {
   if (actionProps == null || typeof actionProps !== "object") {
     return false;
@@ -44,8 +48,14 @@ export function buildVisibleToastLayout<TToast extends object>(
   frontmostHeight: number;
   items: VisibleToastLayoutItem<TToast & ToastWithLayoutProps>[];
 } {
-  // Ending toasts retain their old slots for exit transforms; live toasts reflow past those slots
-  // immediately.
+  //   - `full*`  advances on every toast, so an ending toast keeps the slot it
+  //     occupied before dismissal and its data-ending-style exit transform
+  //     originates from the correct position (critical for dismissing a
+  //     non-front toast in the expanded stack — otherwise it would snap to
+  //     Y=0 and slide off diagonally).
+  //   - `live*`  advances only on non-ending toasts, so live toasts reflow
+  //     past the vacated slot in parallel with the exit animation instead of
+  //     waiting for it to finish (which caused a visible "stop and bump").
   let fullIndex = 0;
   let fullOffsetY = 0;
   let liveIndex = 0;

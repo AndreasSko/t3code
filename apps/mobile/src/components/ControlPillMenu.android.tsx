@@ -4,7 +4,9 @@ import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import type { ControlPillMenuProps } from "./ControlPillMenu.types";
 
 export function ControlPillMenu(props: ControlPillMenuProps) {
-  // Inject long-press into the child so its tap handling still works.
+  // Long-press menus keep their child interactive: the child element gets
+  // an injected onLongPress (mirroring the iOS context-menu interaction)
+  // so its own tap handling still works.
   if (props.shouldOpenOnLongPress && isValidElement(props.children)) {
     const child = props.children as ReactElement<{ onLongPress?: () => void }>;
     return (

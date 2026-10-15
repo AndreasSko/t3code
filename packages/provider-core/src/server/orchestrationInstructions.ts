@@ -94,8 +94,7 @@ export function t3AcpPromptWithInstructions(input: {
 }
 
 /**
- * Use an explicit wrapper when the provider lacks an instruction channel
- * so T3-owned context cannot be mistaken for the user's words.
+ * Keep the wrapper explicit so it cannot be mistaken for text authored by the user.
  */
 function prependT3OrchestrationInstructions(prompt: string): string {
   return `<t3_code_orchestration_instructions>${T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;

@@ -68,7 +68,6 @@ export interface Preferences {
   readonly collapsedProjectGroups?: readonly string[];
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
-  /** Whether a message sent during a running turn queues behind it or steers it. */
   readonly followUpBehavior?: FollowUpBehavior;
   /** Microphone kinds and remembered devices, most preferred first. iOS only. */
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
@@ -82,7 +81,6 @@ export interface Preferences {
     readonly provider: ProviderInstanceId;
     readonly model: string;
   }>;
-  /** Fresh keys reset both shelves to collapsed when users update. */
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListWorkingShelfExpanded?: boolean;

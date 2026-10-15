@@ -11,14 +11,14 @@ import {
 } from "./threadHistoryPaging.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
 
-/** Maximum number of reducer applications allowed during a thread resume. */
 export const THREAD_RESUME_MAX_REPLAY_EVENTS = 128;
 
-/** Maximum encoded event JSON allowed during a thread resume. */
 export const THREAD_RESUME_MAX_REPLAY_ENCODED_BYTES = 1_048_576;
 
-// Decoded objects and temporary strings cost more than stored JSON,
-// even when wire projection shrinks the payload later.
+/**
+ * Keep the original preflight budget: decoded objects and temporary strings
+ * cost more than their stored JSON, even if wire projection shrinks them later.
+ */
 export const THREAD_RESUME_MAX_RAW_PAYLOAD_BYTES = 1_048_576;
 
 export function isThreadReplayRawPayloadSafe(rawPayloadBytes: number): boolean {
@@ -39,7 +39,11 @@ type ThreadSnapshotStreamItem = Extract<
   { readonly kind: "snapshot" }
 >;
 
-/** Only opted-in clients receive compact turnItems and the bounded marker. */
+/**
+ * Bounded snapshot fields shared by the HTTP route and socket fallbacks. Only
+ * clients that opted in get compact `turnItems` and the marker; everyone else
+ * gets the unchanged representation.
+ */
 export function boundedSnapshotResponseFields(input: {
   readonly bounded: BoundedProjectionResult;
   readonly compactTurnItems: boolean;
@@ -86,8 +90,9 @@ export type ThreadResumePlan =
   | { readonly mode: "snapshot" };
 
 /**
- * Invalid cursors and large gaps need a fresh snapshot: event count bounds reducer churn,
- * while encoded bytes bound a few large updates.
+ * A client cursor above the high water mark is stale or invalid. Event count
+ * limits reducer churn while encoded bytes limit a small number of large
+ * updates. Either excess is cheaper to replace with one current snapshot.
  */
 export function decideThreadResume(input: {
   readonly afterSequence: number;

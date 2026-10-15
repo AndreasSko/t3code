@@ -1,4 +1,3 @@
-/** Read the first conventional single template, or a directory's sole Markdown template, from committed base. */
 import type { GitCommandError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

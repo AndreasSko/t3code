@@ -20,27 +20,30 @@ const ALL_MCP_CAPABILITIES = [
 ] as const;
 export type McpCapability = (typeof ALL_MCP_CAPABILITIES)[number];
 
-/** A provider session T3 Code launched for one thread. */
 export interface McpThreadCaller {
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
 }
 
-/** An agent T3 Code did not launch, signed in through MCP OAuth. */
 export interface McpClientCaller {
   readonly sessionId: string;
   readonly label: string;
-  /** Read only, or the most the threads it starts or changes may run with. */
   readonly access: AuthMcpClientAccess;
 }
 
-/** Read-only clients are refused before writes, so map their unused ceiling to the lowest mode. */
+/**
+ * A read-only client never reaches a write (`McpToolAccess` refuses it first),
+ * so it maps to the lowest mode rather than to nothing.
+ */
 export const clientRuntimeModeCeiling = (client: McpClientCaller | undefined): RuntimeMode =>
   client === undefined || client.access === "read-only" ? "approval-required" : client.access;
 
-/** Parameters choose targets; caller scope limits access. Outside clients
- * have no calling thread and cannot use tools that act as the calling thread. */
+/**
+ * A thread caller's omitted target falls back to its own thread; a client
+ * caller has no own thread, so tools that act as the caller (delegate_task,
+ * preview, worktree handoff) need `thread`.
+ */
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
   readonly capabilities: ReadonlySet<McpCapability>;
@@ -86,13 +89,16 @@ export const requireMcpCapability = <const C extends McpCapability>(
   McpInvocationContext.pipe(
     Effect.filterOrFail(
       (invocation) => invocation.capabilities.has(capability),
-      // The conditional type narrows what the literal argument decided at runtime.
       (invocation) => missingCapability(invocation, capability) as McpCapabilityError<C>,
     ),
     Effect.withSpan("mcp.requireCapability"),
   );
 
-/** Preview/device capabilities require a thread caller because their resources are thread-owned. */
+/**
+ * Preview tabs and device sessions belong to the calling thread, so their
+ * capabilities are only ever granted to thread callers. A scope that carries
+ * one without a thread is refused the same way as a missing capability.
+ */
 export const requireThreadMcpCapability = <const C extends "preview" | "device">(
   capability: C,
 ): Effect.Effect<McpThreadInvocationScope, McpCapabilityError<C>, McpInvocationContext> =>
@@ -111,7 +117,6 @@ const threadCallerRequired = (operation: string) =>
     message: `${operation} acts as the calling T3 thread, so it needs an agent running inside T3 Code. This MCP client signed in from outside a thread.`,
   });
 
-/** A scope with a thread caller, for tools whose whole surface acts as the caller. */
 export type McpThreadInvocationScope = McpInvocationScope & { readonly thread: McpThreadCaller };
 
 export const requireThreadScope = (scope: McpInvocationScope, operation: string) =>

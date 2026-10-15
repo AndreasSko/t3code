@@ -16,7 +16,11 @@ export interface ThreadRowProviderInstance {
   readonly showBadge: boolean;
 }
 
-/** Default instance ids are driver slugs reused across servers; resolve against this thread's environment. */
+/**
+ * Resolve the provider instance a thread runs on, scoped to the thread's own
+ * environment: default instance ids are the driver slug, so the same id
+ * names a different account on every server.
+ */
 export function resolveThreadProviderInstance(
   providers: ReadonlyArray<ThreadListProvider> | undefined,
   thread: EnvironmentThreadShell,
@@ -39,7 +43,14 @@ export function resolveThreadProviderInstance(
   };
 }
 
-/** Cache per provider-list generation so fresh resolver objects do not invalidate memoized row props. */
+/**
+ * Builds a resolver handing out reference-stable `ThreadRowProviderInstance`
+ * objects. `resolveThreadProviderInstance` builds a fresh object per call,
+ * which breaks the memoized row's props comparison on every parent render —
+ * the result only depends on (environment, instance id), so one cache per
+ * provider-list generation keeps each row's `providerInstance` prop stable
+ * until the instance behind the row actually changes.
+ */
 export function createThreadRowProviderInstanceResolver(
   providersByEnvironmentId: ReadonlyMap<EnvironmentId, ReadonlyArray<ThreadListProvider>>,
 ): (thread: EnvironmentThreadShell) => ThreadRowProviderInstance | null {

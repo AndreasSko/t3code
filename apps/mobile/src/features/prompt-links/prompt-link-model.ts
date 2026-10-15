@@ -4,7 +4,10 @@ export const PROMPT_LINK_PARAM_KEYS = ["prompt", "repo", "pr", "provider", "mode
 
 type RouteParams = Readonly<Record<string, unknown>> | undefined;
 
-/** Adapts native route params for the shared URL parser; null without a prompt link. */
+/**
+ * Rebuilds the link's query from React Navigation route params, so the shared parser reads the
+ * same input on every surface.
+ */
 export function promptLinkSearchFromParams(
   params: RouteParams,
   keys: ReadonlyArray<string> = PROMPT_LINK_PARAM_KEYS,
@@ -48,10 +51,6 @@ export function linkedThreadDraftAction(currentText: string, prompt: string) {
   return currentText === prompt ? ("keep" as const) : ("ask" as const);
 }
 
-/**
- * The machine a prompt without a project opens on: the most recently active one that offers
- * threads without a project, else the first that does.
- */
 export function promptLinkScratchEnvironmentId<Id extends string>(
   environmentIdsMostRecentFirst: ReadonlyArray<Id>,
   scratchEnvironmentIds: ReadonlyArray<Id>,
@@ -63,7 +62,6 @@ export function promptLinkScratchEnvironmentId<Id extends string>(
   );
 }
 
-/** Each environment once, by its most recently updated thread first. */
 export function latestThreadEnvironmentIds<Id extends string>(
   threads: ReadonlyArray<{ readonly environmentId: Id; readonly updatedAt: string }>,
 ): ReadonlyArray<Id> {
@@ -78,6 +76,5 @@ export function latestThreadEnvironmentIds<Id extends string>(
   );
 }
 
-/** `owner/name`, as the user knows the repository. */
 export const promptLinkRepositoryName = (repository: PromptLinkRepository) =>
   `${repository.owner}/${repository.name}`;

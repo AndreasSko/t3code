@@ -1,7 +1,3 @@
-/**
- * Drivers and adapters must not import the server; this service supplies
- * host infrastructure through provider-core.
- */
 import type {
   BackgroundScope,
   ChatAttachment,
@@ -19,7 +15,6 @@ import type { ProviderCredentialError } from "./errors.ts";
 export interface ProviderHostPaths {
   /** Directory the server was started in; the fallback cwd for sessions without a project. */
   readonly cwd: string;
-  /** T3 home. */
   readonly baseDir: string;
   readonly stateDir: string;
   readonly providerStatusCacheDir: string;
@@ -51,11 +46,12 @@ export class ProviderHost extends Context.Service<
       /** Changes buffered from the moment the scoped subscription is acquired. */
       readonly subscribe: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
     };
-    /** Whether background work for `scope` should run now (client demand and host power). */
     readonly shouldRunBackgroundWork: (scope: BackgroundScope) => Effect.Effect<boolean>;
-    /** Null means the attachment id does not resolve inside the attachments directory. */
+    /**
+     * Absolute path of a stored chat attachment, or `null` when its id does not
+     * resolve inside the attachments directory.
+     */
     readonly resolveAttachmentPath: (attachment: ChatAttachment) => string | null;
-    /** The credentials stored for `bindingId`, usually an instance id, under a provider-chosen namespace. */
     readonly credentials: (
       namespace: string,
       bindingId: string,

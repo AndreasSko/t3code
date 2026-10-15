@@ -4,11 +4,14 @@ import type { PasskeyCeremonyResult } from "./PasskeyBridge.ts";
 export interface PasskeyCeremonyContext {
   /** The committed origin of the frame that asked; never the page's own claim. */
   readonly origin: string;
-  /** The window the system sheet attaches to. */
   readonly nativeWindowHandle: Buffer;
 }
 
-/** The bridge owns origin, focus, concurrency, deadlines, and navigation checks; backends only invoke the platform. */
+/**
+ * The bridge in `Passkeys.ts` owns everything platform-neutral: which frame may
+ * ask, focus, one ceremony at a time, the deadline, and dropping results for a
+ * page that navigated away.
+ */
 export interface PasskeyBackend {
   readonly create: (
     publicKey: PublicKeyCredentialCreationOptions,

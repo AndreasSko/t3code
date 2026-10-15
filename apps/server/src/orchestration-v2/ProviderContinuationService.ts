@@ -50,8 +50,6 @@ function delegatedCompletionRetryKey(
   return `${request.threadId}:${completion.parentRunId}:${completion.generation}:${completion.messageId}`;
 }
 
-// Delegated completions choose steering or queued delivery under the thread lock;
-// adapter-buffered continuations queue behind active work.
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const ids = yield* IdAllocator.IdAllocatorV2;
@@ -101,8 +99,6 @@ export const layer = Layer.effectDiscard(
           if (request.clearIfCurrent !== undefined) {
             yield* request.clearIfCurrent();
           } else if (request.dispatchIfCurrent !== undefined) {
-            // Backward compatibility for request producers without an explicit
-            // drop callback.
             yield* request.dispatchIfCurrent(Effect.void);
           }
           return;
@@ -139,8 +135,12 @@ export const layer = Layer.effectDiscard(
               },
             })
             .pipe(
-              // Results are already in parent history. If its instance was disabled,
-              // acknowledge tasks administratively so this delivery cannot retry or re-offer.
+              // The finalize that claimed this delivery already wrote the
+              // children's results to the parent's history unconditionally, so
+              // nothing is lost: acknowledge each task administratively
+              // (observedByRunId: null, the same shape task_status uses when no
+              // run observed it) to consume this delivery instead of leaving it
+              // open to retry.
               Effect.catchTags({
                 ThreadManagementProviderInstanceDisabledError: (error) =>
                   Effect.logInfo(
@@ -210,12 +210,18 @@ export const layer = Layer.effectDiscard(
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
           createdBy: "agent",
-          // Only buffered wakes use the provider marker, which tells Claude to consume
-          // buffered output; message_text would otherwise settle without sending its prompt.
+          // "provider" marks an adapter-buffered wake, which ClaudeAdapterV2
+          // detects to attach the buffered CLI output and drop this text. A
+          // message_text wake has no buffered output, so it must not carry that
+          // marker or the turn settles immediately having prompted nothing.
           creationSource: request.delivery === "message_text" ? "server" : "provider",
         });
-        // Catch outside dispatchIfCurrent so adapters see the raw failure before clearing.
-        // Also invoke the idempotent clear callback for adapters that do not self-clear.
+        // This catch sits outside dispatchIfCurrent so an adapter that clears
+        // its own sticky offer flag on dispatch failure (inside
+        // dispatchIfCurrent) observes the raw failure first. Not every adapter
+        // self-clears that way, so the explicit callback is called here too;
+        // clearIfCurrent implementations are idempotent, so a source that
+        // already cleared is unaffected.
         const logInstanceDisabled = (
           error: ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
         ) =>

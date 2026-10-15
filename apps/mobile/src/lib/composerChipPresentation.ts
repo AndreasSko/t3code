@@ -1,7 +1,10 @@
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
-/** Equal lightness keeps chip kinds balanced; these sRGB accents match the web OKLCH set in composerInlineChip.ts. */
+/**
+ * These are the sRGB form of the same OKLCH set web uses, so a chip looks the same on every
+ * surface. See `composerInlineChip.ts`.
+ */
 const CONTEXT_CHIP_PRESENTATIONS = {
   image: { accent: "#d55665", symbol: "photo" },
   video: { accent: "#d06217", symbol: "play.rectangle" },
@@ -15,7 +18,6 @@ const CONTEXT_CHIP_PRESENTATIONS = {
   skill: { accent: "#b261be", symbol: "cube" },
 } as const;
 
-/** Render as a separate size run without a separator; only attachment-backed records have bytes. */
 export function composerChipSizeSuffix(record?: {
   readonly kind?: string;
   readonly sizeBytes?: number;
@@ -51,7 +53,8 @@ export function contextChipPresentation(
       mimeType: record?.mimeType ?? "",
     })
       ? "video"
-      : // Images picked through Files need image chips despite their draft type file.
+      : // A picture chosen through the file picker is typed `file`, but it is still a
+        // picture: it reads as one to the user and should not wear the generic file chip.
         kind === "file" &&
           imageMimeType({ name: record?.name ?? "", mimeType: record?.mimeType ?? "" }) !== null
         ? "image"

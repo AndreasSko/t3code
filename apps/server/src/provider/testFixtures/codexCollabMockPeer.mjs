@@ -1,5 +1,3 @@
-// Codex binary fixture: handshake plus captured responses from codexMultiAgentWire.json.
-// T3_CODEX_COLLAB_SCRIPT names the notification script replayed at turn start; Node stdlib only.
 import * as NodeFS from "node:fs";
 import * as NodeReadline from "node:readline";
 import * as NodePath from "node:path";
@@ -25,8 +23,9 @@ rl.on("line", (line) => {
   }
   const { id, method } = message;
   if (openServerRequests.has(id)) {
-    // Emit a deterministic receipt so tests can await settlement on the runtime event stream.
-    // Real Codex resolves approvals by item id; use that key to exercise card closure.
+    // Real codex identifies the resolved request by its item id — the key the
+    // runtime correlates on — so the receipt exercises the same path that
+    // closes the approval card in the UI.
     const request = openServerRequests.get(id);
     openServerRequests.delete(id);
     NodeFS.appendFileSync(
@@ -172,11 +171,12 @@ rl.on("line", (line) => {
     }
     for (const [index, request] of (script.serverRequests ?? []).entries()) {
       if (request.id !== undefined) {
-        // Caller-supplied ids are recorded in .responses.
         write({ jsonrpc: "2.0", id: request.id, method: request.method, params: request.params });
         continue;
       }
-      // Replace scripted ${threadId}/${turnId} placeholders with the peer's allocated ids.
+      // Scripted server->client requests (approval prompts). String values in
+      // params may reference "${threadId}" / "${turnId}" placeholders that are
+      // substituted with the ids this peer actually allocated.
       const requestId = 9000 + index;
       const label = request.label ?? `approval-${requestId}`;
       openServerRequests.set(requestId, { label, itemId: request.params?.itemId });
@@ -200,7 +200,6 @@ rl.on("line", (line) => {
     return;
   }
   if (method === "turn/interrupt") {
-    // The .interrupts sidecar lets tests verify every live child received Stop.
     const target = message.params?.threadId;
     NodeFS.appendFileSync(
       `${process.env.T3_CODEX_COLLAB_SCRIPT}.interrupts`,
@@ -225,7 +224,8 @@ rl.on("line", (line) => {
       return;
     }
     if (script.hangInterruptFor && script.hangInterruptFor === target) {
-      // A wedged child's missing RPC reply must hit the runtime's deadline.
+      // Never respond: simulates a wedged child whose RPC neither resolves
+      // nor rejects. The runtime's bounded deadline must move on.
       return;
     }
     write({ id, result: {} });

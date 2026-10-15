@@ -30,7 +30,6 @@ export interface RestartingMachine {
   readonly continuesThreads: boolean;
 }
 
-/** Includes servers restarted by this app installing; provider updates restart nothing. */
 export function collectRestartingMachines(
   machines: ReadonlyArray<UpdateEverythingMachine>,
   servers: ReadonlyArray<Pick<ServerUpdateTarget, "environmentId">>,
@@ -64,12 +63,10 @@ export interface SkippedMachine {
 }
 
 /**
- * The servers that "update everything" moves to `targetVersion`: connected,
- * permitted, able to update over RPC, behind the target, and on its release
- * channel. Other behind servers, including never-connected ones, land in `skipped`
- * with a reason. Servers on the target and ones this app hosts are in neither list;
- * hosted ones update with this app to avoid a mid-run relaunch. Desktop-managed
- * servers follow their own app's update feed, ignoring the channel rule.
+ * Two kinds are in neither list: servers already on the target, and servers this app hosts,
+ * which would relaunch the app mid-run and update with the app's own install anyway. A
+ * desktop-managed server follows its own app's update feed, so the channel rule does not apply
+ * to it.
  */
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
@@ -141,8 +138,9 @@ export interface UpdateEverythingSteps<Providers, Servers> {
 }
 
 /**
- * Providers finish before servers restart so installs are not cut off. The caller
- * installs this app last when `localReady`, because relaunch ends the run.
+ * Providers finish before any server restarts, so no install is cut off. The local download runs
+ * alongside the remote work. The caller installs this app afterwards when `localReady`, because
+ * the relaunch ends the run; a failed download skips only that install.
  */
 export async function runUpdateEverything<Providers, Servers>(
   steps: UpdateEverythingSteps<Providers, Servers>,
@@ -173,14 +171,11 @@ export interface UpdateRunMachine {
   readonly label: string;
   readonly updatesProviders: boolean;
   readonly updatesServer: boolean;
-  /** Set when every update for this machine has finished. */
   readonly result: "done" | "failed" | null;
 }
 
 export interface UpdateEverythingRun {
-  /** The version this app installs last, or null when it does not install. */
   readonly localVersion: string | null;
-  /** Providers update first. Servers update after every provider finished. */
   readonly phase: "providers" | "servers" | "installing";
   readonly machines: ReadonlyArray<UpdateRunMachine>;
 }
@@ -207,7 +202,6 @@ const RUN_STATUS_LABELS: Record<UpdateRunMachineStatus, string> = {
   failed: "failed",
 };
 
-/** Tooltip lines, with `local` for this app's status or null when it does not install. */
 export function describeUpdateRun(
   machines: ReadonlyArray<{ readonly label: string; readonly status: UpdateRunMachineStatus }>,
   local: string | null,
@@ -219,13 +213,11 @@ export function describeUpdateRun(
   ];
 }
 
-/** Saved before this app installs so the result outlives the relaunch. */
+/** What one pass did. It is saved before this app installs, so it outlives the relaunch. */
 export interface UpdateEverythingResult {
-  /** The version this app installed last, or null when it did not install. */
   readonly localVersion: string | null;
   readonly updatedServers: number;
   readonly updatedProviders: number;
-  /** One line per failure, each naming its machine. */
   readonly failures: ReadonlyArray<string>;
 }
 
@@ -256,8 +248,8 @@ export function collectUpdateEverythingResult(input: {
 }
 
 /**
- * `appVersion` confirms the local install applied after relaunch. Returns null
- * when no updates finished and there are no failures.
+ * `appVersion` is the version this app runs now: after the relaunch it tells whether the local
+ * install applied. Null when nothing finished, for example every request was interrupted.
  */
 export function getUpdateEverythingToastView(
   result: UpdateEverythingResult,
@@ -303,7 +295,6 @@ function joinList(parts: ReadonlyArray<string>): string {
   return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
 }
 
-/** Summary names update counts; lines describe each machine, with this app first. */
 export function describeUpdateEverything(plan: UpdateEverythingPlan): {
   readonly summary: string;
   readonly lines: ReadonlyArray<string>;

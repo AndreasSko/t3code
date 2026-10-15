@@ -7,7 +7,6 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 
 const DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS = 1_000;
 
-/** Preserve tagged errors and nested cause/reason chains in structured diagnostic logs. */
 export function describeReadinessCause(cause: unknown): unknown {
   if (cause instanceof Error) {
     const tag = (cause as { readonly _tag?: unknown })._tag;
@@ -32,8 +31,13 @@ export function describeReadinessCause(cause: unknown): unknown {
 }
 
 /**
- * Poll for a 2xx response; bounded attempts prevent a hung request from stalling retries.
- * Timeout causes carry kind: probe-timeout or overall-timeout; other failures retain their own shape.
+ * Each individual probe is bounded by `probeTimeoutMs` so a single hung request
+ * cannot stall the retry loop, and the retry cadence is `intervalMs` bounded to
+ * roughly `timeoutMs / intervalMs` attempts.
+ *
+ * `makeError` is called at every failure site; callers can inspect `cause` (which
+ * carries a `kind` discriminator for the probe-timeout and overall-timeout cases)
+ * to reproduce phase-specific messages, or ignore it.
  */
 export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady")(function* <
   E,
@@ -61,7 +65,9 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
   const lastProbeFailure = yield* Ref.make<unknown>(null);
   let attempt = 0;
 
-  // Recognize errors created by makeError so nested failure handlers do not wrap them twice.
+  // Tracks errors this function itself produced via `makeError`, so the
+  // pass-through guards below never double-wrap an already-constructed error
+  // (mirrors the SSH original's `cause instanceof SshReadinessError` checks).
   const makeError = input.makeError;
   const madeErrors = new WeakSet<object>();
   const fail = (cause: unknown): E => {

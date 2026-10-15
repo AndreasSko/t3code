@@ -10,7 +10,6 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { RequestActionButton } from "./RequestActionButton";
 import { useVisibleSecondClock } from "./use-visible-second-clock";
 
-/** The provider owns native subagent conversations, so status replaces the composer and links to the parent. */
 export function ProviderSubagentBar(props: {
   readonly provider: { readonly driver: string; readonly iconUrl?: string | undefined } | null;
   readonly modelLabel: string;

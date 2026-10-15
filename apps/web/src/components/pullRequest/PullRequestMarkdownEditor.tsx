@@ -13,8 +13,6 @@ import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 
-/** The caller owns mutations; preview uses the saved-body renderer to show
- * the same host Markdown before submitting. */
 export function PullRequestMarkdownEditor({
   value,
   cwd,
@@ -45,8 +43,10 @@ export function PullRequestMarkdownEditor({
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const [draft, setDraft] = useState(value);
   const [preview, setPreview] = useState(false);
-  // React can reuse editors across subjects; reseed when incoming text changes
-  // so one remark draft cannot overwrite another.
+  // The words this draft started from. React keeps a component instance wherever the same
+  // position and key come round again, so an editor opened on one remark can be handed another's
+  // words without being rebuilt — and saving would then write the first remark's text onto the
+  // second. Different words mean a different subject, and the draft starts again from them.
   const [seed, setSeed] = useState(value);
   if (seed !== value) {
     setSeed(value);

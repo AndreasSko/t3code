@@ -24,7 +24,10 @@ export interface OutdatedServerUpdateTarget {
   readonly fromVersion?: string;
 }
 
-/** Reports through the normal per-environment update state even when the host cannot connect. */
+/**
+ * Progress lands in the same per-environment update state as a normal server
+ * update.
+ */
 export function createOutdatedServerUpdateCommand<E>(
   runtime: Atom.AtomRuntime<
     | EnvironmentRegistry.EnvironmentRegistry

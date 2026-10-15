@@ -1,5 +1,10 @@
-// Proxying serve-sim shell-exec would grant arbitrary host execution; run
-// typed platform actions through the server's toolchain instead.
+/**
+ * serve-sim's preview drives its "Simulator" panel by sending shell commands over a token-gated
+ * socket. Proxying that would hand any environment session arbitrary command execution on the
+ * host, so T3 runs the same underlying commands itself, typed per action: `xcrun simctl ui` and
+ * `simctl privacy` for iOS, the `serve-sim-ax-settings` helper that serve-sim bundles for the
+ * accessibility toggles, and `adb shell` for Android.
+ */
 import {
   type DeviceActionInput,
   type DeviceActionType,
@@ -83,6 +88,7 @@ const ok = (operation: string) => (result: { code: number; stderr: string; stdou
         }),
       );
 
+// `default` is what a fresh simulator reports ("large").
 const IOS_TEXT_SIZES: Record<DeviceTextSize, string> = {
   small: "small",
   default: "large",
@@ -367,8 +373,9 @@ const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
         reason: "unsupported",
       });
     case "setOrientation": {
-      // Window-manager locks do not rotate the encoder's display on recent images;
-      // tilt emulator accelerometers instead. Physical devices use the lock.
+      // `user-rotation lock` only rotates window content on recent images; the display the
+      // encoder captures stays put. Tilting the emulator's accelerometer rotates it for real, so
+      // that is used whenever the target is an emulator.
       if (serial.startsWith("emulator-")) {
         yield* shell(["settings", "put", "system", "accelerometer_rotation", "1"], "orientation");
         yield* shell(["cmd", "window", "user-rotation", "free"], "orientation");
@@ -441,7 +448,6 @@ const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
   }
 });
 
-/** Read the current settings and foreground app. Errors degrade to unknowns. */
 export const readDeviceDetail = Effect.fn("DeviceActions.readDetail")(function* (
   ready: DeviceHostReady,
   platform: DevicePlatform,

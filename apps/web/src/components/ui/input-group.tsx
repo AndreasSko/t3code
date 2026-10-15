@@ -53,7 +53,6 @@ const inputGroupAddonVariants = cva(
       align: "inline-start",
     },
     compoundVariants: [
-      // Pill groups curve too tightly for buttons pulled to the edge; keep them inset.
       {
         align: "inline-end",
         inset: "pill",

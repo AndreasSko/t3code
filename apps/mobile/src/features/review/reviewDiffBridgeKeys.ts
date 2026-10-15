@@ -1,6 +1,6 @@
 import type { NativeReviewDiffHighlightScheme } from "../diffs/nativeReviewDiffHighlighter";
 
-// Avoid React Native imports so these helpers can run in Node.
+// Kept free of react-native / hook imports so they stay unit-testable in node.
 
 function hashReviewDiffKey(diff: string | null | undefined): string {
   if (!diff) {

@@ -9,7 +9,6 @@ import type {
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 
-/** Claude fast mode and Codex priority bill as fast; Codex ultrafast has its own premium. */
 export type UsageSpeed = "standard" | "fast" | "ultrafast";
 
 export interface UsageRecord {
@@ -24,7 +23,6 @@ export interface UsageRecord {
   readonly sessionId: string;
   readonly totals: UsageTokenTotals;
   readonly reportedCostUsd: number | null;
-  /** Only Claude Code and Codex record a speed; other providers are `standard`. */
   readonly speed: UsageSpeed;
   /**
    * Key for cross-file de-duplication, or `null` when the record is inherently
@@ -56,7 +54,6 @@ export function tokenCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
-/** Epoch milliseconds of an ISO timestamp string, or `null`. */
 export function parseTimestampMs(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const parsed = Date.parse(value);
@@ -67,14 +64,14 @@ export function parseTimestampMs(value: unknown): number | null {
 export type SelectedFields = { readonly [key: string]: true | SelectedFields };
 
 /**
- * Oversized lines are projected to selectFields and passed to parseProjected
- * instead of parseLine.
+ * A line too large to parse whole is projected to `selectFields` and handed to
+ * `parseProjected` instead of `parseLine`.
  */
 export interface TranscriptUsageFormat<State> {
   readonly selectFields: SelectedFields;
   /**
-   * ASCII markers let the engine skip decoding irrelevant tool output.
-   * Every relevant line must match, including lines that only update State.
+   * ASCII substrings, at least one of which every line that matters contains.
+   * Lines that only update `State` must match too.
    */
   readonly usageMarkers: readonly [string, ...string[]];
   parseLine(line: string, state: State): readonly UsageRecord[];
@@ -96,7 +93,6 @@ export interface TranscriptUsageFormat<State> {
   readonly sharedSessionsAcrossFiles?: true;
 }
 
-/** A configured instance of the driver, its config already decoded by `driver.configSchema`. */
 export interface ProviderUsageInstance<Config> {
   readonly instanceId: ProviderInstanceId;
   /**
@@ -106,7 +102,6 @@ export interface ProviderUsageInstance<Config> {
   readonly config: Config | undefined;
   /** The instance's environment merged over the host environment. */
   readonly environment: NodeJS.ProcessEnv;
-  /** Whether settings list the instance, rather than it being the implicit default. */
   readonly configured: boolean;
 }
 
@@ -130,11 +125,9 @@ export interface ProviderUsageScan {
 export interface ProviderUsageScanInput<Config> {
   readonly instances: ReadonlyArray<ProviderUsageInstance<Config>>;
   readonly settings: ServerSettings;
-  /** Files last written before this cannot hold records inside the window. */
   readonly windowStartMs: number;
   /** The oldest usage the server keeps; account caches cover back to here. */
   readonly retentionCutoffMs: number;
-  /** Wait for a slow refresh instead of answering from a cache. */
   readonly awaitRefresh: boolean;
 }
 

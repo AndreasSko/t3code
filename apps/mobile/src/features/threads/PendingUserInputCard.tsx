@@ -33,15 +33,28 @@ import {
 export interface PendingUserInputCardProps {
   readonly canOperateThread: boolean;
   readonly pendingUserInput: PendingUserInput;
-  /** Keep constant during keyboard transitions; only discrete corrections may change the layout. */
+  /**
+   * Constant while a request is pending (it reserves keyboard space), so the
+   * keyboard transition is pure translation; changes only on rare discrete
+   * corrections, which the layout transition smooths.
+   */
   readonly maxHeight: number;
   readonly collapsed: boolean;
   readonly onToggleCollapsed: () => void;
-  /** Renders a stop control on the collapsed bar, which replaces the composer. */
   readonly onStopThread?: () => void;
-  /** 0 collapsed to 1 expanded; the host starts card and feed-inset motion together on the UI thread. */
+  /**
+   * 0 collapsed → 1 expanded. Slides the iOS overlay card down behind the
+   * collapsed bar (inside a clipping window) on the UI thread; the host
+   * animates it directly from the tap handler so the card and the feed
+   * inset glide start the same frame.
+   */
   readonly cardProgress?: SharedValue<number>;
-  /** Measured overlay coverage beyond the bar; the host adds it to the feed end inset without rerendering. */
+  /**
+   * Receives how far the expanded card extends above the bar footprint
+   * (written from onLayout with no re-render); the host adds it to the
+   * thread feed's end inset so the end of the chat stays visible above the
+   * card.
+   */
   readonly cardCoverage?: SharedValue<number>;
   /** Fires on custom-answer focus/blur; hosts use it to vet stale keyboard state. */
   readonly onInputFocusChange?: (focused: boolean) => void;
@@ -63,7 +76,19 @@ export interface PendingUserInputCardProps {
   readonly onDismiss: () => Promise<unknown>;
 }
 
-/** iOS overlays keep the bar footprint constant. Android must render in-flow to hit-test above the bar. */
+/**
+ * On iOS the collapsed bar is the PERMANENT in-flow footprint — the expanded
+ * card is an absolutely-positioned overlay rising above it. The overlay's
+ * measured height (which drives the thread feed's bottom inset) therefore
+ * never changes on collapse/expand, so the transcript stays perfectly still
+ * while the card animates over it.
+ *
+ * Android cannot use the overlay: it does not hit-test touches outside a
+ * parent's bounds, which made everything above the bar-sized wrapper
+ * untouchable. There the expanded card renders in-flow instead (the wrapper
+ * grows with it, and the host skips the coverage inset since the measured
+ * overlay already includes the card).
+ */
 const EXPANDED_CARD_IS_OVERLAY = Platform.OS === "ios";
 
 const CARD_LAYOUT_TRANSITION = LinearTransition.duration(200);
@@ -90,7 +115,6 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
   const cardCoverage = props.cardCoverage;
   const barHeightRef = useRef(0);
   const cardHeightRef = useRef(0);
-  // Discrete measurements set the slide distance; this value is not animated.
   const cardHeight = useSharedValue(0);
   const notifyCoverage = useCallback(() => {
     if (!cardCoverage) {
@@ -101,11 +125,15 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       return;
     }
     if (cardCoverage.value === 0) {
-      // Do not animate first coverage measurement: it would move the initial end-pin target.
+      // First measurement lands while the list is doing its initial
+      // end-pin (thread opened onto a pending request); animating it from
+      // zero would move the end anchor out from under that scroll.
       cardCoverage.value = coverage;
       return;
     }
-    // At-rest coverage corrections glide the feed; the host owns toggle progress timing.
+    // Animated so a coverage change at rest (discrete max-height
+    // corrections) glides the feed instead of stepping it; toggle timing is
+    // owned by the host's progress values.
     cardCoverage.value = withTiming(coverage, {
       duration: USER_INPUT_TOGGLE_DURATION_MS,
       easing: Easing.out(Easing.cubic),
@@ -127,7 +155,8 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     [cardHeight, notifyCoverage],
   );
   const cardProgress = props.cardProgress;
-  // Keep the card opaque while sliding out so transcript and card text never crossfade.
+  // No opacity: fading an opaque card over the live transcript reads as a
+  // crossfade (card text, transcript, and bar all half-visible at once).
   const cardAnimatedStyle = useAnimatedStyle(() => {
     const progress = cardProgress === undefined ? 1 : cardProgress.value;
     return {
@@ -135,10 +164,12 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     };
   });
 
-  // Keeping the iOS card mounted starts expansion without waiting for a React mount and layout.
+  // On iOS the card stays MOUNTED while collapsed (hidden via the animated
+  // style): expanding animates existing views on the UI thread the same
+  // frame the host starts the progress timing, instead of paying a React
+  // mount + layout before anything moves.
   const renderCard = EXPANDED_CARD_IS_OVERLAY || !props.collapsed;
   const showBar = props.collapsed || EXPANDED_CARD_IS_OVERLAY;
-  // Draw the opaque bar underneath so collapse reveals it without crossfade frames.
   const bar = showBar ? (
     <View
       onLayout={handleBarLayout}
@@ -182,7 +213,6 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     </View>
   ) : null;
   const card = renderCard ? (
-    // No blur separates this card from the feed, so the surface must stay opaque.
     <Animated.View
       onLayout={handleCardLayout}
       pointerEvents={props.collapsed ? "none" : "auto"}
@@ -340,7 +370,6 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     <View className="relative">
       {bar}
       {EXPANDED_CARD_IS_OVERLAY ? (
-        // Clip the slide at the bar's bottom edge so the card never draws over the composer.
         <View
           pointerEvents={props.collapsed ? "none" : "box-none"}
           className="absolute inset-x-0 bottom-0 justify-end overflow-hidden"

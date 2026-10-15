@@ -35,9 +35,7 @@ if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   prepareNativeShowcaseCapture();
 }
 
-void SplashScreen.preventAutoHideAsync().catch(() => {
-  // The native module can be unavailable in non-native test environments.
-});
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
@@ -86,8 +84,11 @@ function AppContent() {
           <SafeAreaProvider>
             <VoiceInputProvider>
               <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />
-              {/* Native-stack forwards `dark` to overrideUserInterfaceStyle; without it,
-                native headers use React Navigation's default light theme. */}
+              {/* The navigation theme drives the NATIVE header appearance: native-stack
+                forwards `dark` as the nav bar's overrideUserInterfaceStyle. Without
+                this, React Navigation defaults to its light theme and every native
+                header (glass buttons, title, materials) is forced light even when
+                the system is in dark mode. */}
               <GlobalVoiceInputControl>
                 <NativeLayoutMetricsProvider>
                   <IncomingShareProvider>

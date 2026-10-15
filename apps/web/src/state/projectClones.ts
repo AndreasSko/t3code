@@ -12,7 +12,6 @@ const EMPTY_CLONE_ATOM = Atom.make<ProjectCloneSnapshot | null>(null).pipe(
   Atom.withLabel("web-project-clone:empty"),
 );
 
-/** Until the clone stream arrives, return empty; do not subscribe on servers lacking clone tracking. */
 export const environmentProjectClonesAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): ReadonlyArray<ProjectCloneSnapshot> => {
     const supported =
@@ -33,7 +32,6 @@ const projectCloneAtom = Atom.family((key: string) => {
   }).pipe(Atom.withLabel(`web-project-clone:${key}`));
 });
 
-/** Null means no tracked clone; the stream stays quiet between clone starts. */
 export function useProjectClone(ref: ScopedProjectRef | null): ProjectCloneSnapshot | null {
   return useAtomValue(ref === null ? EMPTY_CLONE_ATOM : projectCloneAtom(scopedProjectKey(ref)));
 }

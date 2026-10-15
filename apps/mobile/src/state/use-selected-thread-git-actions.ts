@@ -141,7 +141,11 @@ export function useSelectedThreadGitActions() {
     [refreshStatus, selectedThread, selectedThreadCwd, selectedThreadProject],
   );
 
-  // Key refreshes on primitives to avoid stream-driven requests; reconnect also catches changes made while away.
+  // Shell updates replace the selected thread object many times per second while a
+  // turn streams, so key the refresh on primitives. The server publishes status after
+  // each turn finishes; this only seeds status when the selection or cwd changes, and
+  // again on reconnect because the server's cached status can miss changes made while
+  // the app was away.
   const selectedEnvironmentId = selectedThread?.environmentId ?? null;
   const selectedThreadId = selectedThread?.id ?? null;
   const hasSelectedThreadProject = selectedThreadProject !== null;
@@ -233,7 +237,9 @@ export function useSelectedThreadGitActions() {
         readonly worktreePath?: string | null;
       };
     }): Promise<AtomCommandResult<void, unknown>> => {
-      // Git already changed; refresh the worktree even if its thread metadata update is denied.
+      // The Git mutation already landed; refresh what the worktree shows even
+      // when the thread metadata update is denied, so the sheet does not keep
+      // displaying the previous branch.
       const updateResult = input.nextThreadState
         ? await updateThreadGitContext(input.thread, input.nextThreadState)
         : AsyncResult.success(undefined);

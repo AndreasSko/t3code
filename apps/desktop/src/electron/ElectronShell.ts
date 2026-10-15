@@ -11,7 +11,9 @@ import * as Option from "effect/Option";
 
 import * as Electron from "electron";
 
-// Allow remote-editor deep links through the OS; block other non-web schemes.
+// Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
+// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) must
+// reach the OS handler; every other non-web scheme stays blocked.
 const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
@@ -56,7 +58,6 @@ export class ElectronShell extends Context.Service<
   ElectronShell,
   {
     readonly openExternal: (rawUrl: unknown) => Effect.Effect<boolean>;
-    /** Opens a known System Settings pane by identifier, not by URL. */
     readonly openSystemSettings: (pane: SystemSettingsPane) => Effect.Effect<boolean>;
     readonly copyText: (text: string) => Effect.Effect<void>;
   }

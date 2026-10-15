@@ -27,18 +27,19 @@ export class NodeRuntimeUnavailableError extends Schema.TaggedError<NodeRuntimeU
 }
 
 export interface SelfInvocation {
-  /** The binary to spawn: Node, Electron (with `ELECTRON_RUN_AS_NODE`), or the packaged T3. */
   readonly command: string;
   /**
-   * An absolute entrypoint script preceding the subcommand, or undefined for
-   * packaged T3, which treats the first argument as the subcommand itself.
+   * The absolute entrypoint script to place before the subcommand, or
+   * undefined for the packaged binary, which dispatches subcommands from
+   * argv[2] and treats a leading path as the subcommand itself.
    */
   readonly entrypoint: string | undefined;
 }
 
 /**
- * Use for child CLI invocations: standalone T3 repeats its binary at argv[1], not a script.
- * Callers must use this pair rather than assembling process.execPath and argv[1].
+ * `process.execPath` plus `argv[1]` only works for a script run by Node; the
+ * single-executable has no entrypoint script (Node repeats the binary at
+ * argv[1]), so callers must not assemble the pair themselves.
  */
 export const resolveSelfInvocation = Effect.fn("nodeRuntime.resolveSelfInvocation")(function* () {
   const command = yield* HostProcess.ExecutablePath;
@@ -53,7 +54,6 @@ export const resolveSelfInvocation = Effect.fn("nodeRuntime.resolveSelfInvocatio
   } satisfies SelfInvocation;
 });
 
-/** `[entrypoint?, ...args]`: the argv that runs `args` against this T3 install. */
 export const selfInvocationArgs = (
   invocation: SelfInvocation,
   args: ReadonlyArray<string>,
@@ -81,7 +81,6 @@ export const resolveNodeExecutable = Effect.fn("nodeRuntime.resolveNodeExecutabl
   );
   if (resolvedNodePath === null) return yield* new NodeRuntimeUnavailableError({ feature });
   const nodePath = path.resolve(resolvedNodePath);
-  // A launcher or symlink named node must not point back at the standalone app.
   const resolvedPath = yield* fs
     .realPath(nodePath)
     .pipe(Effect.mapError((cause) => new NodeRuntimeUnavailableError({ feature, cause })));

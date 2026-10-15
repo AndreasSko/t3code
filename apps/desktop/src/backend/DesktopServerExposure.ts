@@ -198,9 +198,7 @@ const resolveDesktopCoreAdvertisedEndpoints = (
             : "User-configured endpoint for this desktop backend.",
         }),
       );
-    } catch {
-      // Ignore malformed user-configured endpoints without dropping valid endpoints.
-    }
+    } catch {}
   }
 
   return endpoints;
@@ -420,11 +418,14 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const stateRef = yield* Ref.make(initialRuntimeState());
-  // Serialize read/persist/write changes so concurrent updates cannot overwrite newer state.
+  // Each change reads the runtime state, persists settings, then writes the
+  // state back. Run them one at a time so a change never writes over another
+  // with values it read before that change persisted.
   const changePermit = yield* Semaphore.make(1);
 
-  // Cache Tailscale status: each macOS App Store CLI spawn can retrigger its
-  // sandbox container's "Other apps" TCC prompt.
+  // Cache the `tailscale status` spawn for the TTL. On macOS, the Mac App
+  // Store Tailscale CLI lives inside Tailscale's sandbox container, so each
+  // spawn re-triggers the "Other apps" TCC prompt.
   const cachedReadMagicDnsName = yield* Effect.cachedWithTTL(
     readTailscaleStatus.pipe(
       Effect.map((status) => status.magicDnsName),

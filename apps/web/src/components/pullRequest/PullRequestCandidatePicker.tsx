@@ -1,4 +1,7 @@
-/** Use a combobox: menu typeahead consumes keystrokes needed by the search box. */
+/**
+ * The same combobox as the project and branch pickers, and dressed the same, rather than a menu:
+ * a menu's typeahead claims every keypress to jump between rows, which a search box cannot share.
+ */
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/button";
@@ -38,7 +41,6 @@ export function PullRequestCandidatePicker<T>({
 }: {
   icon: ReactNode;
   label: string;
-  /** Disable with a reason so unavailable actions remain discoverable. */
   allowed: boolean;
   disabledReason: string;
   open: boolean;
@@ -82,7 +84,6 @@ export function PullRequestCandidatePicker<T>({
   return (
     <Combobox
       items={keys}
-      // The caller narrows the list, so the combobox does no filtering of its own.
       filteredItems={keys}
       filter={null}
       autoHighlight
@@ -93,7 +94,9 @@ export function PullRequestCandidatePicker<T>({
       }}
       open={open}
       onOpenChange={(nextOpen, details) => {
-        // Cancel item-press closure so repeated picks retain query and input focus.
+        // Cancelled rather than ignored, so the combobox also skips its own close work: freezing
+        // the query and returning focus to the trigger, either of which would take the next
+        // keystroke away from the box.
         if (!nextOpen && details.reason === "item-press") {
           details.cancel();
           return;

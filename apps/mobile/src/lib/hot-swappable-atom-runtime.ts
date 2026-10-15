@@ -56,7 +56,8 @@ export function hotSwappableAtomRuntime<R, E>(options: {
     );
   }
 
-  // Accept updates here so importers retain the AtomRuntime while its Layer is replaced.
+  // This is a real HMR boundary: importers retain the stable AtomRuntime while
+  // this module evaluation installs the freshly constructed Layer above.
   options.hotModule.accept();
   return entry.runtime as Atom.AtomRuntime<R, E>;
 }

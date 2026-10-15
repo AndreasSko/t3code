@@ -5,7 +5,10 @@ import type { QueuedThreadCreation, QueuedThreadMessage } from "./thread-outbox-
 import { isNewTaskDraftKey } from "./new-task-draft-key";
 import type { ComposerDraft } from "./use-composer-drafts";
 
-/** Pending tasks send on reconnect; drafts require user submission. Both occupy the unsent-work list. */
+/**
+ * A `pending` task sits in the outbox and sends itself when its environment reconnects; a `draft`
+ * is new-task composer content, which only sends when the user submits it.
+ */
 export type PendingNewTask = PendingQueuedTask | PendingDraftTask;
 
 export interface PendingQueuedTask {
@@ -36,7 +39,6 @@ export interface PendingDraftTask {
   readonly draft: ComposerDraft;
 }
 
-/** Settings alone do not make a draft visible in the task list. */
 export function composerDraftHasUserContent(draft: ComposerDraft): boolean {
   return draft.text.trim().length > 0 || draft.attachments.length > 0;
 }
@@ -90,7 +92,6 @@ export function buildPendingNewTasks(input: {
       draft,
     });
   }
-  // Current drafts lead queued work.
   tasks.sort((left, right) => {
     if (left.kind !== right.kind) {
       return left.kind === "draft" ? -1 : 1;

@@ -26,8 +26,6 @@ const dependencies = [
 
 const DeviceToolFailure = Schema.Union([DeviceToolError, OrchestratorMcpFailure]);
 
-// Leave device driving to agent-device's semantic CLI; wrappers would lag
-// its releases. MCP provides lifecycle and screenshots only.
 const DeviceListTool = Tool.make("device_list", {
   description:
     "List iOS Simulators and Android Emulators on this environment's device hosts, which platforms each host can run, and which devices are already open in this thread's Device panel. Call this before device_open when you do not know a device id.",

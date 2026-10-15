@@ -79,7 +79,6 @@ export function resolveNativeTerminalSurfaceView(): ComponentType<NativeTerminal
   return cachedNativeTerminalSurfaceView ?? null;
 }
 
-/** Returns the installed hardware-key revision, or null for missing/stale native modules; used in debug logs. */
 export function getNativeTerminalHardwareKeyRevision(): number | null {
   try {
     if (typeof requireOptionalNativeModule !== "function") {

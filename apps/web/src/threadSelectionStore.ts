@@ -2,17 +2,18 @@ import { create } from "zustand";
 
 export interface ThreadSelectionState {
   selectedThreadKeys: ReadonlySet<string>;
-  /** The scoped thread key that anchors shift-click range selection. */
   anchorThreadKey: string | null;
 }
 
 interface ThreadSelectionStore extends ThreadSelectionState {
   toggleThread: (threadKey: string) => void;
-  /** Requires the ordered scoped thread keys from the same project for Shift-click ranges. */
+  /**
+   * Requires the ordered list of scoped thread keys within the same project so the store can
+   * compute which threads fall between anchor and target.
+   */
   rangeSelectTo: (threadKey: string, orderedThreadKeys: readonly string[]) => void;
   clearSelection: () => void;
   removeFromSelection: (threadKeys: readonly string[]) => void;
-  /** Set the anchor thread without adding it to the selection (e.g. on plain-click navigate). */
   setAnchor: (threadKey: string) => void;
   hasSelection: () => boolean;
 }

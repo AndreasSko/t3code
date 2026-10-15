@@ -1,4 +1,3 @@
-/** Ephemeral RPC processes write no session files but still use the user's Pi model configuration and auth. */
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";

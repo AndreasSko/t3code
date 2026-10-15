@@ -711,7 +711,6 @@ export default function DiffPanel({
     if (!routeThreadRef) return;
     useDiffPanelStore.getState().selectBranchBaseRef(routeThreadRef, baseRef);
   };
-  // The latest turn needs its id in the submenu but "latest" in the top-level radio group.
   const selectedTurnValue = selectedTurn ? `turn:${selectedTurn.runId}` : "";
   const selectedScopeValue =
     selectedRunId === null

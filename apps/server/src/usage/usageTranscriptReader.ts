@@ -1,7 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * A cold 30-day window spans ~1.4 GB/~1,500 files; buffer-level streaming was ~10x cheaper than materializing files.
- * Append-only transcripts report guarded offsets so warm scans read only appended bytes.
+ * The direct `node:fs` streaming is deliberate: a cold 30-day window is ~1.4 GB
+ * across ~1,500 files, and buffer-level streaming is roughly an order of
+ * magnitude cheaper than materialising each file. The equivalent Effect stream
+ * pipeline is idiomatic but not fast enough to sit behind a page load.
  */
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -24,8 +26,13 @@ export interface TranscriptFile {
 }
 
 /**
- * Guard bytes before resumeOffset as a cheap rotation/rewrite tripwire; avoid rereading the prefix.
- * A mismatched guard forces a full parse to protect usage totals.
+ * The guard hash fingerprints the bytes immediately before `resumeOffset`. A
+ * resume only proceeds when those bytes still match: transcripts are
+ * append-only by design, but a rotated or rewritten file silently mis-parsed
+ * from the middle would corrupt usage totals. The window is a cheap tripwire
+ * for those realistic failure shapes, all of which disturb the file's tail at
+ * that exact offset; it deliberately does not hash the whole prefix, which
+ * would cost the full re-read the resume exists to avoid.
  */
 export interface TranscriptParsePosition {
   /** Byte offset just past the last newline-terminated line consumed. */
@@ -34,24 +41,31 @@ export interface TranscriptParsePosition {
   readonly guardLength: number;
   /** FNV-1a hash of that window. */
   readonly guardHash: number;
-  /** Schema-encoded reducer state at resumeOffset; null for stateless formats. */
+  /**
+   * The format's reducer state as of `resumeOffset`, encoded by its schema;
+   * `null` for stateless formats.
+   */
   readonly state: unknown;
 }
 
 export interface TranscriptParseResult {
   /** Records from newline-terminated lines at or after the parse start. */
   readonly records: readonly UsageRecord[];
-  /** Excluded from position and records because the next scan replays this unfinished segment. */
+  /**
+   * Records from a trailing segment the writer has not newline-terminated yet.
+   * Kept out of `records` because `position` deliberately excludes that
+   * segment: the next scan re-reads it once the writer finishes the line.
+   */
   readonly tailRecords: readonly UsageRecord[];
   readonly position: TranscriptParsePosition;
-  /** Whether the parse continued from `resumeFrom` rather than byte 0. */
   readonly resumed: boolean;
 }
 
 /** 64 bytes of JSONL tail is ample to distinguish a replaced file. */
 export const GUARD_LENGTH = 64;
-// Native parsing is faster for common 1-4 MiB records; above 8 MiB, project usage without whole-record allocation.
-// The size threshold switches readers; it never drops records.
+// Native parsing is faster for common 1–4 MiB context/tool records. Above
+// 8 MiB, project usage without allocating the whole record. This switches
+// readers; it never discards a record because of its size.
 const STREAMING_THRESHOLD_BYTES = 8 * 1024 * 1024;
 const NEWLINE = 0x0a;
 /** `stat` calls one transcript walk keeps in flight. The libuv pool has 4 threads. */
@@ -80,8 +94,14 @@ function fnv1a(buffer: Buffer): number {
 }
 
 /**
- * Counts unreadable paths (excluding vanished files) so callers can report partial usage.
- * fileName skips irrelevant logs; concurrent stats retain walk order for first-seen dedupe.
+ * Unreadable directories and files are counted in `failedPaths` rather than
+ * failing the page, so the source can report incomplete usage. Files that
+ * vanish between `readdir` and `stat` are ordinary rotation and not counted.
+ * `fileName` restricts the walk to a single basename (Grok's `updates.jsonl`).
+ * Grok sessions also ship multi-megabyte `chat_history` and `events` logs that
+ * never carry usage, so the basename filter keeps a cold scan off those files.
+ * Results keep `readdir` order, which the aggregator's first-seen dedupe relies
+ * on.
  */
 export async function listTranscriptFiles(
   root: string,
@@ -132,8 +152,11 @@ export async function listTranscriptFiles(
 }
 
 /**
- * device:inode distinguishes shared directories from different machines with matching names.
- * Returns an empty string on stat failure.
+ * Filesystem identity of a directory, as `device:inode`.
+ *
+ * Used to tell "two servers reading the same transcript directory" apart from
+ * "two machines whose hostname and home path happen to match". Returns an empty
+ * string when the directory cannot be stat'd.
  */
 export async function readDirectoryVolumeId(path: string): Promise<string> {
   try {
@@ -164,8 +187,10 @@ async function guardMatches(
 }
 
 /**
- * Match multiple markers in one latin1 regex pass instead of one byte scan per marker.
- * Latin1 maps each byte directly, preserving ASCII matches without UTF-8 validation.
+ * Several would be one pass over the line each, so they are matched together as
+ * one alternation over the line's latin1 view instead: latin1 maps every byte
+ * to one character without validating it, so an ASCII marker matches exactly
+ * where its bytes do.
  */
 export function transcriptLineGate(markers: readonly [string, ...string[]]) {
   if (markers.length === 1) {
@@ -179,8 +204,15 @@ export function transcriptLineGate(markers: readonly [string, ...string[]]) {
 }
 
 /**
- * Returns null on read failure so callers do not cache missing usage as an empty file.
- * Resume only with matching guard bytes and valid saved reducer state; otherwise parse from byte 0.
+ * Streams one transcript and returns the usage records it contains, or `null`
+ * when the file could not be read.
+ *
+ * The distinction matters to the caller's cache: a genuinely empty transcript
+ * is a stable fact worth memoising, while a transient read failure memoised
+ * under the same `(size, mtime)` key would silently drop that file's usage
+ * until the file next changes.
+ * A stateful format resumes with the state saved at that position; a saved
+ * state its schema rejects re-parses the file whole.
  */
 export async function readTranscriptRecords<State>(
   filePath: string,
@@ -200,7 +232,6 @@ export async function readTranscriptRecords<State>(
     const codec = format.state;
     const decodeState = codec === undefined ? undefined : Schema.decodeUnknownOption(codec.schema);
     const encodeState = codec === undefined ? undefined : Schema.encodeSync(codec.schema);
-    // Stateless formats never read their state argument.
     let state = codec === undefined ? (undefined as State) : codec.initial();
     let resumed = false;
     let start = 0;
@@ -227,7 +258,6 @@ export async function readTranscriptRecords<State>(
       return content.toString("utf8");
     };
 
-    // Gate raw bytes to skip UTF-8 decoding for the majority of lines.
     const mightCarryUsage = transcriptLineGate(format.usageMarkers);
     const parseLine = (lineBuffer: Buffer, lineState: State, out: UsageRecord[]): void => {
       if (!mightCarryUsage(lineBuffer)) return;
@@ -292,7 +322,6 @@ export async function readTranscriptRecords<State>(
           append(chunk.subarray(lineStart));
           break;
         }
-        // Avoid buffering on the common single-chunk hot path.
         if (!streaming && pendingBytes === 0) {
           parseLine(chunk.subarray(lineStart, newlineIndex), state, records);
         } else {

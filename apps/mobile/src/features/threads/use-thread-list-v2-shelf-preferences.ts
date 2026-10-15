@@ -4,7 +4,10 @@ import { useCallback, useRef } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
-/** Advance refs before persistence so consecutive presses use the latest value before React renders. */
+/**
+ * Refs advance before persistence starts so consecutive presses always toggle the latest value,
+ * even if React has not rendered the optimistic patch yet.
+ */
 export function useThreadListV2ShelfPreferences() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);

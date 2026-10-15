@@ -13,7 +13,9 @@ export function showPromptLinkNotice(notice: string): void {
   Alert.alert("Prompt from a link", notice);
 }
 
-/** Fills an empty draft or asks before replacement, combining the notice into one alert. */
+/**
+ * The notice rides in the same alert, so a link never stacks two dialogs.
+ */
 export async function applyLinkedPromptToThreadDraft(
   draftKey: string,
   prompt: LinkedPrompt,
@@ -37,7 +39,6 @@ export async function applyLinkedPromptToThreadDraft(
   ]);
 }
 
-/** Copies a link that opens a new task with this prompt. */
 export async function copyPromptLink(prompt: string): Promise<void> {
   if (!(await tryCopyTextWithHaptic(buildNewThreadLink({ prompt }), { target: "prompt link" }))) {
     Alert.alert("Could not copy", "Try again.");

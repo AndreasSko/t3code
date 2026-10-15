@@ -52,7 +52,6 @@ const DIFF_FILES_BATCH = 64;
  * rather than reading every file.
  */
 const LINE_STATS_MAX_FILES = DIFF_FILES_BATCH * 4;
-/** Structural `/changes` pages, 500 files each, read to count a pull request's files. */
 const MAX_CHANGE_PAGES = 20;
 
 const chunk = <A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>> =>
@@ -63,7 +62,10 @@ const chunk = <A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>
 const detailablePaths = (files: ReadonlyArray<Json.GitCafeDiffFile>) =>
   files.filter((file) => !file.binary && !file.tooLarge).map((file) => file.path);
 
-/** Offer listed, permitted strategies; blockers without strategy lists stay for the host to explain on merge. */
+/**
+ * A blocker without strategies (changes requested, a lock) still leaves Merge offered, so
+ * pressing it shows GitCafe's own reason.
+ */
 const mergeStrategyOpen = (status: typeof Status.Type, strategy: string) =>
   status.merge.permitted !== false &&
   status.merge.strategies.includes(strategy) &&
@@ -232,7 +234,6 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((path) => read(operation, input, { path }, Json.GitCafePullDetail)),
     );
 
-  /** Every page of a cursor list, up to `MAX_PAGES`; `next` stays set when more remained. */
   const readPages = <S extends Schema.Codec<Paged<unknown>, unknown, never, never>>(
     operation: string,
     input: Pick<ProviderRepositoryRef, "host">,
@@ -266,7 +267,10 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  /** Read each unmerged pull's head because stack responses omit the heads needed for land/restack fencing. */
+  /**
+   * GitCafe's stack lists no heads, and they are what a land or restack is fenced on, so each
+   * open layer's pull is read.
+   */
   const readStack = Effect.fn("GitCafePullRequestProvider.readStack")(function* (
     operation: string,
     input: PullRef,
@@ -294,7 +298,6 @@ export const make = Effect.gen(function* () {
     return { ...stack, members };
   });
 
-  /** One `/diff-files` read, refused if GitCafe answers from another revision than the page. */
   const readDiffFiles = Effect.fn("GitCafePullRequestProvider.readDiffFiles")(function* (
     input: PullRef,
     revision: { readonly version: number; readonly headOid: string; readonly baseOid: string },
@@ -364,7 +367,6 @@ export const make = Effect.gen(function* () {
       return yield* failure(operation, `GitCafe's stack operation ${outcome.state}.`);
   });
 
-  /** /changes omits line totals; bounded hunk batches supply them, otherwise leave them unknown. */
   const readLineStats = Effect.fn("GitCafePullRequestProvider.readLineStats")(function* (
     input: PullRef,
     version: number,
@@ -392,8 +394,6 @@ export const make = Effect.gen(function* () {
       after = batch.next;
       if (after === null || after === previous || batch.items.length === 0) break;
     }
-    // A hunk read that loses a race with a push leaves the counts at zero rather than dropping
-    // the file count with them.
     const counted =
       files.some((file) => file.additions !== undefined) ||
       files.length > LINE_STATS_MAX_FILES ||
@@ -475,7 +475,9 @@ export const make = Effect.gen(function* () {
         const involved = input.involvement === "authored" || input.involvement === "reviewing";
         let actorId: string | undefined;
         if (involved) {
-          // Actor-read failures leave involvement filtering to the client; auth/rate limits still fail the host read.
+          // A host narrows as far as it can: when the actor list can't be read, the listing comes
+          // back unnarrowed and the page's own involvement filter does the rest. A refused token
+          // or a rate limit still fails, since the service acts on those for the whole host.
           const options = yield* read(
             "listChangeRequests",
             input,
@@ -631,7 +633,6 @@ export const make = Effect.gen(function* () {
             pull.headOid === null
               ? Effect.succeed({ items: [], next: null })
               : readPages(operation, input, `${path}/commits`, Json.GitCafeCommits),
-            // Reactions decorate the conversation; a failed read leaves them out, not it.
             readPages(operation, input, `${path}/reactions/`, Json.GitCafeReactions).pipe(
               Effect.orElseSucceed(() => undefined),
             ),

@@ -1,13 +1,13 @@
-/**
- * Unknown driver slugs must decode so persisted selections survive builds with
- * different registries; runtime availability is checked by the registry.
- */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const PROVIDER_SLUG_MAX_CHARS = 64;
-/** A leading letter keeps slugs JS-identifier friendly in keys, logs and telemetry. */
+/**
+ * Mixed case is permitted so historical driver kinds (e.g. `claudeAgent`) can
+ * be used verbatim during the migration and so external fork authors retain
+ * reasonable freedom.
+ */
 const PROVIDER_SLUG_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const ENVIRONMENT_VARIABLE_NAME_MAX_CHARS = 128;
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -17,6 +17,9 @@ const slugSchema = TrimmedNonEmptyString.check(
   Schema.isPattern(PROVIDER_SLUG_PATTERN),
 );
 
+/**
+ * Notably **not** validated: that the driver is one we know how to load.
+ */
 export const ProviderDriverKind = slugSchema.pipe(Schema.brand("ProviderDriverKind"));
 export type ProviderDriverKind = typeof ProviderDriverKind.Type;
 
@@ -27,10 +30,6 @@ export const isProviderDriverKind = (value: unknown): value is ProviderDriverKin
 export const ProviderInstanceId = slugSchema.pipe(Schema.brand("ProviderInstanceId"));
 export type ProviderInstanceId = typeof ProviderInstanceId.Type;
 
-/**
- * Carries the driver alongside the routing key so consumers can select driver
- * behavior without a registry lookup.
- */
 export const ProviderInstanceRef = Schema.Struct({
   instanceId: ProviderInstanceId,
   driver: ProviderDriverKind,
@@ -56,8 +55,10 @@ export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironm
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
 
 /**
- * Keep unknown drivers' opaque config intact so it round-trips across builds;
- * each registered driver owns its decoder.
+ * The driver-specific config payload is left as `Schema.Unknown`; each driver
+ * registers its own decoder with the runtime registry, and envelopes for
+ * unknown drivers are preserved verbatim so they round-trip across version
+ * changes without data loss.
  */
 export const ProviderInstanceConfig = Schema.Struct({
   driver: ProviderDriverKind,
@@ -91,8 +92,10 @@ export const ProviderInstanceConfigMap = Schema.Record(ProviderInstanceId, Provi
 export type ProviderInstanceConfigMap = typeof ProviderInstanceConfigMap.Type;
 
 /**
- * Use the driver slug as the default routing key so persisted single-instance
- * threads and bindings remain routable without rewriting their selections.
+ * The legacy single-instance-per-driver world used the driver kind itself as
+ * the instance id; preserving that mapping keeps existing persisted threads,
+ * bindings, and cache files routable across the migration without rewriting
+ * their stored selection payloads.
  */
 export const defaultInstanceIdForDriver = (driver: ProviderDriverKind): ProviderInstanceId =>
   ProviderInstanceId.make(driver);

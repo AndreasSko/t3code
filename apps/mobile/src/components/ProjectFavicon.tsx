@@ -177,7 +177,6 @@ function ProjectFaviconImage(props: {
         justifyContent: "center",
       }}
     >
-      {/* Folder icon fallback (matches web's FolderIcon) */}
       {!showImage ? (
         <SymbolView
           name={{ ios: "folder.fill", android: props.open ? "folder_open" : "folder" }}
@@ -187,7 +186,6 @@ function ProjectFaviconImage(props: {
         />
       ) : null}
 
-      {/* Favicon image (hidden until loaded) */}
       {requestIsActive ? (
         <Image
           key={faviconRequest.faviconUrl}

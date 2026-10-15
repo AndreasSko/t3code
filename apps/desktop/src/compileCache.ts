@@ -4,8 +4,10 @@ import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-// Linux caches must be per-user; macOS and Windows temp dirs already are.
-// AppImage mount paths change each launch, causing cache misses and duplicate files.
+// Linux uses the user's cache dir because /tmp is shared between users; the macOS and Windows
+// temp dirs are already per user. Skipped under AppImage: it mounts the app at a new
+// /tmp/.mount_* path each launch, and Node keys entries by path, so every launch would miss
+// and leave another copy behind. The backend inherits APPIMAGE, so this covers it too.
 try {
   if (!process.env.APPIMAGE) {
     const cacheRoot =

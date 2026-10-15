@@ -9,11 +9,11 @@ import { resolveDiffThemeName, type DiffThemeName } from "../../lib/diffRenderin
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import { GhosttyTerminalSurface } from "~/terminal/ghostty/surface";
 
-// Use the actual composer, diff renderer, and Ghostty surface so font previews reflect app typography.
-
 const EMPTY_SKILLS: ReadonlyArray<never> = [];
 
-// Use composer serialization so skill and file references render as actual inline chips.
+// Serialized the way the composer stores inline tokens: the $skill and the
+// markdown-style file links render as chips, so the preview shows prompt
+// text and pills exactly as the real composer draws them.
 const PROMPT_PREVIEW_TEXT =
   "Use $frontend-design to fix the flaky test in " +
   "[surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) and align the header with " +
@@ -60,8 +60,10 @@ const DIFF_PREVIEW_PATCH = [
   "",
 ].join("\n");
 
-// Interactive mounts can race highlighter readiness; SSR awaits the shared
-// highlighter and yields deterministic HTML in the same shadow-root surface.
+// The interactive FileDiff's mount lifecycle can race that highlighter when the typography views
+// remount it (toggling Advanced) and lock in an unhighlighted frame; a static preview needs none
+// of that lifecycle, so it uses the deterministic renderer and injects the finished HTML into a
+// shadow root, exactly as FileDiff would.
 const diffPreviewHtmlByTheme = new Map<DiffThemeName, Promise<readonly string[]>>();
 
 function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
@@ -76,8 +78,11 @@ function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
   return promise;
 }
 
-// Unlayered rules override Pierre's baked @layer surfaces without !important;
-// inherited custom properties bridge the app theme through its shadow root.
+// Pierre's prerendered stylesheet bakes its own light/dark surface colors
+// into the shadow root's @layer rules. These unlayered rules win the cascade
+// without !important and re-point the surfaces at the app's code tokens
+// (custom properties inherit across the shadow boundary), so the preview
+// follows the active theme exactly like the real diff panel does.
 const DIFF_PREVIEW_THEME_BRIDGE = `
   :host {
     color: var(--code-foreground);
@@ -132,7 +137,6 @@ export function CodeFontPreview() {
 
 const TERMINAL_PROMPT =
   "\x1b[1;32m→\x1b[0m \x1b[1;36mt3code\x1b[0m \x1b[1;34mgit:(\x1b[1;31mmain\x1b[1;34m)\x1b[0m \x1b[1;33m✗\x1b[0m ";
-// Cover bold, dim, underline, accent colors, and background cells in the font sample.
 const TERMINAL_PREVIEW_TRANSCRIPT =
   `${TERMINAL_PROMPT}vpr dev\r\n` +
   "\r\n" +
@@ -153,8 +157,6 @@ function previewTerminalFont(family: string, size: number): { family?: string; s
   return trimmed.length > 0 ? { family: trimmed, size } : { size };
 }
 
-/** The local echo loop exercises Ghostty glyph metrics and monospace checks
- * without a PTY; input edits stay in the sample. */
 export function TerminalFontPreview({ family, size }: { family: string; size: number }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<GhosttyTerminalSurface | null>(null);
@@ -181,7 +183,6 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     const mount = mountRef.current;
     if (!mount) return;
     let cancelled = false;
-    // Bound Backspace by typed input length so it cannot erase the prompt.
     let lineLength = 0;
 
     const echo = (data: string) => {
@@ -199,7 +200,6 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
         }
         return;
       }
-      // Arrow keys and other escape reports have no cursor to move here.
       if (data.startsWith("\x1b")) return;
       const printable = [...data]
         .filter((character) => character >= " " && character !== "\x7f")
@@ -215,7 +215,6 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
       onData: echo,
       onResize: noop,
       onSelectionChange: noop,
-      // Tab keeps walking the settings page instead of feeding the echo loop.
       beforeKey: (event) => event.key !== "Tab",
       onLinkActivate: noop,
     }).then((surface) => {

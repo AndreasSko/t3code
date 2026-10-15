@@ -8,7 +8,6 @@ type UsageProviderPresentation = {
   readonly driverKind: ProviderDriverKind;
 };
 
-/** Declaration order is shared by charts and tables. */
 export const PROVIDER_PRESENTATION = {
   codex: {
     label: "Codex",
@@ -22,7 +21,6 @@ export const PROVIDER_PRESENTATION = {
   },
   grok: {
     label: "Grok Build",
-    // Contrast-aware neutral between the Codex series and muted chart chrome.
     color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
     driverKind: ProviderDriverKind.make("grok"),
   },
