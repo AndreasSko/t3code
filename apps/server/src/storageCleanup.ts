@@ -501,6 +501,8 @@ const make = Effect.gen(function* () {
           (!deleted && !group.every((member) => storageCleanupThreadIdle(member, now)))
         )
           return keep("thread is running or has pending work");
+        if (group.some((member) => member.branch === null))
+          return keep("a subagent thread has no branch to restore it from");
         if (hasTerminal(worktreePath)) return keep("open terminal");
         // Roots are canonical, so compare canonical paths. A symlinked parent
         // (a linked drive) is fine; a symlinked worktree directory is not.
@@ -647,6 +649,7 @@ const make = Effect.gen(function* () {
                 const previous = group.find((member) => member.id === shell.id);
                 return (
                   previous === undefined ||
+                  shell.branch === null ||
                   !Equal.equals(shell.settledAt, previous.settledAt) ||
                   (shell.settledAt !== null &&
                     !Equal.equals(shell.updatedAt, previous.updatedAt)) ||
