@@ -45,6 +45,7 @@ import { SettingsGroup } from "./SettingsGroup";
 import type { ScopedSettingsTarget } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import {
   useClearScopedSettings,
   useScopedSettings,
@@ -294,6 +295,7 @@ function CleanupSection() {
     const report = query?.report ?? null;
     return {
       environment,
+      labels: settingsScopeEnvironmentLabels(environment, connectedEnvironments),
       report,
       description: report
         ? `Last run ${formatRelativeTimeLabel(report.finishedAt)}. ${formatBytes(report.bytesFreed)} recovered.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
@@ -382,15 +384,22 @@ function CleanupSection() {
           }
         />
         {supported.length > 1 &&
-          summaries.map(({ environment, report, description }) => (
+          summaries.map(({ environment, labels, report, description }) => (
             <Collapsible key={environment.environmentId}>
               <EnvironmentRow
                 kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-                label={environment.label}
+                label={labels.primary}
                 subtitle={
-                  report
-                    ? `${formatBytes(report.bytesFreed)} recovered${report.counts.failed > 0 ? ` · ${report.counts.failed} failed` : ""} · ${formatRelativeTimeLabel(report.finishedAt)}`
-                    : description
+                  <>
+                    {labels.secondary ? (
+                      <span className="block truncate">{labels.secondary}</span>
+                    ) : null}
+                    <span className="block truncate">
+                      {report
+                        ? `${formatBytes(report.bytesFreed)} recovered${report.counts.failed > 0 ? ` · ${report.counts.failed} failed` : ""} · ${formatRelativeTimeLabel(report.finishedAt)}`
+                        : description}
+                    </span>
+                  </>
                 }
               >
                 {report ? (

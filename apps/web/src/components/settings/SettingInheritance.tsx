@@ -23,6 +23,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import type { ProjectOverrideEntry, ScopedSettingsTarget } from "./scopedSettings";
 import { isProjectScopedSettingKey } from "./scopedSettings";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 interface InheritanceLayer {
   readonly key: "project" | "environment" | "t3.json" | "built-in";
@@ -177,7 +178,10 @@ export function SettingInheritance({
   state: SettingInheritanceState;
   summary: string;
   targets: readonly ScopedSettingsTarget[];
-  environments: readonly Pick<EnvironmentPresentation, "environmentId" | "serverConfig">[];
+  environments: readonly Pick<
+    EnvironmentPresentation,
+    "environmentId" | "label" | "displayUrl" | "serverConfig"
+  >[];
   keys: readonly (keyof ServerSettings)[];
   /** At environment scope: projects whose own value hides the environment's. */
   overridingProjects?: readonly SettingOverridingProject[];
@@ -200,6 +204,7 @@ export function SettingInheritance({
       {
         id: `${target.environmentId}:${target.projectId ?? ""}`,
         target,
+        labels: settingsScopeEnvironmentLabels(environment, environments),
         path: scopeContext?.scope.members.find(
           (member) =>
             member.environmentId === target.environmentId && member.id === target.projectId,
@@ -268,7 +273,10 @@ export function SettingInheritance({
               value={selected.id}
               onValueChange={setSelectedTargetId}
             >
-              <SelectTrigger size="xs" aria-label="Inheritance target">
+              <SelectTrigger
+                size={selected.labels.secondary ? "sm" : "xs"}
+                aria-label="Inheritance target"
+              >
                 <SelectValue>
                   <span className="flex min-w-0 items-center gap-1.5">
                     <EnvironmentMachineIcon
@@ -276,30 +284,42 @@ export function SettingInheritance({
                       kind={selected.machine}
                       className="size-3.5 shrink-0"
                     />
-                    <span className="max-w-32 shrink-0 truncate">{selected.target.label}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate">{selected.labels.primary}</span>
+                      {selected.labels.secondary ? (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {selected.labels.secondary}
+                        </span>
+                      ) : null}
+                    </span>
                     {selected.path ? (
-                      <span
-                        dir="rtl"
-                        className="min-w-0 truncate text-left text-muted-foreground"
-                        title={selected.path}
-                      >
-                        <bdi>{selected.path}</bdi>
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span
+                              dir="rtl"
+                              className="min-w-0 truncate text-left text-muted-foreground"
+                            />
+                          }
+                        >
+                          <bdi>{selected.path}</bdi>
+                        </TooltipTrigger>
+                        <TooltipPopup>{selected.path}</TooltipPopup>
+                      </Tooltip>
                     ) : null}
                   </span>
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup alignItemWithTrigger={false}>
-                {chains.map(({ id, target, path }) => (
+                {chains.map(({ id, labels, path }) => (
                   <SelectItem key={id} value={id}>
                     <div className="max-w-64">
-                      <p className="truncate">{target.label}</p>
+                      <p className="truncate">{labels.primary}</p>
+                      {labels.secondary ? (
+                        <p className="truncate text-xs text-muted-foreground">{labels.secondary}</p>
+                      ) : null}
                       {path ? (
-                        <p
-                          dir="rtl"
-                          className="truncate text-left text-xs text-muted-foreground"
-                          title={path}
-                        >
+                        <p dir="rtl" className="truncate text-left text-xs text-muted-foreground">
                           <bdi>{path}</bdi>
                         </p>
                       ) : null}
@@ -317,7 +337,7 @@ export function SettingInheritance({
           </div>
         ) : null}
         <div className="divide-y divide-border/60">
-          {(selected ? [selected] : []).map(({ target, environment, machine }) => (
+          {(selected ? [selected] : []).map(({ target, labels, environment, machine }) => (
             <section
               key={`${target.environmentId}:${target.projectId ?? ""}`}
               className="px-3 py-2.5"
@@ -329,7 +349,14 @@ export function SettingInheritance({
                     kind={machine}
                     className="size-3.5 shrink-0"
                   />
-                  <span className="min-w-0 truncate">{target.label}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate">{labels.primary}</span>
+                    {labels.secondary ? (
+                      <span className="block truncate font-normal text-muted-foreground">
+                        {labels.secondary}
+                      </span>
+                    ) : null}
+                  </span>
                 </h4>
               ) : null}
               <ol role="list" className="text-sm">

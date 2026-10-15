@@ -32,6 +32,7 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -46,6 +47,7 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 const ProjectIconPickerDialog = lazy(() =>
   import("./ProjectIconPickerDialog").then((module) => ({
@@ -445,16 +447,28 @@ function ProjectDetail({
       {Array.from(checkoutsByEnvironment, ([environmentId, members]) => {
         const firstMember = members[0]!;
         const hasMultiple = members.length > 1;
+        const environment = environmentById.get(environmentId);
+        const labels = environment
+          ? settingsScopeEnvironmentLabels(environment, environments)
+          : { primary: firstMember.environmentLabel ?? "Environment", secondary: environmentId };
         return (
           <SettingsRow
             key={environmentId}
-            title={firstMember.environmentLabel ?? "Environment"}
+            title={labels.primary}
             description={
-              hasMultiple ? undefined : (
-                <span className="block truncate" title={firstMember.workspaceRoot}>
-                  {firstMember.workspaceRoot}
-                </span>
-              )
+              <>
+                {labels.secondary ? (
+                  <span className="block truncate">{labels.secondary}</span>
+                ) : null}
+                {!hasMultiple ? (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="block truncate" />}>
+                      {firstMember.workspaceRoot}
+                    </TooltipTrigger>
+                    <TooltipPopup>{firstMember.workspaceRoot}</TooltipPopup>
+                  </Tooltip>
+                ) : null}
+              </>
             }
             control={hasMultiple ? undefined : checkoutRemoveButton(firstMember)}
           >
@@ -465,12 +479,16 @@ function ProjectDetail({
                     key={member.physicalProjectKey}
                     className="flex min-w-0 items-center justify-between gap-3"
                   >
-                    <span
-                      className="min-w-0 truncate text-xs text-muted-foreground/80"
-                      title={member.workspaceRoot}
-                    >
-                      {member.workspaceRoot}
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span className="min-w-0 truncate text-xs text-muted-foreground/80" />
+                        }
+                      >
+                        {member.workspaceRoot}
+                      </TooltipTrigger>
+                      <TooltipPopup>{member.workspaceRoot}</TooltipPopup>
+                    </Tooltip>
                     <div className="shrink-0">{checkoutRemoveButton(member)}</div>
                   </div>
                 ))}

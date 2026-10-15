@@ -7,12 +7,13 @@ import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import type { SettingsScopeSearch } from "./settingsScope";
-import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
+import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 interface ScopeChoice {
@@ -54,7 +55,14 @@ export function SettingsScopeNotice({
                 label: environment
                   ? settingsScopeEnvironmentLabels(environment).primary
                   : (member.environmentLabel ?? "Environment"),
-                secondary: member.workspaceRoot,
+                secondary: [
+                  environment
+                    ? settingsScopeEnvironmentLabels(environment, environments).secondary
+                    : member.environmentId,
+                  member.workspaceRoot,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
                 icon: environment ? (
                   <EnvironmentMachineIcon
                     aria-hidden
@@ -77,7 +85,27 @@ export function SettingsScopeNotice({
               target === "project"
                 ? groups.map((group) => ({
                     label: group.displayName,
-                    secondary: group.workspaceRoot,
+                    secondary: [
+                      ...(groups.some(
+                        (other) =>
+                          other.projectKey !== group.projectKey &&
+                          other.displayName === group.displayName,
+                      )
+                        ? Array.from(
+                            new Set(
+                              group.memberProjects.map((member) => {
+                                const environment = environments.find(
+                                  (entry) => entry.environmentId === member.environmentId,
+                                );
+                                return environment
+                                  ? settingsScopeEnvironmentLabel(environment, environments)
+                                  : (member.environmentLabel ?? member.environmentId);
+                              }),
+                            ),
+                          )
+                        : []),
+                      group.workspaceRoot,
+                    ].join(" · "),
                     icon: <ProjectFavicon project={group} className="size-4 shrink-0" />,
                     search: { project: group.projectKey },
                   }))
@@ -137,9 +165,14 @@ export function SettingsScopeNotice({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{choice.label}</span>
           {choice.secondary ? (
-            <span title={choice.secondary} className="block truncate text-xs text-muted-foreground">
-              {choice.secondary}
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={<span className="block truncate text-xs text-muted-foreground" />}
+              >
+                {choice.secondary}
+              </TooltipTrigger>
+              <TooltipPopup>{choice.secondary}</TooltipPopup>
+            </Tooltip>
           ) : null}
         </span>
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />

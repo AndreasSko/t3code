@@ -105,9 +105,7 @@ function ScopeOptionLabel({ option }: { option: ScopeOption }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate">{option.label}</span>
         {option.secondary ? (
-          <span title={option.secondary} className="block truncate text-xs text-muted-foreground">
-            {option.secondary}
-          </span>
+          <span className="block truncate text-xs text-muted-foreground">{option.secondary}</span>
         ) : null}
       </span>
       {option.offline ? (

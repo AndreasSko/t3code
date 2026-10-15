@@ -68,6 +68,7 @@ import { readEnvironmentScope } from "~/state/session";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import {
   WEBHOOK_SIGNATURE_DEFAULTS,
   matchesScheduledTaskScope,
@@ -100,6 +101,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -416,31 +418,42 @@ function ScheduledTaskEnvironmentList({
 
   return (
     <SettingsGroup>
-      {populated.map(({ environment, tasks }) => (
-        <div key={environment.environmentId} className="divide-y divide-border/50">
-          <EnvironmentRow
-            kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-            label={environment.label}
-            subtitle={environmentTransportLabel(environment)}
-          >
-            <ConnectionStatusDot
-              dotClassName={connectionPhaseDotClassName(environment.connection.phase)}
-              tooltipText={connectionStatusTitle(environment.connection)}
-            />
-            <span className="text-xs text-muted-foreground">
-              {connectionStatusTitle(environment.connection)}
-            </span>
-          </EnvironmentRow>
-          {tasks?.map((task) => (
-            <ScheduledTaskRow
-              key={task.id}
-              environmentId={environment.environmentId}
-              task={task}
-              onEdit={() => onEdit(environment.environmentId, task)}
-            />
-          ))}
-        </div>
-      ))}
+      {populated.map(({ environment, tasks }) => {
+        const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
+        const transport = environmentTransportLabel(environment);
+        return (
+          <div key={environment.environmentId} className="divide-y divide-border/50">
+            <EnvironmentRow
+              kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+              label={primary}
+              subtitle={
+                <>
+                  {secondary && secondary !== transport ? (
+                    <span className="block truncate">{secondary}</span>
+                  ) : null}
+                  <span className="block truncate">{transport}</span>
+                </>
+              }
+            >
+              <ConnectionStatusDot
+                dotClassName={connectionPhaseDotClassName(environment.connection.phase)}
+                tooltipText={connectionStatusTitle(environment.connection)}
+              />
+              <span className="text-xs text-muted-foreground">
+                {connectionStatusTitle(environment.connection)}
+              </span>
+            </EnvironmentRow>
+            {tasks?.map((task) => (
+              <ScheduledTaskRow
+                key={task.id}
+                environmentId={environment.environmentId}
+                task={task}
+                onEdit={() => onEdit(environment.environmentId, task)}
+              />
+            ))}
+          </div>
+        );
+      })}
       {taskId && linkedState?.tasks && linkedState.error === null && !linkedTask ? (
         <SettingsRow
           title="Task unavailable"
@@ -458,14 +471,19 @@ function ScheduledTaskEnvironmentList({
         if (entries.length === 0) return null;
         const summary = `${label} ${entries.join(", ")}`;
         return (
-          <p
-            key={label}
-            className="truncate px-3 py-2.5 text-xs text-muted-foreground sm:px-4"
-            title={summary}
-            role="status"
-          >
-            {summary}
-          </p>
+          <Tooltip key={label}>
+            <TooltipTrigger
+              render={
+                <p
+                  className="truncate px-3 py-2.5 text-xs text-muted-foreground sm:px-4"
+                  role="status"
+                />
+              }
+            >
+              {summary}
+            </TooltipTrigger>
+            <TooltipPopup>{summary}</TooltipPopup>
+          </Tooltip>
         );
       })}
     </SettingsGroup>
@@ -1183,10 +1201,7 @@ function ScheduledTaskEditorDialog({
                               other.environmentId !== entry.environmentId &&
                               other.label === entry.label,
                           ) ? (
-                            <span
-                              className="block max-w-72 truncate text-xs text-muted-foreground"
-                              title={entry.displayUrl ?? entry.environmentId}
-                            >
+                            <span className="block max-w-72 truncate text-xs text-muted-foreground">
                               {entry.displayUrl ?? entry.environmentId}
                             </span>
                           ) : null}
@@ -1241,10 +1256,7 @@ function ScheduledTaskEditorDialog({
                             (other.environmentId !== project.environmentId ||
                               other.id !== project.id),
                         ) ? (
-                          <span
-                            className="block max-w-72 truncate text-xs text-muted-foreground"
-                            title={project.workspaceRoot}
-                          >
+                          <span className="block max-w-72 truncate text-xs text-muted-foreground">
                             {project.workspaceRoot}
                           </span>
                         ) : null}

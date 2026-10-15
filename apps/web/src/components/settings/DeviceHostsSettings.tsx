@@ -39,6 +39,7 @@ import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { DeviceHostEditor } from "./DeviceHostEditor";
 import { useHostConnectionChecks } from "./useHostConnectionChecks";
 import { deviceHostConnectionKey } from "./deviceHostConnectionChecks";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null }) {
   const { scope, environments, connectedEnvironments } = useSettingsScope();
@@ -59,6 +60,7 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
       connectedEnvironments.map((environment) => ({
         environmentId: environment.environmentId,
         label: environment.label,
+        labels: settingsScopeEnvironmentLabels(environment, connectedEnvironments),
         hosts: environment.serverConfig?.settings.deviceHosts ?? [],
       })),
     [connectedEnvironments],
@@ -168,7 +170,18 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
                   <FoldedSettingsSection
                     key={environment.environmentId}
                     id={`device-hosts-${environment.environmentId}`}
-                    title={environment.label}
+                    title={
+                      <>
+                        <span className="block max-w-64 truncate">
+                          {environment.labels.primary}
+                        </span>
+                        {environment.labels.secondary ? (
+                          <span className="block max-w-64 truncate text-xs font-normal text-muted-foreground">
+                            {environment.labels.secondary}
+                          </span>
+                        ) : null}
+                      </>
+                    }
                     summary={
                       summarizeLabels(environment.hosts.map((host) => host.label)) ||
                       "No device hosts"
@@ -225,6 +238,13 @@ function DeviceHostList({
   checks: ReturnType<typeof useHostConnectionChecks>["checks"];
   testConnection: ReturnType<typeof useHostConnectionChecks>["testConnection"];
 }) {
+  const { environments: scopeEnvironments } = useSettingsScope();
+  const environmentLabels = new Map(
+    scopeEnvironments.map((environment) => [
+      environment.environmentId,
+      settingsScopeEnvironmentLabels(environment, scopeEnvironments),
+    ]),
+  );
   const states = useAtomValue(
     useMemo(
       () =>
@@ -431,6 +451,11 @@ function DeviceHostList({
                       {results.map((result) => (
                         <div key={result.environmentId}>
                           <p className="text-xs text-muted-foreground">{result.label}</p>
+                          {environmentLabels.get(result.environmentId)?.secondary ? (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {environmentLabels.get(result.environmentId)?.secondary}
+                            </p>
+                          ) : null}
                           <DeviceToolVersions
                             owner={result.label}
                             error={result.summary?.toolInspectionError}

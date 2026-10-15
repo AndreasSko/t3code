@@ -1,4 +1,5 @@
 import { SettingsGroup } from "./SettingsGroup";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -3469,12 +3470,18 @@ export function ArchivedThreadsPanel() {
       ),
     );
     const environmentLabels = new Map(
-      environments.map((environment) => [environment.environmentId, environment.label]),
+      environments.map((environment) => [
+        environment.environmentId,
+        settingsScopeEnvironmentLabels(environment, environments),
+      ]),
     );
     const threads = archivedSnapshots.flatMap(({ environmentId, snapshot }) =>
       snapshot.threads.map((thread) => ({
         ...presentThreadShell(environmentId, thread),
-        environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
+        environmentLabels: environmentLabels.get(environmentId) ?? {
+          primary: environmentId,
+          secondary: "",
+        },
       })),
     );
     const logicalGroupsByProjectKey = new Map(
@@ -3502,7 +3509,7 @@ export function ArchivedThreadsPanel() {
         }
       }
       if (projectThreads.length > 0) {
-        const physicalProjectKey = `${project.environmentId}:${project.id}`;
+        const physicalProjectKey = `${project.environmentId}:${project.id}` as const;
         const logicalGroup = logicalGroupsByProjectKey.get(physicalProjectKey);
         const groupKey = logicalGroup?.projectKey ?? physicalProjectKey;
         const group = groups.get(groupKey);
@@ -3646,8 +3653,12 @@ export function ArchivedThreadsPanel() {
                   <>
                     {scope.environmentIds.length > 1 ? (
                       <>
-                        {thread.environmentLabel}
-                        {" \u00b7 "}
+                        <span className="block">{thread.environmentLabels.primary}</span>
+                        {thread.environmentLabels.secondary ? (
+                          <span className="block truncate">
+                            {thread.environmentLabels.secondary}
+                          </span>
+                        ) : null}
                       </>
                     ) : null}
                     Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
