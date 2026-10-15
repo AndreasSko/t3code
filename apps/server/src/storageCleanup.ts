@@ -107,7 +107,6 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
 /** Live sessions keep their cwd even when no turn is currently running. */
 export function storageCleanupThreadIdle(thread: OrchestrationV2ThreadShell, now: number): boolean {
   return (
-    thread.branch !== null &&
     thread.worktreePath !== null &&
     thread.activeRunId === null &&
     (thread.status === "idle" ||
@@ -138,9 +137,12 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
 /** Only a complete subagent chain shares ownership; forks remain separate. */
 function worktreeOwner(threads: ReadonlyArray<OrchestrationV2ThreadShell>) {
   if (threads.length === 1) return threads[0];
-  const owner = threads.find((thread) => thread.id === thread.lineage.rootThreadId);
-  if (owner === undefined) return undefined;
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
+  const tops = threads.filter((thread) => !byId.has(thread.lineage.parentThreadId!));
+  if (tops.length !== 1) return undefined;
+  const owner = tops[0]!;
+  if (owner.lineage.parentThreadId !== null && owner.lineage.relationshipToParent !== "subagent")
+    return undefined;
   for (const thread of threads) {
     let current = thread;
     const seen = new Set<string>();
@@ -148,7 +150,7 @@ function worktreeOwner(threads: ReadonlyArray<OrchestrationV2ThreadShell>) {
       if (
         seen.has(current.id) ||
         current.lineage.relationshipToParent !== "subagent" ||
-        current.lineage.rootThreadId !== owner.id
+        current.lineage.rootThreadId !== owner.lineage.rootThreadId
       )
         return undefined;
       seen.add(current.id);
@@ -570,7 +572,10 @@ const make = Effect.gen(function* () {
         if (group.length > 1 && worktreeOwner(group) === undefined)
           return keep(`shared by ${group.length} threads`);
         if (project === undefined) return keep("project is unavailable");
-        if (!deleted && !group.every((member) => storageCleanupThreadIdle(member, now)))
+        if (
+          thread.branch === null ||
+          (!deleted && !group.every((member) => storageCleanupThreadIdle(member, now)))
+        )
           return keep("thread is running or has pending work");
         if (hasTerminal(worktreePath)) return keep("open terminal");
         // Roots are canonical, so compare canonical paths. A symlinked parent
@@ -595,9 +600,12 @@ const make = Effect.gen(function* () {
         // settlement backdates settledAt to the thread's last activity.
         if (
           !deleted &&
-          thread.settledAt !== null &&
-          now - Math.max(DateTime.toEpochMillis(thread.updatedAt), activityAt) <
-            SETTLE_SCRIPT_GRACE_MS
+          group.some(
+            (member) =>
+              member.settledAt !== null &&
+              now - Math.max(DateTime.toEpochMillis(member.updatedAt), activityAt) <
+                SETTLE_SCRIPT_GRACE_MS,
+          )
         )
           return keep("settled moments ago");
         const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
@@ -710,11 +718,13 @@ const make = Effect.gen(function* () {
             if (
               latestGroup.length !== group.length ||
               latestOwner?.id !== thread.id ||
-              !Equal.equals(latestOwner.settledAt, thread.settledAt) ||
               latestGroup.some((shell) => {
                 const previous = group.find((member) => member.id === shell.id);
                 return (
                   previous === undefined ||
+                  !Equal.equals(shell.settledAt, previous.settledAt) ||
+                  (shell.settledAt !== null &&
+                    !Equal.equals(shell.updatedAt, previous.updatedAt)) ||
                   !storageCleanupThreadIdle(shell, now) ||
                   path.resolve(shell.worktreePath!) !== worktreePath ||
                   storageCleanupActivityAt(shell) !== storageCleanupActivityAt(previous)
