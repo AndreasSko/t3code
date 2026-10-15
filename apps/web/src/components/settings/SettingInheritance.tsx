@@ -200,15 +200,20 @@ export function SettingInheritance({
       (candidate) => candidate.environmentId === target.environmentId,
     );
     if (!environment?.serverConfig) return [];
+    const labels = settingsScopeEnvironmentLabels(environment, environments);
+    const path = scopeContext?.scope.members.find(
+      (member) => member.environmentId === target.environmentId && member.id === target.projectId,
+    )?.workspaceRoot;
+    const secondary = [labels.secondary, path?.split(/[\\/]/).filter(Boolean).slice(-2).join("/")]
+      .filter(Boolean)
+      .join(" · ");
     return [
       {
         id: `${target.environmentId}:${target.projectId ?? ""}`,
         target,
-        labels: settingsScopeEnvironmentLabels(environment, environments),
-        path: scopeContext?.scope.members.find(
-          (member) =>
-            member.environmentId === target.environmentId && member.id === target.projectId,
-        )?.workspaceRoot,
+        labels,
+        path,
+        secondary,
         environment: { ...environment, serverConfig: environment.serverConfig },
         machine: resolveEnvironmentMachineKind(environment.serverConfig),
       },
@@ -274,7 +279,7 @@ export function SettingInheritance({
               onValueChange={setSelectedTargetId}
             >
               <SelectTrigger
-                size={selected.labels.secondary ? "sm" : "xs"}
+                size={selected.secondary ? "sm" : "xs"}
                 aria-label="Inheritance target"
               >
                 <SelectValue>
@@ -284,44 +289,31 @@ export function SettingInheritance({
                       kind={selected.machine}
                       className="size-3.5 shrink-0"
                     />
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="block truncate">{selected.labels.primary}</span>
-                      {selected.labels.secondary ? (
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {selected.labels.secondary}
-                        </span>
+                      {selected.secondary ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <span className="block truncate text-xs text-muted-foreground" />
+                            }
+                          >
+                            {selected.secondary}
+                          </TooltipTrigger>
+                          <TooltipPopup>{selected.path ?? selected.secondary}</TooltipPopup>
+                        </Tooltip>
                       ) : null}
                     </span>
-                    {selected.path ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <span
-                              dir="rtl"
-                              className="min-w-0 truncate text-left text-muted-foreground"
-                            />
-                          }
-                        >
-                          <bdi>{selected.path}</bdi>
-                        </TooltipTrigger>
-                        <TooltipPopup>{selected.path}</TooltipPopup>
-                      </Tooltip>
-                    ) : null}
                   </span>
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup alignItemWithTrigger={false}>
-                {chains.map(({ id, labels, path }) => (
+                {chains.map(({ id, labels, secondary }) => (
                   <SelectItem key={id} value={id}>
                     <div className="max-w-64">
                       <p className="truncate">{labels.primary}</p>
-                      {labels.secondary ? (
-                        <p className="truncate text-xs text-muted-foreground">{labels.secondary}</p>
-                      ) : null}
-                      {path ? (
-                        <p dir="rtl" className="truncate text-left text-xs text-muted-foreground">
-                          <bdi>{path}</bdi>
-                        </p>
+                      {secondary ? (
+                        <p className="truncate text-xs text-muted-foreground">{secondary}</p>
                       ) : null}
                     </div>
                   </SelectItem>

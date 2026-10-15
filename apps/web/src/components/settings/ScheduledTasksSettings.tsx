@@ -68,7 +68,10 @@ import { readEnvironmentScope } from "~/state/session";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
-import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
+import {
+  settingsScopeEnvironmentAddress,
+  settingsScopeEnvironmentLabels,
+} from "./settingsScopeAxis";
 import {
   WEBHOOK_SIGNATURE_DEFAULTS,
   matchesScheduledTaskScope,
@@ -1202,7 +1205,7 @@ function ScheduledTaskEditorDialog({
                               other.label === entry.label,
                           ) ? (
                             <span className="block max-w-72 truncate text-xs text-muted-foreground">
-                              {entry.displayUrl ?? entry.environmentId}
+                              {settingsScopeEnvironmentAddress(entry)}
                             </span>
                           ) : null}
                         </span>

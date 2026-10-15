@@ -145,7 +145,6 @@ export function SettingsScopeNotice({
                     ],
           },
         ];
-  const choiceCount = choiceGroups.reduce((total, group) => total + group.choices.length, 0);
   const renderChoices = (choices: ScopeChoice[]) =>
     choices.map((choice) => (
       <button
@@ -184,12 +183,7 @@ export function SettingsScopeNotice({
         <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
           {children}
         </p>
-        <div
-          className={cn(
-            "space-y-4",
-            choiceCount > 6 && "max-h-96 overflow-y-auto overscroll-contain",
-          )}
-        >
+        <div className="space-y-4">
           {choiceGroups.map((group) =>
             group.title ? (
               <SettingsSection key={group.key} title={group.title}>

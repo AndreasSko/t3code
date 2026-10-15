@@ -3,6 +3,15 @@ import type { ResolvedSettingsScope, SettingsScopeSearch } from "./settingsScope
 
 type ScopeEnvironment = Pick<EnvironmentPresentation, "environmentId" | "label" | "displayUrl">;
 
+export function settingsScopeEnvironmentAddress(environment: ScopeEnvironment) {
+  if (!environment.displayUrl) return environment.environmentId;
+  try {
+    return new URL(environment.displayUrl).host || environment.displayUrl;
+  } catch {
+    return environment.displayUrl;
+  }
+}
+
 export function settingsScopeEnvironmentLabels(
   environment: ScopeEnvironment,
   environments?: readonly ScopeEnvironment[],
@@ -14,9 +23,7 @@ export function settingsScopeEnvironmentLabels(
   return {
     primary: environment.label,
     secondary:
-      environments === undefined || duplicate
-        ? (environment.displayUrl ?? environment.environmentId)
-        : "",
+      environments === undefined || duplicate ? settingsScopeEnvironmentAddress(environment) : "",
   };
 }
 

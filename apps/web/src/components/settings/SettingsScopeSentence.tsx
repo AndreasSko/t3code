@@ -296,8 +296,23 @@ function EnvironmentScopeMenu({
   );
 }
 
-function ProjectScopeMenu({ value, groups, onChange }: SettingsScopeMenuProps) {
+function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsScopeMenuProps) {
   const selected = groups.find((group) => group.projectKey === value.project);
+  const projects = groups.map((group) => ({
+    group,
+    machines: Array.from(
+      new Set(
+        group.memberProjects.map((member) => {
+          const environment = environments.find(
+            (entry) => entry.environmentId === member.environmentId,
+          );
+          if (!environment) return member.environmentLabel ?? member.environmentId;
+          const { primary, secondary } = settingsScopeEnvironmentLabels(environment);
+          return `${primary} · ${secondary}`;
+        }),
+      ),
+    ).join(", "),
+  }));
   return (
     <ScopeMenu
       ariaLabel="Project scope"
@@ -307,12 +322,24 @@ function ProjectScopeMenu({ value, groups, onChange }: SettingsScopeMenuProps) {
       onChange={(next) => onChange(selectProjectAxis(value, next))}
       searchLabel="Search projects"
       allOption={{ value: ALL_PROJECTS_VALUE, label: "All projects" }}
-      options={groups.map((group) => ({
-        value: group.projectKey,
-        label: group.displayName,
-        secondary: group.workspaceRoot,
-        icon: <ProjectFavicon project={group} className="size-3.5 shrink-0" />,
-      }))}
+      options={projects.map(({ group, machines }) => {
+        const sameName = projects.filter(
+          (other) =>
+            other.group.projectKey !== group.projectKey &&
+            other.group.displayName === group.displayName,
+        );
+        return {
+          value: group.projectKey,
+          label: group.displayName,
+          secondary:
+            sameName.length === 0
+              ? group.workspaceRoot
+              : sameName.some((other) => other.machines === machines)
+                ? `${machines} · ${group.workspaceRoot}`
+                : machines,
+          icon: <ProjectFavicon project={group} className="size-3.5 shrink-0" />,
+        };
+      })}
     />
   );
 }

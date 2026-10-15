@@ -3650,21 +3650,20 @@ export function ArchivedThreadsPanel() {
                 }}
                 title={thread.title}
                 description={
-                  <>
+                  <span className={scope.environmentIds.length > 1 ? "block truncate" : undefined}>
                     {scope.environmentIds.length > 1 ? (
                       <>
-                        <span className="block">{thread.environmentLabels.primary}</span>
-                        {thread.environmentLabels.secondary ? (
-                          <span className="block truncate">
-                            {thread.environmentLabels.secondary}
-                          </span>
-                        ) : null}
+                        {thread.environmentLabels.primary}
+                        {thread.environmentLabels.secondary
+                          ? ` (${thread.environmentLabels.secondary})`
+                          : ""}
+                        {" · "}
                       </>
                     ) : null}
                     Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
                     {" \u00b7 Created "}
                     {formatRelativeTimeLabel(thread.createdAt)}
-                  </>
+                  </span>
                 }
                 control={
                   <Button
