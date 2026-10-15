@@ -74,6 +74,7 @@ export class ThreadSearch extends Context.Service<
   }
 >()("t3/orchestration-v2/ThreadSearch") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 

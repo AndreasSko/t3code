@@ -264,6 +264,7 @@ function autoSettlementConfigured(settings: import("@t3tools/contracts").ServerS
   );
 }
 
+/** @internal Exported for tests. */
 export function autoSettlementSettingsKey(
   settings: import("@t3tools/contracts").ServerSettings,
 ): string {

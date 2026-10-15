@@ -199,6 +199,7 @@ const previewHostWindow = (guest: WebContents | null): BrowserWindow | undefined
   return BrowserWindow.fromWebContents(host) ?? undefined;
 };
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* BrowserSessionMake() {
   const crypto = yield* Crypto.Crypto;
   const electronDialog = yield* ElectronDialog.ElectronDialog;

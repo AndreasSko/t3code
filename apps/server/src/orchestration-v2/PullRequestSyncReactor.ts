@@ -143,6 +143,7 @@ export class PullRequestSyncReactor extends Context.Service<
   }
 >()("t3/orchestration-v2/PullRequestSyncReactor") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
