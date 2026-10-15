@@ -335,9 +335,10 @@ export function SettingInheritance({
                   <Collapsible>
                     <CollapsibleTrigger
                       render={
-                        <button
-                          type="button"
-                          className="w-full rounded-md px-2 py-1 text-left hover:bg-foreground/[0.06] focus-visible:outline-2 focus-visible:outline-ring"
+                        <Button
+                          variant="ghost"
+                          size="sm-multiline"
+                          className="w-full justify-start text-left"
                         />
                       }
                     >

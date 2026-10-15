@@ -360,7 +360,9 @@ function CleanupSection() {
                 ? "Turn on a cleanup rule to use this."
                 : summaries.map(({ environment, description }) => (
                     <span key={environment.environmentId} className="block">
-                      {supported.length > 1 ? `${environment.label}: ` : ""}
+                      {supported.length > 1
+                        ? `${settingsScopeEnvironmentLabel(environment, connectedEnvironments)}: `
+                        : ""}
                       {description}
                     </span>
                   ))}
