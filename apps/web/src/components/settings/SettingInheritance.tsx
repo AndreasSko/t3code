@@ -225,6 +225,10 @@ export function SettingInheritance({
         target.environmentId === scopeContext?.target?.environmentId &&
         target.projectId === scopeContext?.target?.projectId,
     ) ?? chains[0];
+  const machineLabelFor = (environmentId: string) => {
+    const chain = chains.find((entry) => entry.target.environmentId === environmentId);
+    return chain ? [chain.labels.primary, chain.labels.secondary].filter(Boolean).join(" · ") : "";
+  };
   const groups: (typeof chains)[] = [];
   for (const chain of hasMultipleEnvironments && primary
     ? [primary, ...chains.filter((entry) => entry !== primary)]
@@ -417,7 +421,12 @@ export function SettingInheritance({
                           className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-2 py-1"
                         >
                           <InlineButton className="min-w-0 justify-start" onClick={project.open}>
-                            <span className="truncate">{project.label}</span>
+                            <span className="truncate">
+                              {project.label}
+                              {hasMultipleEnvironments
+                                ? ` · ${machineLabelFor(project.environmentId)}`
+                                : ""}
+                            </span>
                           </InlineButton>
                           <span className="max-w-32 truncate text-muted-foreground tabular-nums">
                             {isProjectScopedSettingKey(key)
