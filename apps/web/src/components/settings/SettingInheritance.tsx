@@ -310,7 +310,8 @@ export function SettingInheritance({
             </Select>
             {differing ? (
               <p className="text-xs text-muted-foreground">
-                Values differ across {selected.target.projectId === null ? "machines" : "checkouts"}.
+                Values differ across {selected.target.projectId === null ? "machines" : "checkouts"}
+                .
               </p>
             ) : null}
           </div>
@@ -323,7 +324,11 @@ export function SettingInheritance({
             >
               {chains.length === 1 ? (
                 <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
-                  <EnvironmentMachineIcon aria-hidden kind={machine} className="size-3.5 shrink-0" />
+                  <EnvironmentMachineIcon
+                    aria-hidden
+                    kind={machine}
+                    className="size-3.5 shrink-0"
+                  />
                   <span className="min-w-0 truncate">{target.label}</span>
                 </h4>
               ) : null}

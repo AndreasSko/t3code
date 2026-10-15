@@ -361,13 +361,13 @@ function CleanupSection() {
           {...searchableSetting("storage-delete-now")}
           description={
             <span>
-              {!hasRules
-                ? "Turn on a cleanup rule to use this."
-                : supported.length > 1
-                  ? latestRunSummary
-                  : (
-                      <span className="block">{summaries[0]?.description}</span>
-                    )}
+              {!hasRules ? (
+                "Turn on a cleanup rule to use this."
+              ) : supported.length > 1 ? (
+                latestRunSummary
+              ) : (
+                <span className="block">{summaries[0]?.description}</span>
+              )}
             </span>
           }
           control={

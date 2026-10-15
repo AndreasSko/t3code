@@ -361,8 +361,7 @@ function ScheduledTaskEnvironmentList({
               tasks: data?.tasks.filter((task) =>
                 matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
               ),
-              error:
-                query?._tag === "Failure" ? formatEnvironmentQueryError(query.cause) : null,
+              error: query?._tag === "Failure" ? formatEnvironmentQueryError(query.cause) : null,
             };
           }),
         ),
