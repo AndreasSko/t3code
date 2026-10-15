@@ -1,12 +1,14 @@
-import type {
-  StorageCleanupReport,
-  StorageCleanupSettings,
-  WorktreeCleanupRules,
+import {
+  resolveEnvironmentMachineKind,
+  type StorageCleanupReport,
+  type StorageCleanupSettings,
+  type WorktreeCleanupRules,
 } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
+import { ChevronRightIcon } from "lucide-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -16,6 +18,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { toastManager } from "../ui/toast";
 
 import { Input } from "../ui/input";
@@ -36,6 +39,7 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
+import { EnvironmentRow } from "./EnvironmentRow";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsGroup } from "./SettingsGroup";
 import type { ScopedSettingsTarget } from "./scopedSettings";
@@ -300,6 +304,22 @@ function CleanupSection() {
             : "Cleanup hasn't run yet.",
     };
   });
+  const latestReport = summaries
+    .map(({ report }) => report)
+    .reduce(
+      (latest, report) =>
+        report && (latest === null || Date.parse(report.finishedAt) > Date.parse(latest.finishedAt))
+          ? report
+          : latest,
+      null,
+    );
+  const latestRunSummary = latestReport
+    ? `Latest run ${formatRelativeTimeLabel(latestReport.finishedAt)}.`
+    : state.some((entry) => entry.failed)
+      ? "Could not load the last run on some machines."
+      : state.some((entry) => entry.loading)
+        ? "Loading last runs…"
+        : "Cleanup hasn't run yet.";
   const deleteNow = async () => {
     if (pending) return;
     setPending(true);
@@ -343,12 +363,11 @@ function CleanupSection() {
             <span>
               {!hasRules
                 ? "Turn on a cleanup rule to use this."
-                : summaries.map(({ environment, description }) => (
-                    <span key={environment.environmentId} className="block">
-                      {supported.length > 1 ? `${environment.label}: ` : ""}
-                      {description}
-                    </span>
-                  ))}
+                : supported.length > 1
+                  ? latestRunSummary
+                  : (
+                      <span className="block">{summaries[0]?.description}</span>
+                    )}
             </span>
           }
           control={
@@ -362,8 +381,42 @@ function CleanupSection() {
             </Button>
           }
         />
+        {supported.length > 1 &&
+          summaries.map(({ environment, report, description }) => (
+            <Collapsible key={environment.environmentId}>
+              <EnvironmentRow
+                kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+                label={environment.label}
+                subtitle={
+                  report
+                    ? `${formatBytes(report.bytesFreed)} recovered${report.counts.failed > 0 ? ` · ${report.counts.failed} failed` : ""} · ${formatRelativeTimeLabel(report.finishedAt)}`
+                    : description
+                }
+              >
+                {report ? (
+                  <CollapsibleTrigger
+                    render={<Button variant="ghost-muted" size="xs" />}
+                    aria-label={`Cleanup details for ${environment.label}`}
+                  >
+                    Details
+                    <ChevronRightIcon
+                      aria-hidden
+                      className="size-3.5 [[data-panel-open]_&]:rotate-90"
+                    />
+                  </CollapsibleTrigger>
+                ) : null}
+              </EnvironmentRow>
+              {report ? (
+                <CollapsiblePanel>
+                  <div className="border-t border-border/50 [&>*+*]:border-t [&>*+*]:border-border/50">
+                    <CleanupResults report={report} environmentLabel={undefined} />
+                  </div>
+                </CollapsiblePanel>
+              ) : null}
+            </Collapsible>
+          ))}
       </SettingsGroup>
-      {summaries.some(({ report }) => report !== null) && (
+      {supported.length === 1 && summaries.some(({ report }) => report !== null) && (
         <FoldedSettingsSection
           id="storage-cleanup-last-run"
           title="Last run"

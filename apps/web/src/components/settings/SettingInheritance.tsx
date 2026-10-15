@@ -6,8 +6,9 @@ import {
   type ServerSettings,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
-import { CheckIcon, LayersIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, LayersIcon } from "lucide-react";
 import * as Equal from "effect/Equal";
+import { useState } from "react";
 
 import { cn } from "../../lib/utils";
 import type { EnvironmentPresentation } from "../../state/environments";
@@ -15,8 +16,11 @@ import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { Button, InlineButton } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import type { ProjectOverrideEntry, ScopedSettingsTarget } from "./scopedSettings";
 import { isProjectScopedSettingKey } from "./scopedSettings";
 
@@ -179,6 +183,8 @@ export function SettingInheritance({
   overridingProjects?: readonly SettingOverridingProject[];
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }) {
+  const scopeContext = useOptionalSettingsScope();
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const key = keys[0];
   if (!key || targets.length === 0) return null;
   const overrideSummary =
@@ -192,15 +198,41 @@ export function SettingInheritance({
     if (!environment?.serverConfig) return [];
     return [
       {
+        id: `${target.environmentId}:${target.projectId ?? ""}`,
         target,
+        path: scopeContext?.scope.members.find(
+          (member) =>
+            member.environmentId === target.environmentId && member.id === target.projectId,
+        )?.workspaceRoot,
         environment: { ...environment, serverConfig: environment.serverConfig },
         machine: resolveEnvironmentMachineKind(environment.serverConfig),
-        layers: settingInheritanceLayers(target, environment.serverConfig.settings, key),
       },
     ];
   });
+  const primary =
+    chains.find(
+      ({ target }) =>
+        target.environmentId === scopeContext?.target?.environmentId &&
+        target.projectId === scopeContext?.target?.projectId,
+    ) ?? chains[0];
+  const differing = primary
+    ? chains.find(({ target }) =>
+        keys.some(
+          (settingKey) =>
+            !Equal.equals(target.settings[settingKey], primary.target.settings[settingKey]),
+        ),
+      )
+    : undefined;
+  const selected = chains.find(({ id }) => id === selectedTargetId) ?? differing ?? primary;
+  const layers = selected
+    ? settingInheritanceLayers(selected.target, selected.environment.serverConfig.settings, key)
+    : [];
   return (
-    <Popover>
+    <Popover
+      onOpenChange={(open) => {
+        if (open) setSelectedTargetId(null);
+      }}
+    >
       <Tooltip>
         <TooltipTrigger
           render={
@@ -226,16 +258,75 @@ export function SettingInheritance({
         <TooltipPopup side="top">{overrideSummary}</TooltipPopup>
       </Tooltip>
       <PopoverPopup align="start" width="md" padding="none">
+        {chains.length > 1 && selected ? (
+          <div className="space-y-1.5 px-3 pt-2.5">
+            <Select
+              items={chains.map(({ id, target, path }) => ({
+                value: id,
+                label: path ? `${target.label} · ${path}` : target.label,
+              }))}
+              value={selected.id}
+              onValueChange={setSelectedTargetId}
+            >
+              <SelectTrigger size="xs" aria-label="Inheritance target">
+                <SelectValue>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <EnvironmentMachineIcon
+                      aria-hidden
+                      kind={selected.machine}
+                      className="size-3.5 shrink-0"
+                    />
+                    <span className="max-w-32 shrink-0 truncate">{selected.target.label}</span>
+                    {selected.path ? (
+                      <span
+                        dir="rtl"
+                        className="min-w-0 truncate text-left text-muted-foreground"
+                        title={selected.path}
+                      >
+                        <bdi>{selected.path}</bdi>
+                      </span>
+                    ) : null}
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup alignItemWithTrigger={false}>
+                {chains.map(({ id, target, path }) => (
+                  <SelectItem key={id} value={id}>
+                    <div className="max-w-64">
+                      <p className="truncate">{target.label}</p>
+                      {path ? (
+                        <p
+                          dir="rtl"
+                          className="truncate text-left text-xs text-muted-foreground"
+                          title={path}
+                        >
+                          <bdi>{path}</bdi>
+                        </p>
+                      ) : null}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            {differing ? (
+              <p className="text-xs text-muted-foreground">
+                Values differ across {selected.target.projectId === null ? "machines" : "checkouts"}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="divide-y divide-border/60">
-          {chains.map(({ target, environment, machine, layers }) => (
+          {(selected ? [selected] : []).map(({ target, environment, machine }) => (
             <section
               key={`${target.environmentId}:${target.projectId ?? ""}`}
               className="px-3 py-2.5"
             >
-              <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
-                <EnvironmentMachineIcon aria-hidden kind={machine} className="size-3.5 shrink-0" />
-                <span className="min-w-0 truncate">{target.label}</span>
-              </h4>
+              {chains.length === 1 ? (
+                <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
+                  <EnvironmentMachineIcon aria-hidden kind={machine} className="size-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">{target.label}</span>
+                </h4>
+              ) : null}
               <ol role="list" className="text-sm">
                 {layers.map((layer) => (
                   <li
@@ -279,33 +370,64 @@ export function SettingInheritance({
                 );
                 if (overriding.length === 0) return null;
                 const overrides = environment.serverConfig.settings.projectSettingsOverrides;
+                const header = (
+                  <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
+                    {overriding.length > 3 ? (
+                      <CollapsibleTrigger render={<InlineButton tone="muted" />}>
+                        <ChevronRightIcon
+                          aria-hidden
+                          className="size-3 [[data-panel-open]_&]:rotate-90"
+                        />
+                        Overridden by
+                      </CollapsibleTrigger>
+                    ) : (
+                      <span>Overridden by</span>
+                    )}
+                    {onClearOverrides ? (
+                      <InlineButton onClick={() => onClearOverrides(overriding)}>
+                        Reset {overriding.length === 1 ? "it" : "all"}
+                      </InlineButton>
+                    ) : null}
+                  </div>
+                );
+                const projects = (
+                  <ul
+                    role="list"
+                    className={cn(
+                      "mt-0.5 text-sm",
+                      overriding.length > 3 && "max-h-48 overflow-y-auto",
+                    )}
+                  >
+                    {overriding.map((project) => (
+                      <li
+                        key={project.projectId}
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-2 py-1"
+                      >
+                        <InlineButton className="min-w-0 justify-start" onClick={project.open}>
+                          <span className="truncate">{project.label}</span>
+                        </InlineButton>
+                        <span className="max-w-32 truncate text-muted-foreground tabular-nums">
+                          {isProjectScopedSettingKey(key)
+                            ? formatValue(key, overrides[project.projectId]?.[key])
+                            : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                );
                 return (
                   <div className="mt-2 border-t border-border/60 pt-2">
-                    <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
-                      <span>Overridden by</span>
-                      {onClearOverrides ? (
-                        <InlineButton onClick={() => onClearOverrides(overriding)}>
-                          Reset {overriding.length === 1 ? "it" : "all"}
-                        </InlineButton>
-                      ) : null}
-                    </div>
-                    <ul role="list" className="mt-0.5 text-sm">
-                      {overriding.map((project) => (
-                        <li
-                          key={project.projectId}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-2 py-1"
-                        >
-                          <InlineButton className="min-w-0 justify-start" onClick={project.open}>
-                            <span className="truncate">{project.label}</span>
-                          </InlineButton>
-                          <span className="max-w-32 truncate text-muted-foreground tabular-nums">
-                            {isProjectScopedSettingKey(key)
-                              ? formatValue(key, overrides[project.projectId]?.[key])
-                              : null}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    {overriding.length > 3 ? (
+                      <Collapsible>
+                        {header}
+                        <CollapsiblePanel>{projects}</CollapsiblePanel>
+                      </Collapsible>
+                    ) : (
+                      <>
+                        {header}
+                        {projects}
+                      </>
+                    )}
                   </div>
                 );
               })()}
