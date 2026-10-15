@@ -282,7 +282,10 @@ function EnvironmentScopeMenu({
         return {
           value: environment.environmentId,
           label: primary,
-          secondary: secondary || settingsScopeEnvironmentAddress(environment),
+          secondary:
+            environments.length <= 1
+              ? ""
+              : secondary || settingsScopeEnvironmentAddress(environment),
           icon: (
             <EnvironmentMachineIcon
               aria-hidden
@@ -334,7 +337,9 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
           label: group.displayName,
           secondary:
             sameName.length === 0
-              ? group.workspaceRoot
+              ? environments.length > 1
+                ? group.workspaceRoot
+                : ""
               : sameName.some((other) => other.machines === machines)
                 ? `${machines} · ${group.workspaceRoot}`
                 : machines,
