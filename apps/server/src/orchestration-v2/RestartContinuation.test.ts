@@ -417,73 +417,84 @@ it.effect("lets a cut blocking delegate_task wake its parent like an async task"
   }),
 );
 
-it.effect("tells a turn cut mid-way to restart the native subagent it waited on", () =>
-  Effect.gen(function* () {
-    const base = makeProjection();
-    const item = (id: string, extra: Record<string, unknown>) => ({
-      id,
-      threadId,
-      runId,
-      nodeId: null,
-      status: "running",
-      ...extra,
-    });
-    const projection = {
-      ...base,
-      turnItems: [
-        // Codex keeps a native subagent on its own child provider thread.
-        item("item:native", {
-          type: "subagent",
-          origin: "provider_native",
-          providerThreadId: ProviderThreadId.make("provider-thread:child"),
-          nativeItemRef: { driver, nativeId: "agent-1" },
-          title: "Sleeper",
-          childThreadId: ThreadId.make("thread:child"),
-        }),
-        item("item:shell", { type: "command_execution", providerThreadId, input: "ls" }),
-      ],
-    } as unknown as OrchestrationV2ThreadProjection;
-    let committed: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | undefined;
-    const recovery = yield* ProviderRuntimeRecovery.make.pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
-          Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getRecoveryThreadIds: () => Effect.succeed([threadId]),
-            getRuntimeRecoveryProjection: () => Effect.succeed(projection),
-          }),
-          Layer.mock(EventSink.EventSinkV2)({
-            commitCommand: (input) => {
-              committed = input;
-              return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
-            },
-          }),
-          IdAllocator.layer,
-          Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
-          Layer.mock(EffectOutbox.EffectOutboxV2)({
-            reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
-          }),
-        ),
-      ),
-    );
-    yield* recovery.reconcile("startup");
-    const work = (committed?.events ?? []).flatMap((event) =>
-      event.type === "run.background-work-cancelled" ? [event.payload] : [],
-    );
-    // The shell died with the turn; only the subagent is reported, on the cut run.
-    assert.deepEqual(work, [
-      {
+it.effect.each(["running", "waiting"])(
+  "wakes a %s run to restart the native subagent it waited on",
+  (status) =>
+    Effect.gen(function* () {
+      const base = makeProjection();
+      const item = (id: string, extra: Record<string, unknown>) => ({
+        id,
+        threadId,
         runId,
-        restartCancelledBackgroundWork: [
-          { kind: "subagent", label: "Sleeper (id agent-1)", id: "item:native" },
+        nodeId: null,
+        status: "running",
+        ...extra,
+      });
+      const projection = {
+        ...base,
+        runs: [{ ...base.runs[0]!, status }],
+        providerTurns: [
+          { ...base.providerTurns[0]!, status: status === "waiting" ? "completed" : "running" },
         ],
-      },
-    ]);
-    assert.deepEqual(
-      committed?.effects.map((effect) => effect.request),
-      [{ type: "provider-runtime.continue", sourceRunId: runId }],
-    );
-  }),
+        turnItems: [
+          // Codex keeps a native subagent on its own child provider thread.
+          item("item:native", {
+            type: "subagent",
+            origin: "provider_native",
+            providerThreadId: ProviderThreadId.make("provider-thread:child"),
+            nativeItemRef: { driver, nativeId: "agent-1" },
+            title: "Sleeper",
+            childThreadId: ThreadId.make("thread:child"),
+          }),
+          item("item:shell", { type: "command_execution", providerThreadId, input: "ls" }),
+        ],
+      } as unknown as OrchestrationV2ThreadProjection;
+      let committed: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | undefined;
+      const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getRecoveryThreadIds: () => Effect.succeed([threadId]),
+              getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+            }),
+            Layer.mock(EventSink.EventSinkV2)({
+              commitCommand: (input) => {
+                committed = input;
+                return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+              },
+            }),
+            IdAllocator.layer,
+            Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
+            Layer.mock(EffectOutbox.EffectOutboxV2)({
+              listByCommandId: () => Effect.succeed([]),
+              reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+            }),
+          ),
+        ),
+      );
+      yield* recovery.reconcile("startup");
+      const work = (committed?.events ?? []).flatMap((event) =>
+        event.type === "run.background-work-cancelled" ? [event.payload] : [],
+      );
+      // The subagent is reported on the run that awaited it. A running run's
+      // shell died with its turn.
+      assert.deepEqual(work, [
+        {
+          runId,
+          restartCancelledBackgroundWork: [
+            { kind: "subagent", label: "Sleeper (id agent-1)", id: "item:native" },
+            ...(status === "waiting"
+              ? [{ kind: "shell" as const, label: "ls", id: "item:shell" }]
+              : []),
+          ],
+        },
+      ]);
+      assert.deepEqual(
+        committed?.effects.map((effect) => effect.request),
+        [{ type: "provider-runtime.continue", sourceRunId: runId }],
+      );
+    }),
 );
 
 it.effect("does not duplicate delivery and yields to newer user work or opt-out", () =>

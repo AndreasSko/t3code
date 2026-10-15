@@ -65,6 +65,20 @@ export function cancelledTurnItemWork(item: OrchestrationV2TurnItem): Work | und
   }
 }
 
+/**
+ * The provider thread waiting on an item's work. A native subagent can run on
+ * its own child provider thread (Codex), but the turn that started it awaits it.
+ */
+export function awaitingProviderThreadId(
+  item: OrchestrationV2TurnItem,
+  runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "providerThreadId">>,
+): OrchestrationV2Run["providerThreadId"] | undefined {
+  const runProviderThreadId = runs.find((run) => run.id === item.runId)?.providerThreadId;
+  return item.type === "subagent" && item.origin === "provider_native"
+    ? (runProviderThreadId ?? item.providerThreadId)
+    : (item.providerThreadId ?? runProviderThreadId);
+}
+
 function restartWorkKind(task: OrchestrationV2PendingBackgroundTask): Work["kind"] {
   switch (task.kind) {
     case "command":

@@ -16,6 +16,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { isNativeMaintenanceCommand } from "./Orchestrator.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
+  awaitingProviderThreadId,
   cancelledRosterTaskWork,
   cancelledTurnItemWork,
   isAwaitedWork,
@@ -105,10 +106,11 @@ function hasOpenAwaitedWork(
     if (item.type === "subagent" && item.origin === "app_owned" && item.childThreadId !== null)
       return false;
     const work = cancelledTurnItemWork(item);
-    const providerThreadId =
-      item.providerThreadId ??
-      projection.runs.find((run) => run.id === item.runId)?.providerThreadId;
-    return work !== undefined && isAwaitedWork(work) && providerThreadId === providerThread.id;
+    return (
+      work !== undefined &&
+      isAwaitedWork(work) &&
+      awaitingProviderThreadId(item, projection.runs) === providerThread.id
+    );
   });
   return (
     openItem ||
