@@ -134,15 +134,13 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
   );
 }
 
-/** Only a complete subagent chain shares ownership; forks remain separate. */
+/** Only a complete subagent chain within this worktree shares ownership. */
 function worktreeOwner(threads: ReadonlyArray<OrchestrationV2ThreadShell>) {
   if (threads.length === 1) return threads[0];
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
   const tops = threads.filter((thread) => !byId.has(thread.lineage.parentThreadId!));
   if (tops.length !== 1) return undefined;
   const owner = tops[0]!;
-  if (owner.lineage.parentThreadId !== null && owner.lineage.relationshipToParent !== "subagent")
-    return undefined;
   for (const thread of threads) {
     let current = thread;
     const seen = new Set<string>();
@@ -644,6 +642,7 @@ const make = Effect.gen(function* () {
             if (
               latestGroup.length !== group.length ||
               latestOwner?.id !== thread.id ||
+              latestOwner?.branch !== thread.branch ||
               latestGroup.some((shell) => {
                 const previous = group.find((member) => member.id === shell.id);
                 return (
