@@ -13,7 +13,11 @@ import { SettingsGroup } from "./SettingsGroup";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import type { SettingsScopeSearch } from "./settingsScope";
-import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
+import {
+  settingsScopeEnvironmentAddress,
+  settingsScopeEnvironmentLabel,
+  settingsScopeEnvironmentLabels,
+} from "./settingsScopeAxis";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 interface ScopeChoice {
@@ -53,7 +57,7 @@ export function SettingsScopeNotice({
               );
               return {
                 label: environment
-                  ? settingsScopeEnvironmentLabels(environment).primary
+                  ? settingsScopeEnvironmentLabels(environment, environments).primary
                   : (member.environmentLabel ?? "Environment"),
                 secondary: [
                   environment
@@ -117,10 +121,13 @@ export function SettingsScopeNotice({
                           eligibleEnvironmentIds.includes(entry.environmentId),
                       )
                       .map((entry) => {
-                        const { primary, secondary } = settingsScopeEnvironmentLabels(entry);
+                        const { primary, secondary } = settingsScopeEnvironmentLabels(
+                          entry,
+                          environments,
+                        );
                         return {
                           label: primary,
-                          secondary,
+                          secondary: secondary || settingsScopeEnvironmentAddress(entry),
                           icon: (
                             <EnvironmentMachineIcon
                               aria-hidden

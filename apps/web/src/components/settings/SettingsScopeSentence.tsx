@@ -35,6 +35,7 @@ import {
   projectAxisValue,
   selectEnvironmentAxis,
   selectProjectAxis,
+  settingsScopeEnvironmentAddress,
   settingsScopeEnvironmentLabel,
   settingsScopeEnvironmentLabels,
 } from "./settingsScopeAxis";
@@ -277,11 +278,11 @@ function EnvironmentScopeMenu({
           }
         : {})}
       options={environments.map((environment) => {
-        const { primary, secondary } = settingsScopeEnvironmentLabels(environment);
+        const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
         return {
           value: environment.environmentId,
           label: primary,
-          secondary,
+          secondary: secondary || settingsScopeEnvironmentAddress(environment),
           icon: (
             <EnvironmentMachineIcon
               aria-hidden
@@ -307,8 +308,8 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
             (entry) => entry.environmentId === member.environmentId,
           );
           if (!environment) return member.environmentLabel ?? member.environmentId;
-          const { primary, secondary } = settingsScopeEnvironmentLabels(environment);
-          return `${primary} · ${secondary}`;
+          const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
+          return `${primary} · ${secondary || settingsScopeEnvironmentAddress(environment)}`;
         }),
       ),
     ).join(", "),
