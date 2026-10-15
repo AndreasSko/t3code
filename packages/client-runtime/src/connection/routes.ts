@@ -361,6 +361,7 @@ function withNetwork(route: ConnectionRoute, tailscale: boolean): ConnectionRout
         ...(profile.learned === undefined ? {} : { learned: profile.learned }),
         ...(profile.authorization === undefined ? {} : { authorization: profile.authorization }),
         ...(tailscale ? { network: "tailscale" as const } : {}),
+        ...(profile.headers === undefined ? {} : { headers: profile.headers }),
       }),
     ),
   };

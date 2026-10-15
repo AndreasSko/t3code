@@ -14,6 +14,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
+  BearerConnectionProfile,
   type ConnectionCatalogEntry,
   type ConnectionCredential,
   type ConnectionProfile,
@@ -57,6 +58,7 @@ import {
 } from "./routes.ts";
 
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
+const isBearerConnectionProfile = Schema.is(BearerConnectionProfile);
 
 function unsupportedState(
   entry: ConnectionCatalogEntry,
@@ -222,6 +224,7 @@ export const make = Effect.gen(function* () {
   const driver = yield* ConnectionDriver.ConnectionDriver;
   const wakeups = yield* ConnectionWakeups.ConnectionWakeups;
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
+  const connectionHeaders = yield* Effect.serviceOption(ClientCapabilities.ConnectionHeaders);
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
@@ -881,15 +884,34 @@ export const make = Effect.gen(function* () {
     );
 
     for (const route of connectionRoutes(entry)) {
-      const profile = Option.getOrNull(route.profile);
-      if (profile !== null && isSshConnectionProfile(profile)) {
-        yield* disconnectSsh(environmentId, profile);
-      }
+      yield* forgetRoute(environmentId, route);
     }
   });
 
   const remove = Effect.fn("EnvironmentRegistry.remove")(function* (environmentId: EnvironmentId) {
     return yield* withLeaseLock(environmentId, removeLocked(environmentId));
+  });
+
+  /** Stops what a removed route left running: its SSH tunnel or its extra headers. */
+  const forgetRoute = Effect.fn("EnvironmentRegistry.forgetRoute")(function* (
+    environmentId: EnvironmentId,
+    route: ConnectionRoute,
+  ) {
+    const profile = Option.getOrNull(route.profile);
+    if (profile !== null && isSshConnectionProfile(profile)) {
+      yield* disconnectSsh(environmentId, profile);
+    }
+    if (profile !== null && isBearerConnectionProfile(profile) && profile.headers !== undefined) {
+      yield* ClientCapabilities.setConnectionHeaders(
+        connectionHeaders,
+        profile.httpBaseUrl,
+        {},
+      ).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Could not clear the connection headers.", { environmentId, error }),
+        ),
+      );
+    }
   });
 
   const disconnectSsh = (environmentId: EnvironmentId, profile: SshConnectionProfile) =>
@@ -993,10 +1015,7 @@ export const make = Effect.gen(function* () {
         const remaining = routesAfterRemoving(routes, routeId);
         if (remaining.length === 0) return yield* removeLocked(environmentId);
         yield* replaceRoutesLocked(entry, remaining);
-        const profile = Option.getOrNull(route.profile);
-        if (profile !== null && isSshConnectionProfile(profile)) {
-          yield* disconnectSsh(environmentId, profile);
-        }
+        yield* forgetRoute(environmentId, route);
       }),
     );
   });

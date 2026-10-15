@@ -5,10 +5,10 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import type * as Effect from "effect/Effect";
-import type * as Option from "effect/Option";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
-import type { ConnectionAttemptError } from "../connection/model.ts";
+import { ConnectionBlockedError, type ConnectionAttemptError } from "../connection/model.ts";
 
 export interface PreparedSshEnvironment {
   readonly bootstrap: DesktopSshEnvironmentBootstrap;
@@ -53,6 +53,35 @@ export class PrimaryEnvironmentAuth extends Context.Service<
     readonly bearerToken: Effect.Effect<Option.Option<string>, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/platform/capabilities/PrimaryEnvironmentAuth") {}
+
+/**
+ * Sends a saved route's extra headers with every request to its host,
+ * including WebSocket upgrades. Absent on platforms that cannot set them.
+ */
+export class ConnectionHeaders extends Context.Service<
+  ConnectionHeaders,
+  {
+    readonly set: (
+      httpBaseUrl: string,
+      headers: Readonly<Record<string, string>>,
+    ) => Effect.Effect<void, ConnectionAttemptError>;
+  }
+>()("@t3tools/client-runtime/platform/capabilities/ConnectionHeaders") {}
+
+/** Fails where the platform cannot send headers, instead of dropping them. */
+export const setConnectionHeaders = (
+  connectionHeaders: Option.Option<ConnectionHeaders["Service"]>,
+  httpBaseUrl: string,
+  headers: Readonly<Record<string, string>>,
+) =>
+  Option.isSome(connectionHeaders)
+    ? connectionHeaders.value.set(httpBaseUrl, headers)
+    : Effect.fail(
+        new ConnectionBlockedError({
+          reason: "unsupported",
+          detail: "Extra request headers are only available in the desktop app.",
+        }),
+      );
 
 export class SshEnvironmentGateway extends Context.Service<
   SshEnvironmentGateway,

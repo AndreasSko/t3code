@@ -166,6 +166,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
     /** Direct addresses the connected server reports. */
     readonly directEndpoints?: ServerConfig["directEndpoints"];
+    readonly connectionHeaders?: ClientCapabilities.ConnectionHeaders["Service"];
   },
 ) {
   const storedTargets = yield* Ref.make<ReadonlyArray<ConnectionTarget>>(initialTargets);
@@ -451,6 +452,9 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         Layer.succeed(ConnectionCredentialStore.ConnectionCredentialStore, credentialStore),
         Layer.succeed(TokenStore.RemoteDpopAccessTokenStore, tokenStore),
         Layer.succeed(ClientCapabilities.SshEnvironmentGateway, sshGateway),
+        options?.connectionHeaders === undefined
+          ? Layer.empty
+          : Layer.succeed(ClientCapabilities.ConnectionHeaders, options.connectionHeaders),
         Layer.succeed(Connectivity.Connectivity, connectivity),
         Layer.succeed(
           ConnectionWakeups.ConnectionWakeups,
@@ -2058,6 +2062,30 @@ describe("EnvironmentRegistry routes", () => {
           false,
         );
         expect(yield* Ref.get(harness.cacheClears)).toEqual([LAN_TARGET.environmentId]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("clears the extra headers of a removed route", () =>
+    Effect.gen(function* () {
+      const cleared: Array<string> = [];
+      const harness = yield* makeHarness(
+        [LAN_TARGET, RELAY_TARGET],
+        [new BearerConnectionProfile({ ...LAN_PROFILE, headers: { "X-Token": "t" } })],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+        {
+          connectionHeaders: ClientCapabilities.ConnectionHeaders.of({
+            set: (httpBaseUrl, headers) =>
+              Effect.sync(() => {
+                if (Object.keys(headers).length === 0) cleared.push(httpBaseUrl);
+              }),
+          }),
+        },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.removeRoute(LAN_TARGET.environmentId, LAN_TARGET.connectionId);
+        expect(cleared).toEqual([LAN_PROFILE.httpBaseUrl]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

@@ -120,6 +120,7 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
 const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")(function* () {
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+  const connectionHeaders = yield* Effect.serviceOption(ClientCapabilities.ConnectionHeaders);
 
   return Effect.fn("clientRuntime.connection.broker.bearer")(function* (
     entry: ConnectionCatalogEntry & { readonly target: BearerConnectionTarget },
@@ -139,6 +140,13 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         expected: target.environmentId,
         actual: profile.environmentId,
       });
+    }
+    if (profile.headers !== undefined) {
+      yield* ClientCapabilities.setConnectionHeaders(
+        connectionHeaders,
+        profile.httpBaseUrl,
+        profile.headers,
+      );
     }
     if (profile.authorization === "t3-connect") {
       const authorized = yield* remote.authorizeDpop({

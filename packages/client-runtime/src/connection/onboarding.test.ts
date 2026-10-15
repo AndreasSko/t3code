@@ -271,6 +271,79 @@ describe("connection onboarding", () => {
     }),
   );
 
+  it.effect("applies the extra headers before the first request and saves them", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const applied: Array<{ readonly httpBaseUrl: string; readonly requestsBefore: number }> = [];
+      const headers = { "Coder-Session-Token": "coder-token" };
+      const registration = yield* preparePairingRegistration(
+        { host: "remote.example.test", pairingCode: "pairing-token", headers },
+        Option.some(
+          ClientCapabilities.ConnectionHeaders.of({
+            set: (httpBaseUrl) =>
+              Effect.sync(() => applied.push({ httpBaseUrl, requestsBefore: calls.length })),
+          }),
+        ),
+      ).pipe(Effect.provide(Layer.mergeAll(layerClientPresentation, layerPairingHttp(calls))));
+
+      expect(applied).toEqual([{ httpBaseUrl: "https://remote.example.test/", requestsBefore: 0 }]);
+      expect(registration.profile.headers).toEqual(headers);
+    }),
+  );
+
+  it.effect("refuses extra headers where the platform cannot send them", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const error = yield* preparePairingRegistration({
+        host: "remote.example.test",
+        pairingCode: "pairing-token",
+        headers: { "Coder-Session-Token": "coder-token" },
+      }).pipe(
+        Effect.provide(Layer.mergeAll(layerClientPresentation, layerPairingHttp(calls))),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ reason: "unsupported" });
+      expect(calls).toEqual([]);
+    }),
+  );
+
+  it.effect("clears the extra headers when pairing fails", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const applied: Array<Readonly<Record<string, string>>> = [];
+      yield* preparePairingRegistration(
+        { host: "remote.example.test", pairingCode: "pairing-token", headers: { "X-Token": "t" } },
+        Option.some(
+          ClientCapabilities.ConnectionHeaders.of({
+            set: (_httpBaseUrl, headers) => Effect.sync(() => applied.push(headers)),
+          }),
+        ),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerClientPresentation,
+            layerPairingHttp(calls, { failDescriptor: true }),
+          ),
+        ),
+        Effect.flip,
+      );
+      expect(applied).toEqual([{ "X-Token": "t" }, {}]);
+    }),
+  );
+
+  it("reads the header rows of the form", () => {
+    expect(
+      Onboarding.connectionHeadersFromFields([
+        { name: " Coder-Session-Token ", value: " abc:def " },
+        { name: "", value: "" },
+      ]),
+    ).toEqual({ "Coder-Session-Token": "abc:def" });
+    expect(() => Onboarding.connectionHeadersFromFields([{ name: "", value: "x" }])).toThrow();
+    expect(() =>
+      Onboarding.connectionHeadersFromFields([{ name: "Bad Name", value: "x" }]),
+    ).toThrow();
+  });
+
   it.effect("turns a switched-off environment back on when it is paired again", () =>
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;

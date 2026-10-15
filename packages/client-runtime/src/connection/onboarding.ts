@@ -38,6 +38,8 @@ export interface PairingConnectionInput {
   readonly pairingUrl?: string;
   readonly host?: string;
   readonly pairingCode?: string;
+  /** Saved on the route; see `BearerConnectionProfile.headers`. */
+  readonly headers?: Readonly<Record<string, string>>;
   /**
    * Set when adding a route to a saved machine: the pairing must reach this
    * environment, or nothing is saved.
@@ -79,6 +81,27 @@ export class ConnectionOnboarding extends Context.Service<
   }
 >()("@t3tools/client-runtime/connection/onboarding/ConnectionOnboarding") {}
 
+/**
+ * Turns the header rows of the add backend form into headers. Rows without a
+ * name and value are skipped.
+ */
+export function connectionHeadersFromFields(
+  fields: ReadonlyArray<{ readonly name: string; readonly value: string }>,
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const field of fields) {
+    const name = field.name.trim();
+    const value = field.value.trim();
+    if (name === "" && value === "") continue;
+    // RFC 9110 token characters.
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(name)) {
+      throw new Error(`"${name}" is not a valid header name.`);
+    }
+    headers[name] = value;
+  }
+  return headers;
+}
+
 const resolvePairingTarget = Effect.fn("clientRuntime.connection.onboarding.resolvePairingTarget")(
   function* (input: PairingConnectionInput) {
     return yield* Effect.try({
@@ -110,8 +133,31 @@ function differentMachineError(label: string) {
 
 export const preparePairingRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.preparePairingRegistration",
-)(function* (input: PairingConnectionInput) {
+)(function* (
+  input: PairingConnectionInput,
+  connectionHeaders: Option.Option<ClientCapabilities.ConnectionHeaders["Service"]> = Option.none(),
+) {
   const target = yield* resolvePairingTarget(input);
+  if (input.headers === undefined) return yield* pairWithServer(input, target);
+  yield* ClientCapabilities.setConnectionHeaders(
+    connectionHeaders,
+    target.httpBaseUrl,
+    input.headers,
+  );
+  // Nothing is saved when pairing fails, so the headers must not stay active.
+  return yield* pairWithServer(input, target).pipe(
+    Effect.onError(() =>
+      ClientCapabilities.setConnectionHeaders(connectionHeaders, target.httpBaseUrl, {}).pipe(
+        Effect.ignore,
+      ),
+    ),
+  );
+});
+
+const pairWithServer = Effect.fn("clientRuntime.connection.onboarding.pairWithServer")(function* (
+  input: PairingConnectionInput,
+  target: ReturnType<typeof resolveRemotePairingTarget>,
+) {
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
     httpBaseUrl: target.httpBaseUrl,
@@ -147,6 +193,7 @@ export const preparePairingRegistration = Effect.fn(
       label: descriptor.label,
       httpBaseUrl: target.httpBaseUrl,
       wsBaseUrl: target.wsBaseUrl,
+      ...(input.headers === undefined ? {} : { headers: input.headers }),
     }),
     credential: new BearerConnectionCredential({
       token: access.access_token,
@@ -156,8 +203,11 @@ export const preparePairingRegistration = Effect.fn(
 
 const registerPairingConnection = Effect.fn(
   "clientRuntime.connection.onboarding.registerPairingConnection",
-)(function* (input: PairingConnectionInput) {
-  const registration = yield* preparePairingRegistration(input);
+)(function* (
+  input: PairingConnectionInput,
+  connectionHeaders: Option.Option<ClientCapabilities.ConnectionHeaders["Service"]>,
+) {
+  const registration = yield* preparePairingRegistration(input, connectionHeaders);
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   // A platform-managed environment belongs to the host, so pairing leaves it alone.
   if (!(yield* registry.register(registration))) return registration.target.environmentId;
@@ -259,6 +309,9 @@ export const prepareBearerConnectionUpdate = Effect.fn(
       label,
       httpBaseUrl,
       wsBaseUrl: deriveWsBaseUrl(httpBaseUrl),
+      ...(entry.profile.value.headers === undefined
+        ? {}
+        : { headers: entry.profile.value.headers }),
     }),
     credential: credential.value,
   });
@@ -311,10 +364,11 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
+  const connectionHeaders = yield* Effect.serviceOption(ClientCapabilities.ConnectionHeaders);
 
   return ConnectionOnboarding.of({
     registerPairing: (input) =>
-      registerPairingConnection(input).pipe(
+      registerPairingConnection(input, connectionHeaders).pipe(
         Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, registry),
         Effect.provideService(ClientCapabilities.ClientPresentation, presentation),
         Effect.provideService(HttpClient.HttpClient, httpClient),
