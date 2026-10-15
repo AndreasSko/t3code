@@ -309,6 +309,79 @@ const make = Effect.gen(function* () {
     return false;
   });
 
+  const reportOrphanWorktrees = Effect.fn("StorageCleanup.reportOrphanWorktrees")(function* (
+    roots: ReadonlyArray<string>,
+    projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
+    entries: StorageCleanupReportEntry[],
+  ) {
+    // Include deleted and archived threads, even those without a branch or project.
+    const rows = yield* sql<{ worktreePath: string }>`
+      SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
+      FROM orchestration_v2_projection_threads
+      WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL
+    `;
+    const referenced = new Set<string>();
+    for (const row of rows) {
+      const resolved = path.resolve(row.worktreePath);
+      referenced.add(resolved);
+      referenced.add(yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved)));
+    }
+    const directories = Effect.fnUntraced(function* (parent: string) {
+      const result: string[] = [];
+      for (const name of yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => []))) {
+        const target = path.join(parent, name);
+        if (!inside(parent, target)) continue;
+        const directory = yield* Effect.gen(function* () {
+          if ((yield* fs.realPath(target)) !== target) return false;
+          return (yield* fs.stat(target)).type === "Directory";
+        }).pipe(Effect.orElseSucceed(() => false));
+        if (directory) result.push(target);
+      }
+      return result;
+    });
+    // Share one walk budget across all orphans, instead of 30 seconds per folder.
+    // Unmeasured folders still appear with an unknown size.
+    const measurementDeadline = (yield* Clock.currentTimeMillis) + 30_000;
+    const reported = new Set<string>();
+    for (const root of roots) {
+      // GitVcsDriverCore creates <managed root>/<repository>/<branch>.
+      for (const projectDirectory of yield* directories(root)) {
+        if (
+          referenced.has(projectDirectory) ||
+          (yield* fs.exists(path.join(projectDirectory, ".git")))
+        )
+          continue;
+        for (const worktreePath of yield* directories(projectDirectory)) {
+          if (
+            reported.has(worktreePath) ||
+            referenced.has(worktreePath) ||
+            (yield* containsProjectRoot(worktreePath, projects))
+          )
+            continue;
+          reported.add(worktreePath);
+          const remaining = measurementDeadline - (yield* Clock.currentTimeMillis);
+          const bytes =
+            remaining > 0
+              ? yield* measureWorktree(worktreePath).pipe(
+                  Effect.timeout(remaining),
+                  Effect.orElseSucceed(() => null),
+                )
+              : null;
+          entries.push({
+            kind: "worktree",
+            outcome: "kept",
+            reason: "No thread uses this folder",
+            path: worktreePath,
+            threadId: null,
+            threadTitle: null,
+            bytes,
+            files: null,
+          });
+        }
+      }
+    }
+  });
+
   // Whether cwd stopped being a checkout of this branch. Two small Git reads,
   // since every worktree in a sweep is asked; statusDetailsLocal also diffs and
   // counts.
@@ -434,6 +507,7 @@ const make = Effect.gen(function* () {
     now: number,
     entries: StorageCleanupReportEntry[],
   ) {
+    if (!anyWorktreePolicy(serverSettings, worktreeCleanupEnabled)) return;
     const roots: Array<string> = [];
     for (const directory of managedWorktreesDirectories(
       serverSettings,
@@ -727,6 +801,11 @@ const make = Effect.gen(function* () {
         ),
       );
     }
+    yield* reportOrphanWorktrees(
+      roots,
+      yield* projectStore.list({ includeDeleted: true }),
+      entries,
+    );
   });
 
   const cleanFiles = Effect.fn("StorageCleanup.cleanFiles")(function* (
@@ -841,7 +920,7 @@ const make = Effect.gen(function* () {
     let bytesFreed = 0;
     for (const entry of entries) {
       counts[entry.outcome]++;
-      bytesFreed += entry.bytes ?? 0;
+      if (entry.outcome !== "kept") bytesFreed += entry.bytes ?? 0;
     }
     const priority = { failed: 0, removed: 1, kept: 2 };
     const latestReport: StorageCleanupReport = {

@@ -265,6 +265,8 @@ const cleanupFixture = (
       storageCleanup,
     };
     let threads = [shell({ branch: "feature", worktreePath: worktree })];
+    let storedWorktreePaths: string[] = [];
+    let projectRoots = [repo];
     let editBeforeRemoval = false;
     let openSessionCwd: string | null = null;
     let sessionLive = true;
@@ -291,8 +293,14 @@ const cleanupFixture = (
         subscribeChanges: Effect.succeed(Stream.empty),
       } as unknown as Settings.ServerSettingsService["Service"]),
       Effect.provideService(ProjectStore.ProjectStoreV2, {
+        list: () => Effect.sync(() => projectRoots.map((workspaceRoot) => ({ workspaceRoot }))),
         listShells: () =>
-          Effect.succeed([{ id: ProjectId.make("project-1"), workspaceRoot: repo }]),
+          Effect.sync(() =>
+            projectRoots.map((workspaceRoot, index) => ({
+              id: ProjectId.make(`project-${index + 1}`),
+              workspaceRoot,
+            })),
+          ),
       } as unknown as ProjectStore.ProjectStoreV2["Service"]),
       Effect.provideService(ProjectionStore.ProjectionStoreV2, {
         getShellSnapshot: (input?: { location?: string }) =>
@@ -336,7 +344,12 @@ const cleanupFixture = (
                   }),
                 },
               ]
-            : [],
+            : strings.join("").includes('AS "worktreePath"')
+              ? [
+                  ...threads.flatMap((thread) => thread.worktreePath ?? []),
+                  ...storedWorktreePaths,
+                ].map((worktreePath) => ({ worktreePath }))
+              : [],
         )) as unknown as SqlClient.SqlClient),
       Effect.provideService(GitManager.GitManager, {
         invalidateStatus: () => Effect.void,
@@ -387,6 +400,12 @@ const cleanupFixture = (
       },
       setThreads: (next: typeof threads) => {
         threads = next;
+      },
+      setStoredWorktreePaths: (paths: string[]) => {
+        storedWorktreePaths = paths;
+      },
+      setProjectRoots: (roots: string[]) => {
+        projectRoots = roots;
       },
       setSessionLive: (live: boolean) => {
         sessionLive = live;
@@ -581,6 +600,139 @@ describe("subagent worktree ownership", () => {
           expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
         }),
       ),
+  );
+});
+
+describe("orphan worktree reports", () => {
+  it.live("reports a linked orphan's size without removing its files", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        const orphan = `${fixture.config.worktreesDir}/repository/orphan`;
+        yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "orphan", orphan]);
+        const sizes = yield* Effect.forEach(yield* fixture.fs.readDirectory(orphan), (name) =>
+          fixture.fs.stat(`${orphan}/${name}`).pipe(Effect.map((stat) => Number(stat.size))),
+        );
+        const outside = yield* fixture.fs.makeTempDirectoryScoped();
+        yield* fixture.fs.writeFileString(`${outside}/external`, "outside data");
+        yield* fixture.fs.symlink(outside, `${orphan}/linked-directory`);
+        yield* fixture.fs.symlink(`${outside}/missing`, `${orphan}/dangling-link`);
+        const report = yield* fixture.service.runNow;
+        expect(report.entries).toEqual([
+          {
+            kind: "worktree",
+            outcome: "kept",
+            reason: "No thread uses this folder",
+            path: orphan,
+            threadId: null,
+            threadTitle: null,
+            bytes: sizes.reduce((sum, size) => sum + size, 0),
+            files: null,
+          },
+        ]);
+        expect(report.bytesFreed).toBe(0);
+        expect(yield* fixture.fs.readFileString(`${orphan}/tracked.txt`)).toBe("original\n");
+        expect(yield* fixture.fs.readFileString(`${outside}/external`)).toBe("outside data");
+        expect(
+          (yield* fixture.command(orphan, ["rev-parse", "--is-inside-work-tree"])).stdout.trim(),
+        ).toBe("true");
+      }),
+    ),
+  );
+
+  it.live.each(["active", "outside-active-snapshot"] as const)(
+    "does not report a folder referenced by a thread (%s)",
+    (location) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          const worktreePath = `${fixture.config.worktreesDir}/repository/referenced`;
+          yield* fixture.command(fixture.repo, [
+            "worktree",
+            "add",
+            "-b",
+            "referenced",
+            worktreePath,
+          ]);
+          fixture.setThreads(
+            location === "active"
+              ? [shell({ branch: "referenced", worktreePath, status: "running" })]
+              : [],
+          );
+          if (location !== "active") fixture.setStoredWorktreePaths([worktreePath]);
+          const report = yield* fixture.service.runNow;
+          expect(report.entries.filter((entry) => entry.threadId === null)).toEqual([]);
+          expect(yield* fixture.fs.exists(worktreePath)).toBe(true);
+        }),
+      ),
+  );
+
+  it.live.each(["exact", "nested", "symlink"] as const)(
+    "does not report a folder containing a project checkout (%s)",
+    (location) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.setThreads([]);
+          const worktreePath = `${fixture.config.worktreesDir}/repository/project-checkout`;
+          yield* fixture.fs.makeDirectory(`${worktreePath}/nested`, { recursive: true });
+          const alias = `${fixture.repo}/alias`;
+          if (location === "symlink") yield* fixture.fs.symlink(`${worktreePath}/nested`, alias);
+          fixture.setProjectRoots([
+            fixture.repo,
+            location === "exact"
+              ? worktreePath
+              : location === "nested"
+                ? `${worktreePath}/nested`
+                : alias,
+          ]);
+          expect((yield* fixture.service.runNow).entries).toEqual([]);
+          expect(yield* fixture.fs.exists(worktreePath)).toBe(true);
+        }),
+      ),
+  );
+
+  it.live("skips symbolic links at both directory levels and disabled cleanup", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        const outside = yield* fixture.fs.makeTempDirectoryScoped();
+        yield* fixture.fs.makeDirectory(`${outside}/checkout`);
+        const projectDirectory = `${fixture.config.worktreesDir}/repository`;
+        yield* fixture.fs.makeDirectory(projectDirectory);
+        yield* fixture.fs.symlink(outside, `${fixture.config.worktreesDir}/linked-project`);
+        yield* fixture.fs.symlink(`${outside}/checkout`, `${projectDirectory}/linked-checkout`);
+        yield* fixture.fs.symlink(`${outside}/missing`, `${projectDirectory}/dangling-link`);
+        expect((yield* fixture.service.runNow).entries).toEqual([]);
+        const orphan = `${projectDirectory}/orphan`;
+        yield* fixture.fs.makeDirectory(orphan);
+        fixture.disable();
+        expect((yield* fixture.service.runNow).entries).toEqual([]);
+        expect(yield* fixture.fs.exists(orphan)).toBe(true);
+      }),
+    ),
+  );
+
+  it.live("caps orphan entries while preserving kept totals", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        for (let i = 0; i < 205; i++) {
+          const orphan = `${fixture.config.worktreesDir}/repository/orphan-${i}`;
+          yield* fixture.fs.makeDirectory(orphan, { recursive: true });
+          yield* fixture.fs.writeFileString(`${orphan}/file`, "x");
+        }
+        const report = yield* fixture.service.runNow;
+        expect(report.entries).toHaveLength(200);
+        expect(report.entries.every((entry) => entry.bytes === 1)).toBe(true);
+        expect(report.omittedCount).toBe(5);
+        expect(report.counts).toEqual({ removed: 0, kept: 205, failed: 0 });
+        expect(report.bytesFreed).toBe(0);
+      }),
+    ),
   );
 });
 
