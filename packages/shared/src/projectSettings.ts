@@ -241,6 +241,7 @@ export function resolveWorktreeCleanup(
     return {
       worktreeKeepWhen: settings.storageCleanup.worktreeKeepWhen,
       worktreeAfterDays: null,
+      worktreeSettledAfterDays: null,
       worktreeOnMerge: false,
       worktreeOnDelete: false,
       worktreeUnchanged: false,
@@ -248,6 +249,7 @@ export function resolveWorktreeCleanup(
   const {
     worktreeKeepWhen,
     worktreeAfterDays,
+    worktreeSettledAfterDays,
     worktreeOnMerge,
     worktreeOnDelete,
     worktreeUnchanged,
@@ -255,6 +257,7 @@ export function resolveWorktreeCleanup(
   return {
     worktreeKeepWhen,
     worktreeAfterDays,
+    worktreeSettledAfterDays,
     worktreeOnMerge,
     worktreeOnDelete,
     worktreeUnchanged,

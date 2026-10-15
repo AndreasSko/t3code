@@ -145,7 +145,10 @@ const RawViewerSchema = Schema.Struct({
   display_name: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
-/** Permissions are reported only here; repository, pull request and workspace objects omit them. */
+/**
+ * The caller's workspace-scoped repository permissions, filtered to one repository.
+ * One row, or none where Bitbucket names no permission for this account.
+ */
 const RawRepositoryPermissionsSchema = Schema.Struct({
   values: Schema.optional(
     Schema.NullOr(
