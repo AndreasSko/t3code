@@ -7,16 +7,24 @@ export interface McpProviderSessionConfig {
   readonly providerInstanceId: ProviderInstanceId;
   readonly endpoint: string;
   readonly authorizationHeader: string;
-  /** Do not advertise preview tools in prompts when the credential cannot use them. */
+  /**
+   * Whether this credential includes the "preview" capability. Adapters read
+   * it to keep developer instructions truthful: when the user withholds agent
+   * browser access, the prompt must not advertise `preview_*` tools that every
+   * call would reject.
+   */
   readonly browserToolsAvailable: boolean;
+  /** Capabilities the credential grants ("preview", "device"). */
   readonly capabilities?: ReadonlySet<string>;
   /**
-   * Supplies preconfigured agent-device environment only when authorized;
-   * the subprocess gets PATH and daemon settings without handling a token.
+   * Set when the session may drive devices. Adapters spread this into the
+   * provider subprocess environment so the `agent-device` CLI is on PATH and
+   * already pointed at the server's daemon; the agent never handles a token.
    */
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
 }
 
+/** Provider env with the device variables applied over `base`, or `base` untouched. */
 export function withAgentDeviceEnvironment(
   base: NodeJS.ProcessEnv,
   config: Pick<McpProviderSessionConfig, "agentDeviceEnvironment"> | undefined,

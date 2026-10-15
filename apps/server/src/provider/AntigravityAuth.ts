@@ -409,7 +409,10 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
             authorizationUrl: null,
             message: "Waiting for Google to finish sign-in.",
           });
-          // Delivery outlives its callback RPC so disconnects cannot leave sign-in stuck at "verifying".
+          // The instance owns delivery and its failure handling. The RPC that
+          // sent the callback may disconnect before Google answers, and the
+          // flow must still settle instead of sitting at "verifying" until
+          // the deadline.
           const forwarding = yield* (
             options.forwardCallback?.(callback) ??
             forwardAntigravityCallback(options.instanceId, callback)

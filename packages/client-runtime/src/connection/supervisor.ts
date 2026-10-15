@@ -39,9 +39,12 @@ import {
 
 const RETRY_BASE_DELAY_MS = 1_000;
 const RETRY_MAX_DELAY_MS = 300_000;
-// Each route gets 15 s for credentials/session setup, then a separate 75 s
-// for socket opening (capped at 15 s by RPC) and the first config snapshot.
-// Cold servers with large databases can need more than 15 s to answer.
+// Per-route budget to resolve credentials and create the session, which ends
+// when the driver reports the synchronizing stage. Each route that gets that
+// far adds its own budget for the socket to open (bounded at 15 seconds by the
+// RPC session) and the server to deliver the first config snapshot. A cold
+// server with a large database can take longer than 15 seconds to answer, and
+// that is not a reason to drop a working connection.
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const establishmentTimeout = Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT);
 const synchronizationTimeout = Duration.fromInputUnsafe("75 seconds");
@@ -122,15 +125,27 @@ function exitUnlessInterrupted<A, E, R>(
 
 export interface EnvironmentSupervisorOptions {
   readonly initiallyDesired?: boolean;
-  /** Persists learned routes for future attempts while leaving the working session intact. */
+  /**
+   * Saves the direct addresses the server reports once a session is ready and
+   * returns the entry with its updated routes, which later attempts use. The
+   * live session is left alone: it already works.
+   */
   readonly learnRoutes?: (input: {
     readonly activeRoute: ConnectionRoute;
     readonly reported: ReadonlyArray<ReportedEndpoint>;
   }) => Effect.Effect<Option.Option<ConnectionCatalogEntry>>;
 }
 
-/** Upper-half jitter spreads retries from a 2s ceiling to 5 minutes; `random` is in [0, 1).
- * App resumes, network recovery, and explicit retries skip the delay. */
+/**
+ * Delay before the next attempt after `failureCount` consecutive failures
+ * (0 for the first retry). The ceiling doubles from 2s up to 5 minutes, and
+ * the delay is a random point in its upper half: never quicker than half the
+ * ceiling, and spread out so clients that lost the same server do not all
+ * reconnect in the same second. `random` is in [0, 1).
+ *
+ * The long cap only applies to a connection that keeps failing. Returning to
+ * the app, the network coming back, and an explicit retry all skip the wait.
+ */
 export function retryDelayMs(failureCount: number, random: number): number {
   const ceiling = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (failureCount + 1));
   return Math.round(ceiling / 2 + (ceiling / 2) * random);
@@ -271,7 +286,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const intent = yield* Ref.make(initialIntent);
   const signals = yield* Queue.unbounded<SupervisorSignal>();
   const resetRetryState = yield* Ref.make(false);
-  // An unanswered probe skips the first reconnect backoff so a user waiting for health gets a fast retry.
+  // Set while a probe of the live session is running, and kept when it fails
+  // or times out: something asked whether the connection still works and it
+  // closed or failed before answering, so the follow-up reconnect skips the
+  // first backoff rung instead of sleeping.
   const probeUnanswered = yield* Ref.make(false);
   const state = yield* SubscriptionRef.make<SupervisorConnectionState>(
     !initialIntent.desired
@@ -334,7 +352,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       ),
     );
 
-  // T3 Connect and SSH have no cheap preflight, so only reachable direct routes can replace a live route.
+  /**
+   * Preflights the routes ranked above the one in use and signals the best
+   * that would connect. Routes without a cheap check (T3 Connect, SSH) never
+   * pass, so they are fallbacks, not destinations.
+   */
   const checkBetterRoutes = Effect.fnUntraced(function* (
     lease: ConnectionDriver.EnvironmentConnectionLease,
   ) {
@@ -520,6 +542,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
   });
 
+  // Signals that end a connected lease whatever its health: "reset" ends it
+  // and restarts the retry ladder, "end" ends it, undefined keeps it.
   const isRelayLease = (lease: ConnectionDriver.EnvironmentConnectionLease) =>
     lease.prepared.target._tag === "RelayConnectionTarget";
 
@@ -540,7 +564,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       return undefined;
     }
     if (next.reason === "application-active-reconnect") {
-      // Mobile can kill suspended sockets without a close event; a long resume replaces them without a probe.
+      // Mobile operating systems often kill a suspended socket without a close
+      // event. A probe would show a dead socket as "Resuming" until it times
+      // out, so a long background resume replaces the session at once.
       return "reset" as const;
     }
     // Only a session over T3 Connect holds the old account's credential.
@@ -574,8 +600,13 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
   };
 
-  // Probe foreground wakeups to preserve healthy sockets despite unreliable offline reports;
-  // long mobile resumes replace the session directly.
+  // Holds a connected lease until it must end, and returns whether to restart
+  // the retry ladder. Returning to the app, an explicit retry, and the network
+  // reporting offline all probe the live session instead of replacing it, so a
+  // healthy socket is not torn down (the offline report is often wrong, for
+  // example for a loopback server). Only a long mobile resume replaces the
+  // session without a probe. A failed probe fails this effect, and the
+  // supervisor reconnects.
   const monitorConnectedLease = Effect.fnUntraced(function* (
     lease: ConnectionDriver.EnvironmentConnectionLease,
   ) {
@@ -687,8 +718,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           resetRetry,
         })),
       ),
-      // Give each synchronizing route its own snapshot budget so a late failure
-      // cannot consume the next route's time.
+      // Each route may use the full setup time before the next is tried, and
+      // each route that reaches synchronizing adds its own snapshot budget, so
+      // a route that fails late does not eat the next route's time.
       Effect.gen(function* () {
         const routeCount = connectionRoutes(yield* Ref.get(currentEntry)).length;
         const startedAt = yield* Clock.monotonicTimeNanos;
@@ -874,7 +906,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       failureCount = 0;
       pendingRetry = Option.none();
     };
-    // A long-resume replacement must connect even if the network incorrectly reports offline.
+    // Set after a long resume ends an attempt or a session. The fresh attempt
+    // runs even while the network reports offline: the report is often wrong,
+    // and the replaced session must not leave the client offline.
     let replacing = false;
 
     for (;;) {
@@ -949,7 +983,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       }
 
       if (failedProbe) {
-        // An unanswered probe retries immediately once; further failures resume normal backoff.
+        // A probe found a dead transport, or the transport closed while a probe
+        // waited for an answer (the user returned to the app, asked to retry,
+        // or the network changed), so reconnect immediately instead
+        // of sleeping the first backoff rung. Only this first attempt skips the
+        // ladder; if it fails too, normal backoff resumes.
         resetRetryLadder();
         yield* setState(connectingState(yield* Ref.get(intent), generation, 1, error));
         continue;

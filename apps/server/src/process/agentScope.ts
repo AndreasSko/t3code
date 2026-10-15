@@ -18,12 +18,19 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
-/** Shares app.slice with the server so the server's CPUWeight and IOWeight compete directly. */
+/**
+ * Agents and terminals share this slice. It sits in app.slice next to the
+ * server's own unit, so the server's CPUWeight and IOWeight compete with the
+ * agents directly.
+ */
 const AGENT_SLICE = "app-t3code-agents.slice";
 
 /**
- * Only one server uses a state directory at a time, so agents in its slice
- * at startup are leftovers. Other state directories have separate slices.
+ * The child slice for one server's agents, named after its state directory.
+ * Only one server uses a state directory at a time, so an agent in this slice
+ * when the server starts was left by an earlier server on the same state,
+ * for example one the launcher killed during an update. Other servers on the
+ * machine, such as dev servers, have their own slice.
  */
 export function ownedAgentSlice(stateDir: string): string {
   const hash = NodeCrypto.createHash("sha256").update(stateDir).digest("hex").slice(0, 12);
@@ -32,8 +39,12 @@ export function ownedAgentSlice(stateDir: string): string {
 
 const GiB = 1024 ** 3;
 
-/** Leave 6 GiB before throttling and 4 GiB before an OOM kill for the server, sshd, and tailscaled.
- * Small machines give agents at least half of RAM before throttling and three quarters before a kill. */
+/**
+ * Memory limits for the agents slice. Agents together leave about 6 GB free
+ * before they are throttled and 4 GB before the kernel kills one, so the
+ * server, sshd, and tailscaled keep working. Small machines still give agents
+ * at least half of RAM before throttling and three quarters before a kill.
+ */
 export function agentSliceMemoryLimits(totalBytes: number) {
   return {
     high: Math.max(totalBytes - 6 * GiB, Math.floor(totalBytes / 2)),
@@ -51,7 +62,12 @@ export interface ScopeState {
   readonly populated: boolean | undefined;
 }
 
-/** Pipes can close before systemd records `Result=oom-kill`; treat pending kills as stopping. */
+/**
+ * Reads one scope as the server sees it right after the agent process exits.
+ * Our pipe can close before systemd handles the kill, so a scope that is
+ * still stopping, is empty, or already counted an OOM kill is "stopping":
+ * systemd records `Result=oom-kill` for it in a moment.
+ */
 export function classifyScope(state: ScopeState): "oom-killed" | "gone" | "running" | "stopping" {
   if (state.result === "oom-kill") return "oom-killed";
   if (
@@ -137,6 +153,7 @@ export const make = Effect.gen(function* () {
       const events = controlGroup ? yield* readCgroupFile(controlGroup, "cgroup.events") : "";
       if (parseCgroupCounter(events, "populated") === 0) return;
       yield* Effect.logWarning("Stopping agents left by a previous server", { slice: ownedSlice });
+      // Agents get SIGTERM, then SIGKILL after their stop timeout.
       const stopped = yield* runner
         .run({ command: systemctl, args: ["--user", "stop", ownedSlice], timeout: "30 seconds" })
         .pipe(Effect.option);
@@ -148,6 +165,9 @@ export const make = Effect.gen(function* () {
       }
     });
 
+  // Runs once, on the first agent or terminal launch. It proves this process
+  // can reach a systemd user manager, stops agents a previous server left,
+  // creates the agents slice, and sets its limits.
   const systemd = yield* Effect.cached(
     Effect.gen(function* () {
       const runtimeDir = hostEnvironment.XDG_RUNTIME_DIR;
@@ -275,6 +295,8 @@ export const make = Effect.gen(function* () {
       yield* forget(systemctl, tracked.unit);
     });
 
+  // Records a thread's newest scope, or forgets the thread when `unit` is
+  // undefined. The replaced scope has its failed state cleared.
   const track = (systemctl: string, threadId: string, unit: string | undefined) =>
     Effect.gen(function* () {
       const previous = scopeByThread.get(threadId);

@@ -1,4 +1,8 @@
-// Untrusted sign-in links must never redirect or depend on the web app.
+/**
+ * The page for a sign-in link that cannot be trusted (unknown client or
+ * unregistered redirect). It is plain server HTML so it never depends on the
+ * web app, and it must not redirect anywhere.
+ */
 const escapeHtml = (value: string) =>
   value.replace(
     /[&<>"']/gu,

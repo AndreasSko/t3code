@@ -1,3 +1,12 @@
+/**
+ * Which source control host settings fields hold secrets, read from each built-in host's client
+ * definition. `serverSettings` keeps those values in the secret store and redacts them for
+ * clients, the same way for every host.
+ *
+ * A secret field holds a string, or a string per server host such as GitHub's `tokens`.
+ *
+ * @module sourceControl/sourceControlHostSecrets
+ */
 import { secretSettingsFields } from "@t3tools/contracts";
 import * as AzureDevOps from "@t3tools/source-control-azure-devops/client/definition";
 import * as Bitbucket from "@t3tools/source-control-bitbucket/client/definition";
@@ -16,10 +25,7 @@ const definitions: ReadonlyArray<SourceControlClientDefinition> = [
   GitCafe.definition,
 ];
 
-/**
- * Secret field names per host kind; a host with none is absent. `serverSettings` keeps these
- * values in the secret store and redacts them for clients, the same way for every host.
- */
+/** Secret field names per host kind; a host with none is absent. */
 export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   string,
   ReadonlyArray<string>
@@ -30,13 +36,14 @@ export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   }),
 );
 
+/** One stored secret: a host's field, and the server host it is for when the field is per host. */
 export interface SourceControlHostSecretSlot {
   readonly kind: string;
   readonly field: string;
   readonly serverHost: string | null;
 }
 
-/** Store keys must stay stable across releases. */
+/** The secret store entry for one slot; names stay stable across releases. */
 export function sourceControlHostSecretName(slot: SourceControlHostSecretSlot): string {
   const encode = (value: string) => Buffer.from(value, "utf8").toString("base64url");
   return slot.serverHost === null

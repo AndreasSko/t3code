@@ -24,11 +24,15 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "./HostProcess.ts";
 
 export const CLOUDFLARED_VERSION = "2026.10.0";
-// `--output` requires 2025.6.1; older binaries exit immediately on the unknown flag.
+// The oldest release that accepts every flag the connector is started with
+// (`--output` arrived in 2025.6.1). Override, PATH, and older managed binaries
+// below it are skipped, since they exit immediately on the unknown flag.
 export const CLOUDFLARED_MIN_VERSION = "2025.6.1";
 const CLOUDFLARED_PATH_ENV_NAME = "T3CODE_CLOUDFLARED_PATH";
 
-// Allow a ~40MB download without letting a stalled connection park the install forever.
+// Generous bound for a ~40MB binary download; without it a stalled
+// connection parks the install forever (same unbounded-wait family as the
+// other relay/cloud network calls).
 const CLOUDFLARED_DOWNLOAD_TIMEOUT = "10 minutes";
 
 export type RelayClientExecutableSource = "override" | "managed" | "path";
@@ -143,7 +147,12 @@ export interface CloudflaredRelayClientOptions {
 }
 
 export interface RelayClientShape {
-  /** Resolves a compatible binary without downloading: override, pinned, older managed, then PATH. */
+  /**
+   * Finds the relay client to run, without downloading anything: the override,
+   * else the pinned managed folder, else the newest older managed folder, else
+   * `cloudflared` on PATH. Every candidate must report a compatible version, and
+   * the status carries the version the binary reports.
+   */
   readonly resolve: Effect.Effect<RelayClientStatus>;
   /** Installs the pinned managed release unless it, or a valid override, is already present. */
   readonly install: Effect.Effect<AvailableRelayClient, RelayClientInstallError>;
@@ -154,6 +163,7 @@ export interface RelayClientShape {
   readonly pruneManagedVersions: Effect.Effect<void>;
 }
 
+/** True when this is the pinned managed release, which needs no update. */
 export function isPinnedManagedRelayClient(client: AvailableRelayClient): boolean {
   return client.source === "managed" && client.version === CLOUDFLARED_VERSION;
 }
@@ -264,8 +274,11 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     return platform === "win32" || (info.value.mode & 0o111) !== 0;
   });
 
-  // Cache by file revision to avoid process spawns; folder names may not match a replaced binary.
-  // Failed probes stay uncached so a slow AV scan cannot hide a good binary.
+  // `cloudflared version` costs a process spawn, so answers are cached per file
+  // revision. Before `--no-autoupdate`, a managed binary could replace itself in
+  // place, so the version is read from the binary, never from its folder name.
+  // A failed or timed-out probe is not cached, so a slow spawn under an AV scan
+  // does not hide a good binary until it changes on disk.
   const versionCache = yield* Cache.makeWith(
     (key: VersionProbeKey) =>
       spawner

@@ -378,7 +378,10 @@ export class SessionStore extends Context.Service<
       readonly client?: AuthClientMetadata;
       readonly proofKeyThumbprint?: string;
       readonly runtimeModeCeiling?: RuntimeMode;
-      /** Revoke matching active sessions atomically with issuance. */
+      /**
+       * Atomically revoke active sessions with the same subject and method
+       * before storing this session.
+       */
       readonly replaceActiveForSubjectAndMethod?: boolean;
       /** Replace only this session, of the same method, in the issuance transaction. */
       readonly replaceSessionId?: AuthSessionId;

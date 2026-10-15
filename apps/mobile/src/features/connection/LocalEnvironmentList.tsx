@@ -8,6 +8,7 @@ import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
 
 type EnvironmentRowProps = ComponentProps<typeof ConnectionEnvironmentRow>;
 
+/** Shared list and empty state for environment management entry points. */
 export function LocalEnvironmentList({
   environments,
   expandedId,

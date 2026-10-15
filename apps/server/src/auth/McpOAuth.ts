@@ -38,8 +38,18 @@ import {
   timingSafeEqualBase64Url,
 } from "./utils.ts";
 
-// Derive URLs from the request origin for local, remote, and tunnel access.
-// Signed client metadata keeps unauthenticated registration stateless.
+/**
+ * The OAuth authorization server MCP clients (Claude Code, Codex, any agent
+ * T3 Code did not launch) use to sign in to this environment's `/mcp`.
+ *
+ * Every URL is derived from the request's own origin, so the same server
+ * answers correctly over loopback, Tailscale Serve and a T3 Connect tunnel.
+ * Client registration is stateless: a client id is its signed metadata, so
+ * an unauthenticated caller cannot grow server state. Redirects go to a
+ * loopback address (a CLI agent on the user's machine) or any https address
+ * (a hosted agent); the approval page names where access goes, and the user
+ * decides.
+ */
 
 const SIGNING_SECRET_NAME = "mcp-oauth-signing-key";
 const AUTHORIZATION_CODE_TTL_MS = 60_000;
@@ -58,7 +68,11 @@ export interface McpOAuthUrls {
   readonly resource: string;
 }
 
-/** Derive issuer/resource from the request origin; invalid authority falls back to localhost. */
+/**
+ * Issuer and MCP resource for the origin this request reached: its Host, and
+ * https when a proxy says so. A Host that is not a valid authority falls back
+ * to localhost, which no client will have asked for.
+ */
 export const requestUrls = (request: HttpServerRequest.HttpServerRequest): McpOAuthUrls => {
   const origin = Option.match(HttpServerRequest.toURL(request), {
     onNone: () => "http://localhost",
@@ -107,7 +121,11 @@ const parseRedirect = (value: string): URL | undefined => {
   }
 };
 
-/** Loopback redirects ignore the port (RFC 8252 §7.3); HTTPS redirects match exactly. */
+/**
+ * Whether a presented redirect is one the client registered. Loopback
+ * redirects match on everything but the port (RFC 8252 §7.3), since CLI
+ * agents listen on whatever port is free; https redirects match exactly.
+ */
 export const redirectMatches = (registered: string, presented: string): boolean => {
   const left = parseRedirect(registered);
   const right = parseRedirect(presented);
@@ -196,7 +214,11 @@ export class McpOAuth extends Context.Service<
       readonly urls: McpOAuthUrls;
       readonly request: AuthMcpAuthorizationRequest;
     }) => Effect.Effect<AuthorizationRequest, McpOAuthPageError | McpOAuthRedirectError>;
-    /** Require a browser session that can approve read access; approve checks all chosen scopes. */
+    /**
+     * The signed-in owner on this origin, when their browser session may
+     * approve at least read-only access. `approve` checks the chosen access
+     * against the session's scopes.
+     */
     readonly approvingBrowserSession: (
       request: HttpServerRequest.HttpServerRequest,
       authorization: AuthorizationRequest,
@@ -309,8 +331,10 @@ const make = Effect.gen(function* () {
             "Redirect URIs must be https, or http on localhost, 127.0.0.1 or [::1].",
         });
       }
-      // RFC 7591 permits unsupported registration requests; register public clients
-      // using PKCE even when they ask for refresh tokens or client secrets.
+      // Requested grant types, scopes and token endpoint auth methods are ignored rather
+      // than rejected: RFC 7591 lets the server answer with what it supports. Claude Code
+      // asks for refresh_token, and hosted agents may ask for a client secret; every client
+      // is registered as public and proves itself with PKCE instead.
       return { clientId: signClientId(name, redirectUris), name, redirectUris };
     });
 
@@ -529,7 +553,11 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(McpOAuth, make);
 
-/** OAuth clients have no calling thread, so they cannot use caller-owned preview or device tools. */
+/**
+ * Lets `/mcp` admit OAuth clients. Their scope has no calling thread, and
+ * never carries preview or device access: those tools act on the caller's
+ * own thread.
+ */
 export const layerMcpClientAuthenticator = Layer.effect(
   McpHttpServer.McpClientAuthenticator,
   Effect.gen(function* () {

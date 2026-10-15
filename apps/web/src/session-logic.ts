@@ -137,6 +137,7 @@ export type TimelineEntry = (
       readonly proposedPlan: ProposedPlan;
     }
   | {
+      /** A page a completed `html_render` call published, shown where the call happened. */
       readonly id: string;
       readonly kind: "html-render";
       readonly createdAt: string;
@@ -144,6 +145,7 @@ export type TimelineEntry = (
       readonly htmlRender: HtmlRenderReference;
     }
   | {
+      /** An MCP App a completed tool call captured, hosted where the call happened. */
       readonly id: string;
       readonly kind: "mcp-app";
       readonly createdAt: string;
@@ -167,6 +169,7 @@ export type TimelineEntry = (
       readonly projectedItem: OrchestrationV2ProjectedTurnItem;
     }
 ) & {
+  /** V2 identity resolved from the item's execution node, when locally available. */
   readonly attempt?: TimelineAttempt;
 };
 
@@ -180,7 +183,9 @@ export function workLogEntryIsToolLike(entry: WorkLogEntry): boolean {
   );
 }
 
-/** Provider runtime errors break a turn or core side effect, unlike ordinary nonzero command exits. */
+/** Severe failures keep the red treatment ordinary tool failures lost: provider
+ *  runtime errors mean the turn or a core side effect broke, not that a
+ *  command exited nonzero. */
 export function workEntrySignalsSevereFailure(entry: WorkLogEntry): boolean {
   return entry.itemType === "error";
 }
@@ -203,6 +208,7 @@ export function workEntryIndicatesToolSuccess(entry: WorkLogEntry): boolean {
   );
 }
 
+/** Tool-like row with neither clear success nor failure (empty, incomplete, in progress, etc.). */
 export function workEntryIndicatesToolNeutralStatus(entry: WorkLogEntry): boolean {
   return (
     workLogEntryIsToolLike(entry) &&
@@ -562,8 +568,11 @@ function projectedWorkEntry(row: OrchestrationV2ProjectedTurnItem): WorkLogEntry
 }
 
 /**
- * Preserve committed visibleTurnItems order; insert client-owned messages by timestamp without sorting the
- * canonical sequence, then append optimistic sends. Queued input has no row until dispatch.
+ * Builds the web timeline in the exact order committed by `visibleTurnItems`.
+ * Committed rows are presented directly from their projected item. Queued
+ * input is absent by construction until dispatch creates its user turn item.
+ * Persistent client-owned messages are inserted by timestamp without sorting
+ * the canonical sequence. True optimistic sends remain appended afterward.
  */
 export interface TimelineEntriesInput {
   readonly visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
@@ -798,6 +807,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
 type AttachmentResource = Extract<AssetResource, { readonly _tag: "attachment" }>;
 const EMPTY_IMAGE_RESOURCES = Object.freeze<ReadonlyArray<AttachmentResource>>([]);
 
+/** A mounted row requests its stored images. Local previews keep their existing URLs. */
 export function selectMessageImageResources(
   attachments: ChatMessage["attachments"],
 ): ReadonlyArray<AttachmentResource> {
@@ -1069,8 +1079,10 @@ export function derivePhase(runtime: ThreadRuntimeSummary | null): SessionPhase 
 }
 
 /**
- * Preparing/starting runs are interruptible too; queued-thread Stop targets only an earlier interruptible
- * run.
+ * Whether web and desktop offer Stop for the active thread. The server settles
+ * a preparing or starting run on `run.interrupt` (Orchestrator.dispatchRunInterrupt),
+ * so Stop must not wait for the phase to reach "running". A queued thread offers
+ * Stop only while an earlier run is still interruptible; Stop targets that run.
  */
 export function deriveCanInterruptRunningThread(
   hasActiveThread: boolean,

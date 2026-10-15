@@ -78,7 +78,10 @@ export class SessionControl {
     return this.agentId === null || this.agentId === agentId;
   }
 
-  /** Taking human control interrupts agent actions; agents cannot act while a human owns the tab. */
+  /**
+   * An agent action. It may act on its own tab or on one a human opened, but
+   * never while a human controls the tab; taking control interrupts it.
+   */
   agent<A>(agentId: string, run: () => Promise<A>) {
     if (!this.agentMayAct(agentId))
       return Promise.reject(
@@ -91,17 +94,24 @@ export class SessionControl {
     return this.action(() => this.agentMayAct(agentId) && this.owner === null, run);
   }
 
+  /** Whether this agent's action would run now rather than be refused. */
   agentCanActNow(agentId: string) {
     return this.agentMayAct(agentId) && this.owner === null;
   }
 
-  /** Observations need no control and bypass the queue so they cannot delay human input. */
+  /**
+   * A read that needs no control and does not queue, so an agent can look at
+   * a page while a human drives it without holding up the human's input.
+   */
   observe<A>(run: () => Promise<A>) {
     this.assertOpen();
     return run();
   }
 
-  /** Waits behind running actions but needs no control. */
+  /**
+   * Work any client may ask for, such as a viewport or appearance change. It
+   * waits its turn behind running actions but needs no control.
+   */
   system<A>(run: () => Promise<A>) {
     this.assertOpen();
     return this.enqueue(async () => {

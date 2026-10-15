@@ -26,5 +26,6 @@ export const safariPermissionCheck = Effect.gen(function* () {
     }
     return false;
   });
+  // Open and close the jar without reading cookies or attempting an import.
   return () => runPromise(check);
 });

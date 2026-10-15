@@ -24,7 +24,8 @@ function statusDotTone(
   readonly haloColor: string;
 } {
   switch (state) {
-    // Unsupported is compatibility, not failure; keep the neutral tone.
+    // Unsupported is not a failure: the machine is fine, this build just
+    // cannot talk to it, so it wears the same neutral dot as "available".
     case "available":
     case "unsupported":
       return {

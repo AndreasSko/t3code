@@ -119,7 +119,10 @@ export class EnvironmentRegistry extends Context.Service<
       | EnvironmentNotRegisteredError
       | PlatformEnvironmentRemovalError
     >;
-    /** Removing the last route also removes its environment. */
+    /**
+     * Drops one route. Removing an environment's last route removes the
+     * environment, the same as `remove`.
+     */
     readonly removeRoute: (
       environmentId: EnvironmentId,
       routeId: string,
@@ -141,7 +144,10 @@ export class EnvironmentRegistry extends Context.Service<
       | PlatformEnvironmentRemovalError
       | ConnectionBlockedError
     >;
-    /** On cloud sign-out or account change, removes relay routes and environments left without routes. */
+    /**
+     * Drops the T3 Connect route of every environment, after a cloud sign-out
+     * or account change. Environments with no other route are removed.
+     */
     readonly removeRelayEnvironments: () => Effect.Effect<
       void,
       | Persistence.ConnectionPersistenceError
@@ -149,7 +155,11 @@ export class EnvironmentRegistry extends Context.Service<
       | PlatformEnvironmentRemovalError
     >;
     readonly retryNow: (environmentId: EnvironmentId) => Effect.Effect<void>;
-    /** Persists off without dropping credentials or cache; stops sockets and retries until enabled. */
+    /**
+     * Switches a saved environment on or off. Off drops the socket, stops the
+     * retry ladder, and persists so the next launch stays off. Registration,
+     * credentials, and cache are untouched.
+     */
     readonly setEnabled: (
       environmentId: EnvironmentId,
       enabled: boolean,
@@ -234,7 +244,9 @@ export const make = Effect.gen(function* () {
       persistedRoutesByEnvironment,
       Effect.fn("EnvironmentRegistry.loadCatalogEntry")(function* ([environmentId, targets]) {
         const loaded = yield* Effect.forEach(targets, loadRoute, { concurrency: "unbounded" });
-        // Drop unreachable learned profiles, but keep paired slots so missing profiles surface as errors.
+        // A learned route without its profile has no address to reach; it is
+        // learned again on the next connection. A paired route keeps its slot
+        // so its missing profile still surfaces as a connection error.
         const seen = new Set<string>();
         const usable = loaded.filter((route) => {
           const id = connectionRouteId(route.target);
@@ -530,7 +542,12 @@ export const make = Effect.gen(function* () {
   const persistedRoutes = (entry: ConnectionCatalogEntry) =>
     connectionRoutes(entry).map((route) => route.target as PersistedConnectionTarget);
 
-  // Trust and incompatibility belong to saved addresses; changes revoke them, reordering preserves them.
+  /**
+   * The entry after its routes change. GitHub trust and an unsupported
+   * verdict both belong to the saved addresses: a changed set may reach a
+   * different server, so both are dropped and the next connection decides.
+   * Reordering keeps the same addresses, so both stay.
+   */
   const withRoutes = (previous: ConnectionCatalogEntry, routes: ReadonlyArray<ConnectionRoute>) => {
     const next = entryWithRoutes(previous, routes);
     if (gitHubRoutingConnectionKey(previous) === gitHubRoutingConnectionKey(next)) {
@@ -551,7 +568,9 @@ export const make = Effect.gen(function* () {
         if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) {
           return false;
         }
-        // Re-pairing replaces a matching route in place and preserves the disabled state.
+        // A new route joins the environment's saved routes. Registering one it
+        // already has (the same id, or a pairing to the same address) replaces
+        // it in place. Editing keeps the disabled state.
         const previous = (yield* SubscriptionRef.get(entries)).get(environmentId);
         let entry = registered;
         if (previous !== undefined) {
@@ -579,6 +598,7 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  /** Writes a new route list for a user-saved environment and restarts its connection. */
   const replaceRoutesLocked = Effect.fn("EnvironmentRegistry.replaceRoutesLocked")(function* (
     previous: ConnectionCatalogEntry,
     routes: ReadonlyArray<ConnectionRoute>,
@@ -640,7 +660,10 @@ export const make = Effect.gen(function* () {
             return next;
           });
 
-          // Secondary loopback servers use bearer auth; save it for the resolver's broker.
+          // Secondary desktop-local backends (e.g. a parallel WSL backend) live
+          // on their own loopback origin, so they authenticate with a bearer
+          // token instead of the primary's same-origin cookie. Stash it where
+          // the resolver's bearer broker looks it up.
           let bearerReplaced = false;
           if (registration._tag === "BearerConnectionRegistration") {
             const stored = yield* credentials
@@ -730,7 +753,10 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  // Host-reconciled removals bypass the user-facing guard for platform-managed environments.
+  // Tear down a platform-managed environment that the host no longer reports
+  // (e.g. the user turned the parallel WSL backend off). Platform environments
+  // bypass the user-facing `remove` guard since they are reconciled from the
+  // bootstrap rather than removed by hand.
   const removePlatformEnvironment = Effect.fn("EnvironmentRegistry.removePlatformEnvironment")(
     function* (environmentId: EnvironmentId) {
       yield* withLeaseLock(
@@ -796,6 +822,9 @@ export const make = Effect.gen(function* () {
     yield* installPlatformRegistration(registration);
   });
 
+  // Reconcile the full set of platform-managed environments against what the
+  // host currently reports: add/refresh the desired ones and tear down any
+  // platform environment that disappeared (WSL toggled off, distro switched).
   const reconcilePlatform = Effect.fn("EnvironmentRegistry.reconcilePlatform")(function* (
     platformRegistrations: ReadonlyArray<PlatformConnectionRegistration>,
   ) {
@@ -812,7 +841,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.forEach(platformRegistrations, installPlatformRegistration, { discard: true });
   });
 
-  /** Callers must hold the lease lock. */
+  /** Forgets a user-saved environment. Callers hold its lease lock. */
   const removeLocked = Effect.fn("EnvironmentRegistry.removeLocked")(function* (
     environmentId: EnvironmentId,
   ) {
@@ -878,7 +907,12 @@ export const make = Effect.gen(function* () {
   const allowInsecureRoutes =
     typeof globalThis.location === "undefined" || globalThis.location.protocol !== "https:";
 
-  // Learned addresses reuse the active credential and preserve user-saved routes and routing trust.
+  /**
+   * Saves the direct addresses a connected server reports as learned routes,
+   * replacing learned routes it no longer reports. Routes the user saved are
+   * never changed. Learned routes reuse the active route's credential, so they
+   * do not revoke GitHub routing trust the way a newly paired address does.
+   */
   const learnRoutes = Effect.fn("EnvironmentRegistry.learnRoutes")(function* (input: {
     readonly environmentId: EnvironmentId;
     readonly activeRoute: ConnectionRoute;
@@ -900,7 +934,9 @@ export const make = Effect.gen(function* () {
         });
         if (routes === null) return Option.none<ConnectionCatalogEntry>();
         const next = entryWithRoutes(entry, routes);
-        // Learned routes own their profiles but borrow credentials from the active route.
+        // Save new learned profiles and any whose Tailscale mark changed. A
+        // learned route owns its profile; the credential stays with the route
+        // it borrows from.
         const previousProfiles = new Map(
           connectionRoutes(entry).map((route) => [
             connectionRouteId(route.target),

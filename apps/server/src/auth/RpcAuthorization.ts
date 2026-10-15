@@ -37,7 +37,11 @@ import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
-/** Couple scope coverage to WsRpcGroup so a new unscoped RPC fails at compile time. */
+/**
+ * Keep authorization coverage coupled to the RPC group itself. Adding an RPC to
+ * `WsRpcGroup` without choosing a scope is a type error instead of a production
+ * runtime failure.
+ */
 export const RPC_REQUIRED_SCOPES = {
   ...CLIENT_GUARDED_RPC_SCOPES,
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
@@ -132,11 +136,13 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsFilesViewed]: AuthOrchestrationReadScope,
-  // Refreshing is part of reading, so read-only clients must retain access.
+  // Read scope like the reads it un-caches: refreshing is part of reading, and a read-only
+  // client pressing refresh must not be told it may not look again.
   [WS_METHODS.pullRequestsInvalidate]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsReportState]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSubscribeRefreshes]: AuthOrchestrationReadScope,
-  // Candidate discovery is read access; requesting a review requires write access.
+  // The candidate list is a read like the detail beside it; asking somebody for a review is a
+  // write like every other one.
   [WS_METHODS.pullRequestsReviewerCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsLabelCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,

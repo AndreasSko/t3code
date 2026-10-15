@@ -30,8 +30,14 @@ const encodeEnvelope = Schema.encodeEffect(
 );
 
 /**
- * Yield between row chunks and cache immutable rows by reference; unchanged rows skip encoding.
- * The final envelope encode and JSON stringify remain synchronous over the whole payload.
+ * Make an encoder for the shell cache payload that produces exactly what
+ * `fromJsonString(StoredOrchestrationShellSnapshot)` would, yielding to the host
+ * between bounded chunks of thread rows. The final envelope encode and JSON
+ * stringify still run synchronously over the whole payload.
+ *
+ * Shell rows are immutable and the shell reducer keeps unchanged rows by
+ * reference, so each encoder remembers the canonical encoding of rows it has
+ * already encoded successfully and only runs the row codec for new rows.
  */
 export function makeStoredShellSnapshotEncoder() {
   const encodedRows = new WeakMap<OrchestrationV2ThreadShellJson, unknown>();

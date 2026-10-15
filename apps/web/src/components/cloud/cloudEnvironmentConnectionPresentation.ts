@@ -9,7 +9,11 @@ export interface SavedCloudEnvironmentConnectionPresentation {
   readonly tone: "connected" | "connecting" | "error" | "idle";
 }
 
-/** A saved catalog entry does not imply a successful connection. */
+/**
+ * Present the live supervisor state for an environment that is already in the
+ * connection catalog. Catalog membership only means the environment is saved;
+ * it does not mean the connection attempt succeeded.
+ */
 export function presentSavedCloudEnvironmentConnection(
   connection: EnvironmentConnectionPresentation,
 ): SavedCloudEnvironmentConnectionPresentation {
