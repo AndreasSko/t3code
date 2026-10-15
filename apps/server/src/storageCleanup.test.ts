@@ -581,13 +581,7 @@ describe("subagent worktree ownership", () => {
           root,
         ]);
       const report = yield* fixture.service.runNow;
-      const removed = [
-        "idle",
-        "grandchild",
-        "null-branch",
-        "isolated-owner",
-        "fork-owner",
-      ].includes(scenario);
+      const removed = ["idle", "grandchild", "isolated-owner", "fork-owner"].includes(scenario);
       const shared = [
         "unrelated",
         "fork",
@@ -606,58 +600,67 @@ describe("subagent worktree ownership", () => {
             ? "Thread is running or has pending work"
             : shared
               ? "Shared by 2 threads"
-              : scenario === "recent-activity"
-                ? "Settled for 2 of 8 days"
-                : scenario === "recent-inactive"
-                  ? "Inactive for 2 of 8 days"
-                  : ["recent-grace", "recent-settle", "child-settled-now"].includes(scenario)
-                    ? "Settled moments ago"
-                    : "Not settled",
+              : scenario === "null-branch"
+                ? "A subagent thread has no branch to restore it from"
+                : scenario === "recent-activity"
+                  ? "Settled for 2 of 8 days"
+                  : scenario === "recent-inactive"
+                    ? "Inactive for 2 of 8 days"
+                    : ["recent-grace", "recent-settle", "child-settled-now"].includes(scenario)
+                      ? "Settled moments ago"
+                      : "Not settled",
       });
     }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
   );
 
-  it.live.each(["running", "pending", "activity", "unrelated", "settled", "resettled"] as const)(
-    "cancels removal when a child changes during measurement (%s)",
-    (change) =>
-      runCleanupTest(
-        Effect.gen(function* () {
-          const fixture = yield* pausedMeasurementFixture();
-          const root = shell({ branch: "feature", worktreePath: fixture.worktree });
-          const child = {
-            ...root,
-            id: ThreadId.make("child"),
-            settledAt: change === "resettled" ? at(-20 * DAY_MS) : null,
-            lineage: {
-              parentThreadId: root.id,
-              rootThreadId: root.id,
-              relationshipToParent: "subagent" as const,
-            },
-          };
-          fixture.setThreads([child, root]);
-          const run = yield* fixture.service.runNow.pipe(Effect.forkChild);
-          yield* Deferred.await(fixture.measuring);
-          fixture.setThreads([
-            root,
-            {
-              ...child,
-              settledAt: change === "settled" ? at(-20 * DAY_MS) : child.settledAt,
-              updatedAt: change === "settled" || change === "resettled" ? at(0) : child.updatedAt,
-              status: change === "running" ? "running" : "idle",
-              pendingBackgroundTasks:
-                change === "pending" ? [{ taskId: "task", kind: "command" }] : [],
-              latestRunCompletedAt: change === "activity" ? at(-DAY_MS) : null,
-            },
-            ...(change === "unrelated" ? [shell({ ...root, id: ThreadId.make("other") })] : []),
-          ]);
-          yield* Deferred.succeed(fixture.resume, undefined);
-          expect((yield* Fiber.join(run)).entries[0]).toMatchObject({
-            outcome: "kept",
-            reason: "Thread activity or shared worktree changed since check",
-          });
-          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
-        }),
-      ),
+  it.live.each([
+    "running",
+    "pending",
+    "activity",
+    "unrelated",
+    "settled",
+    "resettled",
+    "null-branch",
+  ] as const)("cancels removal when a child changes during measurement (%s)", (change) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* pausedMeasurementFixture();
+        const root = shell({ branch: "feature", worktreePath: fixture.worktree });
+        const child = {
+          ...root,
+          id: ThreadId.make("child"),
+          settledAt: change === "resettled" ? at(-20 * DAY_MS) : null,
+          lineage: {
+            parentThreadId: root.id,
+            rootThreadId: root.id,
+            relationshipToParent: "subagent" as const,
+          },
+        };
+        fixture.setThreads([child, root]);
+        const run = yield* fixture.service.runNow.pipe(Effect.forkChild);
+        yield* Deferred.await(fixture.measuring);
+        fixture.setThreads([
+          root,
+          {
+            ...child,
+            branch: change === "null-branch" ? null : child.branch,
+            settledAt: change === "settled" ? at(-20 * DAY_MS) : child.settledAt,
+            updatedAt: change === "settled" || change === "resettled" ? at(0) : child.updatedAt,
+            status: change === "running" ? "running" : "idle",
+            pendingBackgroundTasks:
+              change === "pending" ? [{ taskId: "task", kind: "command" }] : [],
+            latestRunCompletedAt: change === "activity" ? at(-DAY_MS) : null,
+          },
+          ...(change === "unrelated" ? [shell({ ...root, id: ThreadId.make("other") })] : []),
+        ]);
+        yield* Deferred.succeed(fixture.resume, undefined);
+        expect((yield* Fiber.join(run)).entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Thread activity or shared worktree changed since check",
+        });
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+      }),
+    ),
   );
 });
 
