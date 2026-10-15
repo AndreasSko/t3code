@@ -1,14 +1,12 @@
-import {
-  resolveEnvironmentMachineKind,
-  type StorageCleanupReport,
-  type StorageCleanupSettings,
-  type WorktreeCleanupRules,
+import type {
+  StorageCleanupReport,
+  StorageCleanupSettings,
+  WorktreeCleanupRules,
 } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
-import { ChevronRightIcon } from "lucide-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -18,7 +16,6 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { toastManager } from "../ui/toast";
 
 import { Input } from "../ui/input";
@@ -39,19 +36,18 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
-import { EnvironmentRow } from "./EnvironmentRow";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsGroup } from "./SettingsGroup";
 import type { ScopedSettingsTarget } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
-import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import {
   useClearScopedSettings,
   useScopedSettings,
   useScopedSettingsMixed,
   useUpdateScopedSettings,
 } from "./useScopedSettings";
+import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
 
 function WorktreesDirectoryRow() {
   const { connectedEnvironments, targets } = useSettingsScope();
@@ -174,6 +170,20 @@ const KEEP_WHEN_LABELS = {
   "tracked-changes": "Edited tracked files",
 } as const;
 
+/** One line for the last-run fold; identical results across machines collapse into one. */
+function lastRunSummary(
+  entries: readonly { readonly label: string; readonly counts: string }[],
+  machineCount: number,
+) {
+  const first = entries[0];
+  if (!first) return "";
+  if (machineCount <= 1) return first.counts;
+  if (entries.length === machineCount && entries.every((entry) => entry.counts === first.counts)) {
+    return `${first.counts} on every machine`;
+  }
+  return entries.map((entry) => `${entry.label}: ${entry.counts}`).join(" · ");
+}
+
 function CleanupResults({
   report,
   environmentLabel,
@@ -295,7 +305,6 @@ function CleanupSection() {
     const report = query?.report ?? null;
     return {
       environment,
-      labels: settingsScopeEnvironmentLabels(environment, connectedEnvironments),
       report,
       description: report
         ? `Last run ${formatRelativeTimeLabel(report.finishedAt)}. ${formatBytes(report.bytesFreed)} recovered.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
@@ -306,22 +315,6 @@ function CleanupSection() {
             : "Cleanup hasn't run yet.",
     };
   });
-  const latestReport = summaries
-    .map(({ report }) => report)
-    .reduce(
-      (latest, report) =>
-        report && (latest === null || Date.parse(report.finishedAt) > Date.parse(latest.finishedAt))
-          ? report
-          : latest,
-      null,
-    );
-  const latestRunSummary = latestReport
-    ? `Latest run ${formatRelativeTimeLabel(latestReport.finishedAt)}.`
-    : state.some((entry) => entry.failed)
-      ? "Could not load the last run on some machines."
-      : state.some((entry) => entry.loading)
-        ? "Loading last runs…"
-        : "Cleanup hasn't run yet.";
   const deleteNow = async () => {
     if (pending) return;
     setPending(true);
@@ -363,13 +356,14 @@ function CleanupSection() {
           {...searchableSetting("storage-delete-now")}
           description={
             <span>
-              {!hasRules ? (
-                "Turn on a cleanup rule to use this."
-              ) : supported.length > 1 ? (
-                latestRunSummary
-              ) : (
-                <span className="block">{summaries[0]?.description}</span>
-              )}
+              {!hasRules
+                ? "Turn on a cleanup rule to use this."
+                : summaries.map(({ environment, description }) => (
+                    <span key={environment.environmentId} className="block">
+                      {supported.length > 1 ? `${environment.label}: ` : ""}
+                      {description}
+                    </span>
+                  ))}
             </span>
           }
           control={
@@ -383,62 +377,25 @@ function CleanupSection() {
             </Button>
           }
         />
-        {supported.length > 1 &&
-          summaries.map(({ environment, labels, report, description }) => (
-            <Collapsible key={environment.environmentId}>
-              <EnvironmentRow
-                kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-                label={labels.primary}
-                subtitle={
-                  <>
-                    {labels.secondary ? (
-                      <span className="block truncate">{labels.secondary}</span>
-                    ) : null}
-                    <span className="block truncate">
-                      {report
-                        ? `${formatBytes(report.bytesFreed)} recovered${report.counts.failed > 0 ? ` · ${report.counts.failed} failed` : ""} · ${formatRelativeTimeLabel(report.finishedAt)}`
-                        : description}
-                    </span>
-                  </>
-                }
-              >
-                {report ? (
-                  <CollapsibleTrigger
-                    render={<Button variant="ghost-muted" size="xs" />}
-                    aria-label={`Cleanup details for ${labels.primary}${labels.secondary ? ` (${labels.secondary})` : ""}`}
-                  >
-                    Details
-                    <ChevronRightIcon
-                      aria-hidden
-                      className="size-3.5 [[data-panel-open]_&]:rotate-90"
-                    />
-                  </CollapsibleTrigger>
-                ) : null}
-              </EnvironmentRow>
-              {report ? (
-                <CollapsiblePanel>
-                  <div className="border-t border-border/50 [&>*+*]:border-t [&>*+*]:border-border/50">
-                    <CleanupResults report={report} environmentLabel={undefined} />
-                  </div>
-                </CollapsiblePanel>
-              ) : null}
-            </Collapsible>
-          ))}
       </SettingsGroup>
-      {supported.length === 1 && summaries.some(({ report }) => report !== null) && (
+      {summaries.some(({ report }) => report !== null) && (
         <FoldedSettingsSection
           id="storage-cleanup-last-run"
           title="Last run"
           headerPlacement="inside"
-          summary={summaries
-            .flatMap(({ environment, report }) =>
+          summary={lastRunSummary(
+            summaries.flatMap(({ environment, report }) =>
               report
                 ? [
-                    `${connectedEnvironments.length > 1 ? `${environment.label}: ` : ""}${report.counts.removed} removed, ${report.counts.kept} kept${report.counts.failed > 0 ? `, ${report.counts.failed} failed` : ""}`,
+                    {
+                      label: settingsScopeEnvironmentLabel(environment, connectedEnvironments),
+                      counts: `${report.counts.removed} removed, ${report.counts.kept} kept${report.counts.failed > 0 ? `, ${report.counts.failed} failed` : ""}`,
+                    },
                   ]
                 : [],
-            )
-            .join(" · ")}
+            ),
+            connectedEnvironments.length,
+          )}
         >
           {summaries.map(
             ({ environment, report }) =>
@@ -447,7 +404,9 @@ function CleanupSection() {
                   key={environment.environmentId}
                   report={report}
                   environmentLabel={
-                    connectedEnvironments.length > 1 ? environment.label : undefined
+                    connectedEnvironments.length > 1
+                      ? settingsScopeEnvironmentLabel(environment, connectedEnvironments)
+                      : undefined
                   }
                 />
               ),
