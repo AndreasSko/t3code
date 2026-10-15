@@ -1,34 +1,18 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { assert, describe, it } from "@effect/vitest";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "./config.ts";
 
 describe("otlpResource", () => {
-  it.effect("names the host, unless OTEL_RESOURCE_ATTRIBUTES already does", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
+  const resource = (resourceAttributes: Record<string, string>) =>
+    ServerConfig.otlpResource(
+      { mode: "web", otelEnvironment: { ...OtelEnvironment.none, resourceAttributes } },
+      "box-1",
+    );
 
-      assert.equal(ServerConfig.otlpResource(config, "box-1").attributes["host.name"], "box-1");
-
-      const configured = {
-        ...config,
-        otelEnvironment: {
-          ...config.otelEnvironment,
-          resourceAttributes: { "host.name": "from-env" },
-        },
-      };
-      assert.equal(
-        ServerConfig.otlpResource(configured, "box-1").attributes["host.name"],
-        "from-env",
-      );
-    }).pipe(
-      Effect.provide(
-        ServerConfig.layerTest(process.cwd(), { prefix: "t3-otlp-resource-" }).pipe(
-          Layer.provide(NodeServices.layer),
-        ),
-      ),
-    ),
-  );
+  it("names the host, unless OTEL_RESOURCE_ATTRIBUTES already does", () => {
+    assert.equal(resource({}).attributes["host.name"], "box-1");
+    assert.equal(resource({ "host.name": "from-env" }).attributes["host.name"], "from-env");
+    assert.equal(resource({ "host.name": "" }).attributes["host.name"], "box-1");
+  });
 });

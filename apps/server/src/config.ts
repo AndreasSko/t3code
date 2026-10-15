@@ -123,14 +123,17 @@ export const make = (config: ServerConfig["Service"]) => ServerConfig.of(config)
  * servers apart when several export to one collector; a `host.name` set in
  * `OTEL_RESOURCE_ATTRIBUTES` wins, since explicit attributes override it.
  */
-export const otlpResource = (config: ServerConfig["Service"], hostName: string) => ({
+export const otlpResource = (
+  config: Pick<ServerConfig["Service"], "mode" | "otelEnvironment">,
+  hostName: string,
+) => ({
   serviceName: "t3code-server",
   serviceVersion: packageJson.version,
   attributes: {
     "service.namespace": "t3code",
     "service.runtime": "t3-server",
     "service.mode": config.mode,
-    "host.name": config.otelEnvironment.resourceAttributes["host.name"] ?? hostName,
+    "host.name": config.otelEnvironment.resourceAttributes["host.name"] || hostName,
   },
 });
 
