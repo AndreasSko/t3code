@@ -275,15 +275,13 @@ export const make = Effect.gen(function* () {
       };
       const recordCancelledBackgroundItem = (
         item: OrchestrationV2ThreadProjection["turnItems"][number],
+        providerThreadId = item.providerThreadId ??
+          projection.runs.find((run) => run.id === item.runId)?.providerThreadId,
       ) => {
         if (!isBackgroundCapableTurnItemType(item.type)) return;
         const work = cancelledTurnItemWork(item);
         if (work === undefined) return;
-        recordCancelledBackgroundWork(
-          item.providerThreadId ??
-            projection.runs.find((run) => run.id === item.runId)?.providerThreadId,
-          work,
-        );
+        recordCancelledBackgroundWork(providerThreadId, work);
         if (item.nativeItemRef?.nativeId != null) {
           cancelledBackgroundNativeIds.add(item.nativeItemRef.nativeId);
         }
@@ -434,8 +432,12 @@ export const make = Effect.gen(function* () {
               candidate.status === "waiting"),
         )) {
           // A waiting run's provider turn already settled; its open items are
-          // background work. A running run's items die with its turn.
+          // background work. A running run's items die with its turn, but a
+          // native subagent does not come back when the turn resumes, so the
+          // turn's own continuation is told to restart it.
           if (run.status === "waiting") recordCancelledBackgroundItem(item);
+          else if (item.type === "subagent" && item.origin === "provider_native")
+            recordCancelledBackgroundItem(item, run.providerThreadId);
           events.push({
             id: yield* allocateEventId(),
             type: "turn-item.updated",
