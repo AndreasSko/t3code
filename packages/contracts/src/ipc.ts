@@ -1150,6 +1150,11 @@ export interface DesktopBridge {
   getConnectionCatalog?: () => Promise<string | null>;
   setConnectionCatalog?: (catalog: string) => Promise<boolean>;
   clearConnectionCatalog?: () => Promise<void>;
+  /** Sends these headers with every request to the origin of `httpBaseUrl`. */
+  setConnectionHeaders?: (
+    httpBaseUrl: string,
+    headers: Readonly<Record<string, string>>,
+  ) => Promise<void>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
   /** Resolves a suggested SSH alias before populating the connection form. */
   resolveSshHost: (alias: string) => Promise<DesktopSshEnvironmentTarget>;

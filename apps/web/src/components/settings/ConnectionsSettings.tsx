@@ -8,6 +8,7 @@ import {
   QrCodeIcon,
   RouteIcon,
   TerminalIcon,
+  XIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
@@ -47,6 +48,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import {
+  ConnectionOnboarding,
   RelayConnectionRegistration,
   RelayConnectionTarget,
   connectionRoutes,
@@ -138,6 +140,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "..
 import { AnimatedHeight } from "../AnimatedHeight";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { Textarea } from "../ui/textarea";
+import { SecretInput } from "./SecretInput";
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "../../pairingUrl";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import {
@@ -2185,6 +2188,9 @@ export function ConnectionsSettings() {
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
+  const [savedBackendHeaders, setSavedBackendHeaders] = useState<
+    ReadonlyArray<{ readonly id: number; readonly name: string; readonly value: string }>
+  >([]);
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
@@ -2611,11 +2617,13 @@ export function ConnectionsSettings() {
     setIsAddingSavedBackend(true);
     setSavedBackendError(null);
     let remotePairingInput: ReturnType<typeof parseRemotePairingFields>;
+    let headers: Record<string, string>;
     try {
       remotePairingInput = parseRemotePairingFields({
         host: savedBackendHost,
         pairingCode: savedBackendPairingCode,
       });
+      headers = ConnectionOnboarding.connectionHeadersFromFields(savedBackendHeaders);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to add backend.";
       setSavedBackendError(message);
@@ -2632,6 +2640,7 @@ export function ConnectionsSettings() {
 
     const result = await connectPairing({
       ...remotePairingInput,
+      ...(Object.keys(headers).length === 0 ? {} : { headers }),
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
     });
     if (result._tag === "Failure") {
@@ -2653,6 +2662,7 @@ export function ConnectionsSettings() {
 
     setSavedBackendHost("");
     setSavedBackendPairingCode("");
+    setSavedBackendHeaders([]);
     setSavedBackendSshHost("");
     setSavedBackendSshUsername("");
     setSavedBackendSshPort("");
@@ -2675,6 +2685,7 @@ export function ConnectionsSettings() {
     routeTarget,
     connectPairing,
     connectSavedBackendSshTarget,
+    savedBackendHeaders,
     savedBackendHost,
     savedBackendMode,
     savedBackendPairingCode,
@@ -2960,6 +2971,79 @@ export function ConnectionsSettings() {
           Paste a full pairing URL here to fill both fields automatically.
         </span>
       </div>
+      {desktopBridge?.setConnectionHeaders ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-foreground">Extra headers (optional)</span>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={isAddingSavedBackend}
+              onClick={() =>
+                setSavedBackendHeaders((rows) => [
+                  ...rows,
+                  { id: (rows.at(-1)?.id ?? 0) + 1, name: "", value: "" },
+                ])
+              }
+            >
+              <PlusIcon className="size-3" />
+              Add header
+            </Button>
+          </div>
+          {savedBackendHeaders.map((header, index) => (
+            <div key={header.id} className="flex items-center gap-1.5">
+              <Input
+                size="sm"
+                font="mono"
+                className="w-44 shrink-0"
+                value={header.name}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setSavedBackendHeaders((rows) =>
+                    rows.map((row) => (row.id === header.id ? { ...row, name } : row)),
+                  );
+                }}
+                placeholder="Coder-Session-Token"
+                disabled={isAddingSavedBackend}
+                spellCheck={false}
+                aria-label={`Header name ${index + 1}`}
+              />
+              <SecretInput
+                size="sm"
+                font="mono"
+                className="min-w-0 flex-1"
+                value={header.value}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSavedBackendHeaders((rows) =>
+                    rows.map((row) => (row.id === header.id ? { ...row, value } : row)),
+                  );
+                }}
+                placeholder="value"
+                disabled={isAddingSavedBackend}
+                aria-label={`Header value ${index + 1}`}
+              />
+              <Button
+                type="button"
+                size="icon-micro"
+                variant="ghost-destructive"
+                disabled={isAddingSavedBackend}
+                onClick={() =>
+                  setSavedBackendHeaders((rows) => rows.filter((row) => row.id !== header.id))
+                }
+                aria-label={`Remove header ${header.name || index + 1}`}
+              >
+                <XIcon className="size-3" />
+              </Button>
+            </div>
+          ))}
+          <span className="block text-2xs text-muted-foreground">
+            Sent with every request to this host. Use it for an access proxy in front of the
+            backend.
+          </span>
+        </div>
+      ) : null}
     </div>
   );
   // T3 Connect is offered as a route when this account can reach the machine

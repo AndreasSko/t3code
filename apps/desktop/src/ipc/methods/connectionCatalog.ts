@@ -3,6 +3,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as DesktopConnectionCatalogStore from "../../app/DesktopConnectionCatalogStore.ts";
+import * as DesktopConnectionHeaders from "../../app/DesktopConnectionHeaders.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 
@@ -33,5 +34,18 @@ export const clearConnectionCatalog = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.connectionCatalog.clear")(function* () {
     const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
     yield* store.clear;
+  }),
+});
+
+export const setConnectionHeaders = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_CONNECTION_HEADERS_CHANNEL,
+  payload: Schema.Struct({
+    httpBaseUrl: Schema.String,
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.connectionCatalog.setHeaders")(function* (input) {
+    const connectionHeaders = yield* DesktopConnectionHeaders.DesktopConnectionHeaders;
+    yield* connectionHeaders.set(input.httpBaseUrl, input.headers);
   }),
 });

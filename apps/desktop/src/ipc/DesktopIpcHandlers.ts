@@ -8,6 +8,7 @@ import {
   clearConnectionCatalog,
   getConnectionCatalog,
   setConnectionCatalog,
+  setConnectionHeaders,
 } from "./methods/connectionCatalog.ts";
 import {
   getLocalEnvironmentEnabled,
@@ -118,6 +119,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(acknowledgeSnapShot);
   yield* ipc.handle(setConnectionCatalog);
   yield* ipc.handle(clearConnectionCatalog);
+  yield* ipc.handle(setConnectionHeaders);
 
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(resolveSshHost);

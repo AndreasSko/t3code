@@ -332,12 +332,31 @@ const layerCapabilities = Layer.effectContext(
       }),
     });
 
-    return Context.make(ClientCapabilities.CloudSession, cloudSession).pipe(
+    const context = Context.make(ClientCapabilities.CloudSession, cloudSession).pipe(
       Context.add(ClientCapabilities.PrimaryEnvironmentAuth, primaryAuth),
       Context.add(ClientCapabilities.RelayDeviceIdentity, identity),
       Context.add(ClientCapabilities.ClientPresentation, presentation),
       Context.add(ClientCapabilities.SshEnvironmentGateway, ssh),
     );
+    // A browser cannot set headers on a WebSocket, so only desktop offers this.
+    const setConnectionHeaders = window.desktopBridge?.setConnectionHeaders;
+    return setConnectionHeaders === undefined
+      ? context
+      : Context.add(
+          context,
+          ClientCapabilities.ConnectionHeaders,
+          ClientCapabilities.ConnectionHeaders.of({
+            set: (httpBaseUrl, headers) =>
+              Effect.tryPromise({
+                try: () => setConnectionHeaders(httpBaseUrl, headers),
+                catch: (cause) =>
+                  new ConnectionTransientError({
+                    reason: "remote-unavailable",
+                    detail: `Could not apply the connection headers: ${String(cause)}`,
+                  }),
+              }),
+          }),
+        );
   }),
 );
 
