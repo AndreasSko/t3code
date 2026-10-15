@@ -489,6 +489,7 @@ describe("subagent worktree ownership", () => {
     "grandchild",
     "null-branch",
     "isolated-owner",
+    "fork-owner",
     "missing-parent",
     "cycle",
     "two-tops",
@@ -518,12 +519,13 @@ describe("subagent worktree ownership", () => {
         branch: "feature",
         worktreePath: fixture.worktree,
         settledAt: scenario === "child-settled-only" ? null : at(-20 * DAY_MS),
-        ...(scenario === "isolated-owner"
+        ...(scenario === "isolated-owner" || scenario === "fork-owner"
           ? {
               lineage: {
                 parentThreadId: ThreadId.make("ancestor"),
                 rootThreadId: ThreadId.make("ancestor"),
-                relationshipToParent: "subagent" as const,
+                relationshipToParent:
+                  scenario === "fork-owner" ? ("fork" as const) : ("subagent" as const),
               },
             }
           : {}),
@@ -565,7 +567,7 @@ describe("subagent worktree ownership", () => {
       fixture.setThreads(
         scenario === "grandchild"
           ? [grandchild, child, root]
-          : scenario === "isolated-owner"
+          : scenario === "isolated-owner" || scenario === "fork-owner"
             ? [child, root, shell({ id: ThreadId.make("ancestor") })]
             : [child, root],
       );
@@ -579,7 +581,13 @@ describe("subagent worktree ownership", () => {
           root,
         ]);
       const report = yield* fixture.service.runNow;
-      const removed = ["idle", "grandchild", "null-branch", "isolated-owner"].includes(scenario);
+      const removed = [
+        "idle",
+        "grandchild",
+        "null-branch",
+        "isolated-owner",
+        "fork-owner",
+      ].includes(scenario);
       const shared = [
         "unrelated",
         "fork",
@@ -952,6 +960,14 @@ describe("storage cleanup reports and local file policies", () => {
     ),
   );
   it.live.each([
+    [
+      "its owner's branch is cleared",
+      (worktree: string) => [shell({ branch: null, worktreePath: worktree, updatedAt: at(0) })],
+    ],
+    [
+      "its owner's branch changes",
+      (worktree: string) => [shell({ branch: "other", worktreePath: worktree, updatedAt: at(0) })],
+    ],
     [
       "its thread starts",
       (worktree: string) => [
