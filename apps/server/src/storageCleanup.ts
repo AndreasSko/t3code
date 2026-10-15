@@ -337,11 +337,18 @@ const make = Effect.gen(function* () {
         pathKey(yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved))),
       );
     }
+    const projectRoots = yield* Effect.forEach(projects, (project) => {
+      const resolved = path.resolve(project.workspaceRoot);
+      return fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+    });
+    const inProject = (target: string) =>
+      projectRoots.some((root) => pathKey(root) === pathKey(target) || inside(root, target));
     const directories = Effect.fnUntraced(function* (parent: string) {
+      if (inProject(parent)) return [];
       const result: string[] = [];
       for (const name of yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => []))) {
         const target = path.join(parent, name);
-        if (!inside(parent, target)) continue;
+        if (!inside(parent, target) || inProject(target)) continue;
         const directory = yield* Effect.gen(function* () {
           if (pathKey(yield* fs.realPath(target)) !== pathKey(target)) return false;
           return (yield* fs.stat(target)).type === "Directory";

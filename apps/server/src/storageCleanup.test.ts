@@ -746,6 +746,50 @@ describe("orphan worktree reports", () => {
       ),
   );
 
+  it.live.each(["exact", "inside", "symlink"] as const)(
+    "does not report project internals under a custom managed root (%s)",
+    (location) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.setThreads([]);
+          const source = `${fixture.repo}/src`;
+          yield* fixture.fs.makeDirectory(`${source}/nested/deep`, { recursive: true });
+          const alias = `${fixture.config.worktreesDir}/project-alias`;
+          if (location === "symlink") {
+            yield* fixture.fs.symlink(fixture.repo, alias);
+            fixture.setProjectRoots([alias]);
+          }
+          fixture.setSettings({
+            worktreesDirectory: location === "inside" ? source : fixture.repo,
+          });
+          expect((yield* fixture.service.runNow).entries).toEqual([]);
+          expect(yield* fixture.fs.exists(`${source}/nested/deep`)).toBe(true);
+        }),
+      ),
+  );
+
+  it.live("skips project workspace internals while reporting a real orphan sibling", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        const project = `${fixture.config.worktreesDir}/project-checkout`;
+        const orphan = `${fixture.config.worktreesDir}/repository/orphan`;
+        yield* fixture.fs.makeDirectory(`${project}/src/nested`, { recursive: true });
+        yield* fixture.fs.makeDirectory(orphan, { recursive: true });
+        yield* fixture.fs.writeFileString(`${orphan}/file`, "x");
+        fixture.setProjectRoots([fixture.repo, project]);
+        const report = yield* fixture.service.runNow;
+        expect(report.entries).toEqual([
+          expect.objectContaining({ path: orphan, outcome: "kept", bytes: 1 }),
+        ]);
+        expect(yield* fixture.fs.exists(`${project}/src/nested`)).toBe(true);
+        expect(yield* fixture.fs.exists(orphan)).toBe(true);
+      }),
+    ),
+  );
+
   it.live("skips symbolic links at both directory levels and disabled cleanup", () =>
     runCleanupTest(
       Effect.gen(function* () {
