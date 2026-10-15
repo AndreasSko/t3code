@@ -467,6 +467,12 @@ describe("subagent worktree ownership", () => {
   it.effect.each([
     "idle",
     "grandchild",
+    "null-branch",
+    "isolated-owner",
+    "missing-parent",
+    "cycle",
+    "two-tops",
+    "wrong-root",
     "running",
     "pending",
     "unrelated",
@@ -475,6 +481,7 @@ describe("subagent worktree ownership", () => {
     "recent-inactive",
     "recent-grace",
     "recent-settle",
+    "child-settled-now",
     "child-settled-only",
   ] as const)("checks the whole owner group (%s)", (scenario) =>
     Effect.gen(function* () {
@@ -491,14 +498,31 @@ describe("subagent worktree ownership", () => {
         branch: "feature",
         worktreePath: fixture.worktree,
         settledAt: scenario === "child-settled-only" ? null : at(-20 * DAY_MS),
+        ...(scenario === "isolated-owner"
+          ? {
+              lineage: {
+                parentThreadId: ThreadId.make("ancestor"),
+                rootThreadId: ThreadId.make("ancestor"),
+                relationshipToParent: "subagent" as const,
+              },
+            }
+          : {}),
       });
       const child = shell({
         id: ThreadId.make("child"),
-        branch: "feature",
+        branch: scenario === "null-branch" ? null : "feature",
         worktreePath: fixture.worktree,
         lineage: {
-          parentThreadId: root.id,
-          rootThreadId: root.id,
+          parentThreadId:
+            scenario === "missing-parent"
+              ? ThreadId.make("missing")
+              : scenario === "cycle"
+                ? ThreadId.make("child")
+                : scenario === "two-tops"
+                  ? null
+                  : root.id,
+          rootThreadId:
+            scenario === "wrong-root" ? ThreadId.make("other-root") : root.lineage.rootThreadId,
           relationshipToParent:
             scenario === "fork" ? "fork" : scenario === "unrelated" ? null : "subagent",
         },
@@ -517,33 +541,55 @@ describe("subagent worktree ownership", () => {
         id: ThreadId.make("grandchild"),
         lineage: { ...child.lineage, parentThreadId: child.id },
       };
-      // The root can follow its children in the snapshot.
-      fixture.setThreads(scenario === "grandchild" ? [grandchild, child, root] : [child, root]);
-      if (scenario === "recent-settle") fixture.setThreads([{ ...child, settledAt: at(0) }, root]);
+      // The worktree owner can follow its children in the snapshot.
+      fixture.setThreads(
+        scenario === "grandchild"
+          ? [grandchild, child, root]
+          : scenario === "isolated-owner"
+            ? [child, root, shell({ id: ThreadId.make("ancestor") })]
+            : [child, root],
+      );
+      if (scenario === "recent-settle" || scenario === "child-settled-now")
+        fixture.setThreads([
+          {
+            ...child,
+            settledAt: scenario === "recent-settle" ? at(0) : at(-20 * DAY_MS),
+            updatedAt: at(0),
+          },
+          root,
+        ]);
       const report = yield* fixture.service.runNow;
-      const removed = ["idle", "grandchild", "recent-settle"].includes(scenario);
+      const removed = ["idle", "grandchild", "null-branch", "isolated-owner"].includes(scenario);
+      const shared = [
+        "unrelated",
+        "fork",
+        "missing-parent",
+        "cycle",
+        "two-tops",
+        "wrong-root",
+      ].includes(scenario);
       expect(yield* fixture.fs.exists(fixture.worktree)).toBe(!removed);
       expect(report.entries[0]).toMatchObject({
-        threadId: scenario === "unrelated" || scenario === "fork" ? child.id : root.id,
+        threadId: shared ? child.id : root.id,
         outcome: removed ? "removed" : "kept",
         reason: removed
           ? "Settled for 20 days"
           : scenario === "running" || scenario === "pending"
             ? "Thread is running or has pending work"
-            : scenario === "unrelated" || scenario === "fork"
+            : shared
               ? "Shared by 2 threads"
               : scenario === "recent-activity"
                 ? "Settled for 2 of 8 days"
                 : scenario === "recent-inactive"
                   ? "Inactive for 2 of 8 days"
-                  : scenario === "recent-grace"
+                  : ["recent-grace", "recent-settle", "child-settled-now"].includes(scenario)
                     ? "Settled moments ago"
                     : "Not settled",
       });
     }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
   );
 
-  it.live.each(["running", "pending", "activity", "unrelated"] as const)(
+  it.live.each(["running", "pending", "activity", "unrelated", "settled", "resettled"] as const)(
     "cancels removal when a child changes during measurement (%s)",
     (change) =>
       runCleanupTest(
@@ -553,6 +599,7 @@ describe("subagent worktree ownership", () => {
           const child = {
             ...root,
             id: ThreadId.make("child"),
+            settledAt: change === "resettled" ? at(-20 * DAY_MS) : null,
             lineage: {
               parentThreadId: root.id,
               rootThreadId: root.id,
@@ -566,6 +613,8 @@ describe("subagent worktree ownership", () => {
             root,
             {
               ...child,
+              settledAt: change === "settled" ? at(-20 * DAY_MS) : child.settledAt,
+              updatedAt: change === "settled" || change === "resettled" ? at(0) : child.updatedAt,
               status: change === "running" ? "running" : "idle",
               pendingBackgroundTasks:
                 change === "pending" ? [{ taskId: "task", kind: "command" }] : [],
