@@ -234,6 +234,12 @@ export function SettingInheritance({
           ([first]) =>
             first &&
             first.winningLayer?.key === chain.winningLayer?.key &&
+            first.layers.length === chain.layers.length &&
+            first.layers.every(
+              (layer, index) =>
+                layer.key === chain.layers[index]?.key &&
+                layer.value === chain.layers[index]?.value,
+            ) &&
             keys.every((settingKey) =>
               Equal.equals(first.target.settings[settingKey], chain.target.settings[settingKey]),
             ),
