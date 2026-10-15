@@ -335,18 +335,27 @@ const make = Effect.gen(function* () {
         pathKey(yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved))),
       );
     }
-    const projectRoots = yield* Effect.forEach(projects, (project) => {
-      const resolved = path.resolve(project.workspaceRoot);
-      return fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
-    });
-    const inProject = (target: string) =>
-      projectRoots.some((root) => pathKey(root) === pathKey(target) || inside(root, target));
-    const directories = Effect.fnUntraced(function* (parent: string) {
-      if (inProject(parent)) return [];
+    const projectRoots = (yield* Effect.forEach(
+      yield* Effect.filter(projects, (project) => fs.exists(path.resolve(project.workspaceRoot))),
+      (project) => {
+        const resolved = path.resolve(project.workspaceRoot);
+        return fs.realPath(resolved).pipe(
+          Effect.orElseSucceed(() => resolved),
+          Effect.map((realPath) => [resolved, realPath]),
+        );
+      },
+    )).flat();
+    const inProject = (target: string, managedRoot: string) =>
+      projectRoots.some(
+        (root) =>
+          !inside(root, managedRoot) && (pathKey(root) === pathKey(target) || inside(root, target)),
+      );
+    const directories = Effect.fnUntraced(function* (parent: string, managedRoot: string) {
+      if (inProject(parent, managedRoot)) return [];
       const result: string[] = [];
       for (const name of yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => []))) {
         const target = path.join(parent, name);
-        if (!inside(parent, target) || inProject(target)) continue;
+        if (!inside(parent, target) || inProject(target, managedRoot)) continue;
         const directory = yield* Effect.gen(function* () {
           if (pathKey(yield* fs.realPath(target)) !== pathKey(target)) return false;
           return (yield* fs.stat(target)).type === "Directory";
@@ -365,7 +374,7 @@ const make = Effect.gen(function* () {
         if (
           reported.has(key) ||
           referenced.has(key) ||
-          (yield* containsProjectRoot(worktreePath, projects))
+          projectRoots.some((root) => pathKey(root) === key || inside(worktreePath, root))
         )
           return;
         const gitPath = path.join(worktreePath, ".git");
@@ -396,7 +405,7 @@ const make = Effect.gen(function* () {
     );
     for (const root of roots) {
       // Worktrees can be <root>/<repository>/<branch> or explicitly <root>/<name>.
-      for (const projectDirectory of yield* directories(root)) {
+      for (const projectDirectory of yield* directories(root, root)) {
         yield* Effect.gen(function* () {
           if (referenced.has(pathKey(projectDirectory))) return;
           const gitPath = path.join(projectDirectory, ".git");
@@ -404,7 +413,7 @@ const make = Effect.gen(function* () {
             if ((yield* fs.stat(gitPath)).type === "File") yield* report(projectDirectory);
             return;
           }
-          for (const worktreePath of yield* directories(projectDirectory)) {
+          for (const worktreePath of yield* directories(projectDirectory, root)) {
             yield* report(worktreePath);
           }
         }).pipe(Effect.orElseSucceed(() => undefined));
