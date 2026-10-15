@@ -8,7 +8,6 @@ import {
 } from "@t3tools/contracts";
 import { CheckIcon, ChevronRightIcon, LayersIcon } from "lucide-react";
 import * as Equal from "effect/Equal";
-import { useState } from "react";
 
 import { cn } from "../../lib/utils";
 import type { EnvironmentPresentation } from "../../state/environments";
@@ -18,7 +17,6 @@ import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDeta
 import { Button, InlineButton } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import type { ProjectOverrideEntry, ScopedSettingsTarget } from "./scopedSettings";
@@ -188,7 +186,6 @@ export function SettingInheritance({
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }) {
   const scopeContext = useOptionalSettingsScope();
-  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const key = keys[0];
   if (!key || targets.length === 0) return null;
   const hasMultipleEnvironments = new Set(targets.map((target) => target.environmentId)).size > 1;
@@ -208,16 +205,17 @@ export function SettingInheritance({
     const secondary = [labels.secondary, path?.split(/[\\/]/).filter(Boolean).slice(-2).join("/")]
       .filter(Boolean)
       .join(" · ");
+    const layers = settingInheritanceLayers(target, environment.serverConfig.settings, key);
     return [
       {
         id: `${target.environmentId}:${target.projectId ?? ""}`,
         target,
         labels,
-        path,
         secondary,
         environment: { ...environment, serverConfig: environment.serverConfig },
         machine: resolveEnvironmentMachineKind(environment.serverConfig),
-        layers: settingInheritanceLayers(target, environment.serverConfig.settings, key),
+        layers,
+        winningLayer: layers.find((layer) => layer.effective),
       },
     ];
   });
@@ -227,22 +225,25 @@ export function SettingInheritance({
         target.environmentId === scopeContext?.target?.environmentId &&
         target.projectId === scopeContext?.target?.projectId,
     ) ?? chains[0];
-  const differing = primary
-    ? chains.find(({ target }) =>
-        keys.some(
-          (settingKey) =>
-            !Equal.equals(target.settings[settingKey], primary.target.settings[settingKey]),
-        ),
-      )
-    : undefined;
-  const selected = chains.find(({ id }) => id === selectedTargetId) ?? primary;
-  const visibleChains = hasMultipleEnvironments ? (selected ? [selected] : []) : chains;
+  const groups: (typeof chains)[] = [];
+  for (const chain of hasMultipleEnvironments && primary
+    ? [primary, ...chains.filter((entry) => entry !== primary)]
+    : chains) {
+    const group = hasMultipleEnvironments
+      ? groups.find(
+          ([first]) =>
+            first &&
+            first.winningLayer?.key === chain.winningLayer?.key &&
+            keys.every((settingKey) =>
+              Equal.equals(first.target.settings[settingKey], chain.target.settings[settingKey]),
+            ),
+        )
+      : undefined;
+    if (group) group.push(chain);
+    else groups.push([chain]);
+  }
   return (
-    <Popover
-      onOpenChange={(open) => {
-        if (open) setSelectedTargetId(null);
-      }}
-    >
+    <Popover>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -268,82 +269,12 @@ export function SettingInheritance({
         <TooltipPopup side="top">{overrideSummary}</TooltipPopup>
       </Tooltip>
       <PopoverPopup align="start" width="md" padding="none">
-        {hasMultipleEnvironments && selected ? (
-          <div className="space-y-1.5 px-3 pt-2.5">
-            <Select
-              items={chains.map(({ id, target, path }) => ({
-                value: id,
-                label: path ? `${target.label} · ${path}` : target.label,
-              }))}
-              value={selected.id}
-              onValueChange={setSelectedTargetId}
-            >
-              <SelectTrigger
-                size={selected.secondary ? "sm" : "xs"}
-                aria-label="Inheritance target"
-              >
-                <SelectValue>
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <EnvironmentMachineIcon
-                      aria-hidden
-                      kind={selected.machine}
-                      className="size-3.5 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{selected.labels.primary}</span>
-                      {selected.secondary ? (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <span className="block truncate text-xs text-muted-foreground" />
-                            }
-                          >
-                            {selected.secondary}
-                          </TooltipTrigger>
-                          <TooltipPopup>{selected.path ?? selected.secondary}</TooltipPopup>
-                        </Tooltip>
-                      ) : null}
-                    </span>
-                  </span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup alignItemWithTrigger={false}>
-                {chains.map(({ id, labels, secondary }) => (
-                  <SelectItem key={id} value={id}>
-                    <div className="max-w-64">
-                      <p className="truncate">{labels.primary}</p>
-                      {secondary ? (
-                        <p className="truncate text-xs text-muted-foreground">{secondary}</p>
-                      ) : null}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-            {differing ? (
-              <p className="text-xs text-muted-foreground">
-                Values differ across {selected.target.projectId === null ? "machines" : "checkouts"}
-                .
-              </p>
-            ) : null}
-          </div>
-        ) : null}
         <div className="divide-y divide-border/60">
-          {visibleChains.map(({ target, environment, machine, layers }) => (
-            <section
-              key={`${target.environmentId}:${target.projectId ?? ""}`}
-              className="px-3 py-2.5"
-            >
-              {!hasMultipleEnvironments ? (
-                <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
-                  <EnvironmentMachineIcon
-                    aria-hidden
-                    kind={machine}
-                    className="size-3.5 shrink-0"
-                  />
-                  <span className="min-w-0 truncate">{target.label}</span>
-                </h4>
-              ) : null}
+          {groups.map((members) => {
+            const first = members[0];
+            if (!first) return null;
+            const { id, target, machine, layers, winningLayer } = first;
+            const chain = (
               <ol role="list" className="text-sm">
                 {layers.map((layer) => (
                   <li
@@ -381,73 +312,140 @@ export function SettingInheritance({
                   </li>
                 ))}
               </ol>
-              {(() => {
-                const overriding = overridingProjects.filter(
-                  (project) => project.environmentId === target.environmentId,
-                );
-                if (overriding.length === 0) return null;
-                const overrides = environment.serverConfig.settings.projectSettingsOverrides;
-                const foldOverrides = hasMultipleEnvironments && overriding.length > 3;
-                const header = (
-                  <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
-                    {foldOverrides ? (
-                      <CollapsibleTrigger render={<InlineButton tone="muted" />}>
+            );
+            return (
+              <section key={id} className="px-3 py-2.5">
+                {!hasMultipleEnvironments ? (
+                  <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
+                    <EnvironmentMachineIcon
+                      aria-hidden
+                      kind={machine}
+                      className="size-3.5 shrink-0"
+                    />
+                    <span className="min-w-0 truncate">{target.label}</span>
+                  </h4>
+                ) : null}
+                {hasMultipleEnvironments && groups.length > 1 ? (
+                  <Collapsible>
+                    <CollapsibleTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="w-full rounded-md px-2 py-1 text-left hover:bg-foreground/[0.06] focus-visible:outline-2 focus-visible:outline-ring"
+                        />
+                      }
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm text-foreground tabular-nums">
+                          {winningLayer?.value}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {winningLayer?.key === "environment"
+                            ? "Environment"
+                            : winningLayer?.label}
+                        </span>
                         <ChevronRightIcon
                           aria-hidden
-                          className="size-3 [[data-panel-open]_&]:rotate-90"
+                          className="size-3 shrink-0 text-muted-foreground [[data-panel-open]_&]:rotate-90"
                         />
-                        Overridden by
-                      </CollapsibleTrigger>
-                    ) : (
-                      <span>Overridden by</span>
-                    )}
-                    {onClearOverrides ? (
-                      <InlineButton onClick={() => onClearOverrides(overriding)}>
-                        Reset {overriding.length === 1 ? "it" : "all"}
-                      </InlineButton>
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {members
+                          .map(({ labels, secondary }) =>
+                            [labels.primary, secondary].filter(Boolean).join(" · "),
+                          )
+                          .join(", ")}
+                      </span>
+                    </CollapsibleTrigger>
+                    <CollapsiblePanel>
+                      <div className="pt-1.5">{chain}</div>
+                    </CollapsiblePanel>
+                  </Collapsible>
+                ) : (
+                  <>
+                    {chain}
+                    {hasMultipleEnvironments ? (
+                      <p className="px-2 pt-1.5 text-xs text-muted-foreground">
+                        Same on all machines
+                      </p>
                     ) : null}
-                  </div>
-                );
-                const projects = (
-                  <ul
-                    role="list"
-                    className={cn("mt-0.5 text-sm", foldOverrides && "max-h-48 overflow-y-auto")}
-                  >
-                    {overriding.map((project) => (
-                      <li
-                        key={project.projectId}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-2 py-1"
-                      >
-                        <InlineButton className="min-w-0 justify-start" onClick={project.open}>
-                          <span className="truncate">{project.label}</span>
+                  </>
+                )}
+                {(() => {
+                  const overriding = overridingProjects.filter((project) =>
+                    members.some((member) => member.target.environmentId === project.environmentId),
+                  );
+                  if (overriding.length === 0) return null;
+                  const foldOverrides = hasMultipleEnvironments && overriding.length > 3;
+                  const header = (
+                    <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
+                      {foldOverrides ? (
+                        <CollapsibleTrigger render={<InlineButton tone="muted" />}>
+                          <ChevronRightIcon
+                            aria-hidden
+                            className="size-3 [[data-panel-open]_&]:rotate-90"
+                          />
+                          Overridden by
+                        </CollapsibleTrigger>
+                      ) : (
+                        <span>Overridden by</span>
+                      )}
+                      {onClearOverrides ? (
+                        <InlineButton onClick={() => onClearOverrides(overriding)}>
+                          Reset {overriding.length === 1 ? "it" : "all"}
                         </InlineButton>
-                        <span className="max-w-32 truncate text-muted-foreground tabular-nums">
-                          {isProjectScopedSettingKey(key)
-                            ? formatValue(key, overrides[project.projectId]?.[key])
-                            : null}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                );
-                return (
-                  <div className="mt-2 border-t border-border/60 pt-2">
-                    {foldOverrides ? (
-                      <Collapsible>
-                        {header}
-                        <CollapsiblePanel>{projects}</CollapsiblePanel>
-                      </Collapsible>
-                    ) : (
-                      <>
-                        {header}
-                        {projects}
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-            </section>
-          ))}
+                      ) : null}
+                    </div>
+                  );
+                  const projects = (
+                    <ul
+                      role="list"
+                      className={cn("mt-0.5 text-sm", foldOverrides && "max-h-48 overflow-y-auto")}
+                    >
+                      {overriding.map((project) => (
+                        <li
+                          key={`${project.environmentId}:${project.projectId}`}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-2 py-1"
+                        >
+                          <InlineButton className="min-w-0 justify-start" onClick={project.open}>
+                            <span className="truncate">{project.label}</span>
+                          </InlineButton>
+                          <span className="max-w-32 truncate text-muted-foreground tabular-nums">
+                            {isProjectScopedSettingKey(key)
+                              ? formatValue(
+                                  key,
+                                  members.find(
+                                    (member) =>
+                                      member.target.environmentId === project.environmentId,
+                                  )?.environment.serverConfig.settings.projectSettingsOverrides[
+                                    project.projectId
+                                  ]?.[key],
+                                )
+                              : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                  return (
+                    <div className="mt-2 border-t border-border/60 pt-2">
+                      {foldOverrides ? (
+                        <Collapsible>
+                          {header}
+                          <CollapsiblePanel>{projects}</CollapsiblePanel>
+                        </Collapsible>
+                      ) : (
+                        <>
+                          {header}
+                          {projects}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+              </section>
+            );
+          })}
         </div>
       </PopoverPopup>
     </Popover>
