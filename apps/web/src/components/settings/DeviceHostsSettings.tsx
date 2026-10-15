@@ -308,6 +308,7 @@ function DeviceHostList({
           return {
             ...member,
             label: environmentLabels.get(member.environmentId)?.primary ?? member.label,
+            address: environmentLabels.get(member.environmentId)?.secondary,
             state,
             status,
             check,
@@ -573,6 +574,7 @@ function DeviceHostList({
                       >
                         {retrying === result.environmentId ? "Retrying" : "Retry"} from{" "}
                         {result.label}
+                        {result.address ? ` (${result.address})` : null}
                       </MenuItem>
                     ))
                   : null}
