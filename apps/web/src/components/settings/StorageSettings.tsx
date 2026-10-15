@@ -200,7 +200,8 @@ function CleanupResults({
               </span>
             }
             control={
-              entry.outcome === "removed" && (
+              (entry.outcome === "removed" ||
+                (entry.outcome === "kept" && entry.bytes !== null)) && (
                 <span className="text-xs text-muted-foreground">
                   {[
                     entry.kind !== "worktree" && entry.files !== null

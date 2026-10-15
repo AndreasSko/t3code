@@ -18,6 +18,7 @@ import {
   type WorktreeKeepWhen,
   type StorageCleanupSettings,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -265,7 +266,7 @@ const cleanupFixture = (
       storageCleanup,
     };
     let threads = [shell({ branch: "feature", worktreePath: worktree })];
-    let storedWorktreePaths: string[] = [];
+    let storedWorktreePaths: string[] = [worktree];
     let projectRoots = [repo];
     let editBeforeRemoval = false;
     let openSessionCwd: string | null = null;
@@ -653,41 +654,43 @@ describe("subagent worktree ownership", () => {
 });
 
 describe("orphan worktree reports", () => {
-  it.live("reports a linked orphan's size without removing its files", () =>
-    runCleanupTest(
-      Effect.gen(function* () {
-        const fixture = yield* cleanupFixture();
-        fixture.setThreads([]);
-        const orphan = `${fixture.config.worktreesDir}/repository/orphan`;
-        yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "orphan", orphan]);
-        const sizes = yield* Effect.forEach(yield* fixture.fs.readDirectory(orphan), (name) =>
-          fixture.fs.stat(`${orphan}/${name}`).pipe(Effect.map((stat) => Number(stat.size))),
-        );
-        const outside = yield* fixture.fs.makeTempDirectoryScoped();
-        yield* fixture.fs.writeFileString(`${outside}/external`, "outside data");
-        yield* fixture.fs.symlink(outside, `${orphan}/linked-directory`);
-        yield* fixture.fs.symlink(`${outside}/missing`, `${orphan}/dangling-link`);
-        const report = yield* fixture.service.runNow;
-        expect(report.entries).toEqual([
-          {
-            kind: "worktree",
-            outcome: "kept",
-            reason: "No thread uses this folder",
-            path: orphan,
-            threadId: null,
-            threadTitle: null,
-            bytes: sizes.reduce((sum, size) => sum + size, 0),
-            files: null,
-          },
-        ]);
-        expect(report.bytesFreed).toBe(0);
-        expect(yield* fixture.fs.readFileString(`${orphan}/tracked.txt`)).toBe("original\n");
-        expect(yield* fixture.fs.readFileString(`${outside}/external`)).toBe("outside data");
-        expect(
-          (yield* fixture.command(orphan, ["rev-parse", "--is-inside-work-tree"])).stdout.trim(),
-        ).toBe("true");
-      }),
-    ),
+  it.live.each(["nested", "direct"] as const)(
+    "reports a linked orphan's size without removing its files (%s)",
+    (location) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.setThreads([]);
+          const orphan = `${fixture.config.worktreesDir}/${location === "nested" ? "repository/" : ""}orphan`;
+          yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "orphan", orphan]);
+          const sizes = yield* Effect.forEach(yield* fixture.fs.readDirectory(orphan), (name) =>
+            fixture.fs.stat(`${orphan}/${name}`).pipe(Effect.map((stat) => Number(stat.size))),
+          );
+          const outside = yield* fixture.fs.makeTempDirectoryScoped();
+          yield* fixture.fs.writeFileString(`${outside}/external`, "outside data");
+          yield* fixture.fs.symlink(outside, `${orphan}/linked-directory`);
+          yield* fixture.fs.symlink(`${outside}/missing`, `${orphan}/dangling-link`);
+          const report = yield* fixture.service.runNow;
+          expect(report.entries).toEqual([
+            {
+              kind: "worktree",
+              outcome: "kept",
+              reason: "No thread uses this worktree",
+              path: orphan,
+              threadId: null,
+              threadTitle: null,
+              bytes: sizes.reduce((sum, size) => sum + size, 0),
+              files: null,
+            },
+          ]);
+          expect(report.bytesFreed).toBe(0);
+          expect(yield* fixture.fs.readFileString(`${orphan}/tracked.txt`)).toBe("original\n");
+          expect(yield* fixture.fs.readFileString(`${outside}/external`)).toBe("outside data");
+          expect(
+            (yield* fixture.command(orphan, ["rev-parse", "--is-inside-work-tree"])).stdout.trim(),
+          ).toBe("true");
+        }),
+      ),
   );
 
   it.live.each(["active", "outside-active-snapshot"] as const)(
@@ -709,7 +712,8 @@ describe("orphan worktree reports", () => {
               ? [shell({ branch: "referenced", worktreePath, status: "running" })]
               : [],
           );
-          if (location !== "active") fixture.setStoredWorktreePaths([worktreePath]);
+          if (location !== "active")
+            fixture.setStoredWorktreePaths([fixture.worktree, worktreePath]);
           const report = yield* fixture.service.runNow;
           expect(report.entries.filter((entry) => entry.threadId === null)).toEqual([]);
           expect(yield* fixture.fs.exists(worktreePath)).toBe(true);
@@ -762,6 +766,83 @@ describe("orphan worktree reports", () => {
         expect(yield* fixture.fs.exists(orphan)).toBe(true);
       }),
     ),
+  );
+
+  it.live("reports ordinary folders with an honest reason and keeps their files", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        const folder = `${fixture.config.worktreesDir}/repository/leftover`;
+        yield* fixture.fs.makeDirectory(folder, { recursive: true });
+        yield* fixture.fs.writeFileString(`${folder}/payload`, "leftover data");
+        const report = yield* fixture.service.runNow;
+        expect(report.entries).toEqual([
+          expect.objectContaining({
+            path: folder,
+            outcome: "kept",
+            bytes: 13,
+            reason: "No thread uses this folder, and it isn't a git worktree",
+          }),
+        ]);
+        expect(report.bytesFreed).toBe(0);
+        expect(yield* fixture.fs.readFileString(`${folder}/payload`)).toBe("leftover data");
+      }),
+    ),
+  );
+
+  it.live("continues after an inaccessible directory's git probe", (context) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        if ((yield* HostProcess.isWindows) || (yield* HostProcess.UserId) === 0)
+          return context.skip();
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        const blocked = `${fixture.config.worktreesDir}/a-inaccessible`;
+        const orphan = `${fixture.config.worktreesDir}/z-repository/orphan`;
+        yield* fixture.fs.makeDirectory(blocked);
+        yield* fixture.fs.makeDirectory(orphan, { recursive: true });
+        yield* fixture.fs.writeFileString(`${orphan}/file`, "x");
+        yield* fixture.fs.chmod(blocked, 0);
+        const report = yield* fixture.service.runNow.pipe(
+          Effect.ensuring(fixture.fs.chmod(blocked, 0o700).pipe(Effect.orDie)),
+        );
+        expect(report.entries).toEqual([
+          expect.objectContaining({ path: orphan, outcome: "kept", bytes: 1 }),
+        ]);
+        expect(yield* fixture.fs.exists(orphan)).toBe(true);
+      }),
+    ),
+  );
+
+  it.live.each(["win32", "linux"] as const)(
+    "compares thread and project paths with host casing rules (%s)",
+    (platform) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture().pipe(
+            Effect.provideService(HostProcess.Platform, platform),
+          );
+          fixture.setThreads([]);
+          const parent = `${fixture.config.worktreesDir}/repository`;
+          const referenced = `${parent}/Referenced`;
+          const project = `${parent}/Project`;
+          const nested = `${parent}/Nested`;
+          for (const folder of [referenced, project, nested]) {
+            yield* fixture.fs.makeDirectory(`${folder}/child`, { recursive: true });
+          }
+          fixture.setStoredWorktreePaths([fixture.worktree, referenced.toUpperCase()]);
+          fixture.setProjectRoots([
+            fixture.repo,
+            project.toUpperCase(),
+            `${nested.toUpperCase()}/CHILD`,
+          ]);
+          const report = yield* fixture.service.runNow;
+          expect(report.entries.map((entry) => entry.path).sort()).toEqual(
+            platform === "win32" ? [] : [referenced, project, nested].sort(),
+          );
+        }),
+      ),
   );
 
   it.live("caps orphan entries while preserving kept totals", () =>

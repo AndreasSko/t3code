@@ -8,11 +8,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   settings: {} as typeof DEFAULT_SERVER_SETTINGS,
   run: vi.fn(),
+  report: null as StorageCleanupReport | null,
 }));
 
 vi.mock("../../state/server", async () => {
   const { Atom } = await import("effect/reactivity");
-  const report = Atom.make({ _tag: "Success", value: null, waiting: false });
+  const report = Atom.make(() => ({ _tag: "Success", value: state.report, waiting: false }));
   const allowed = Atom.make(true);
   return {
     serverEnvironment: {
@@ -64,6 +65,8 @@ vi.mock("./settingsLayout", () => ({
   ),
   SettingResetButton: () => null,
   useRelativeTimeTick: () => undefined,
+  useSettingsSearchTargetId: () => null,
+  useSettingsSearchTarget: () => undefined,
 }));
 vi.mock("../ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 
@@ -88,6 +91,7 @@ beforeEach(() => {
     },
     projectSettingsOverrides: {},
   };
+  state.report = null;
   state.run.mockReset();
   container = document.createElement("div");
   document.body.append(container);
@@ -165,4 +169,41 @@ it("keeps cleanup disabled when settled retention and all other rules are off", 
   expect(button.disabled).toBe(true);
   await act(async () => button.click());
   expect(state.run).not.toHaveBeenCalled();
+});
+
+it("shows a kept folder's measured size without counting it as recovered", async () => {
+  state.settings = {
+    ...state.settings,
+    storageCleanup: { ...state.settings.storageCleanup, worktreeSettledAfterDays: 0 },
+  };
+  state.report = {
+    trigger: "manual",
+    startedAt: "2026-10-14T12:00:00.000Z",
+    finishedAt: "2026-10-14T12:00:01.000Z",
+    entries: [
+      {
+        kind: "worktree",
+        outcome: "kept",
+        path: "/worktrees/repo/orphan",
+        threadId: null,
+        threadTitle: null,
+        reason: "No thread uses this folder, and it isn't a git worktree",
+        bytes: 6600000,
+        files: null,
+      },
+    ],
+    counts: { removed: 0, kept: 1, failed: 0 },
+    omittedCount: 0,
+    bytesFreed: 0,
+  };
+  await render();
+  const lastRun = Array.from(container.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes("Last run"),
+  )!;
+  await act(async () => lastRun.click());
+  expect(container.textContent).toContain(
+    "No thread uses this folder, and it isn't a git worktree",
+  );
+  expect(container.textContent).toContain("6.29 MB");
+  expect(container.textContent).toContain("0 B recovered.");
 });

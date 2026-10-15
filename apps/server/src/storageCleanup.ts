@@ -219,8 +219,13 @@ const make = Effect.gen(function* () {
     liveTerminals.set(terminal.threadId, threadTerminals);
   };
 
+  const isWindows = yield* HostProcess.isWindows;
+  const pathKey = (target: string) => {
+    const resolved = path.resolve(target);
+    return isWindows ? resolved.toLowerCase() : resolved;
+  };
   const inside = (root: string, target: string) => {
-    const relative = path.relative(root, target);
+    const relative = path.relative(pathKey(root), pathKey(target));
     return (
       relative !== "" &&
       relative !== ".." &&
@@ -302,11 +307,13 @@ const make = Effect.gen(function* () {
   ) {
     for (const project of projects) {
       const projectPath = path.resolve(project.workspaceRoot);
-      if (projectPath === worktreePath || inside(worktreePath, projectPath)) return true;
+      if (pathKey(projectPath) === pathKey(worktreePath) || inside(worktreePath, projectPath))
+        return true;
       const realPath = yield* fs
         .realPath(projectPath)
         .pipe(Effect.orElseSucceed(() => projectPath));
-      if (realPath === worktreePath || inside(worktreePath, realPath)) return true;
+      if (pathKey(realPath) === pathKey(worktreePath) || inside(worktreePath, realPath))
+        return true;
     }
     return false;
   });
@@ -321,12 +328,14 @@ const make = Effect.gen(function* () {
       SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
       FROM orchestration_v2_projection_threads
       WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     const referenced = new Set<string>();
     for (const row of rows) {
       const resolved = path.resolve(row.worktreePath);
-      referenced.add(resolved);
-      referenced.add(yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved)));
+      referenced.add(pathKey(resolved));
+      referenced.add(
+        pathKey(yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved))),
+      );
     }
     const directories = Effect.fnUntraced(function* (parent: string) {
       const result: string[] = [];
@@ -334,7 +343,7 @@ const make = Effect.gen(function* () {
         const target = path.join(parent, name);
         if (!inside(parent, target)) continue;
         const directory = yield* Effect.gen(function* () {
-          if ((yield* fs.realPath(target)) !== target) return false;
+          if (pathKey(yield* fs.realPath(target)) !== pathKey(target)) return false;
           return (yield* fs.stat(target)).type === "Directory";
         }).pipe(Effect.orElseSucceed(() => false));
         if (directory) result.push(target);
@@ -345,41 +354,55 @@ const make = Effect.gen(function* () {
     // Unmeasured folders still appear with an unknown size.
     const measurementDeadline = (yield* Clock.currentTimeMillis) + 30_000;
     const reported = new Set<string>();
-    for (const root of roots) {
-      // GitVcsDriverCore creates <managed root>/<repository>/<branch>.
-      for (const projectDirectory of yield* directories(root)) {
+    const report = Effect.fnUntraced(
+      function* (worktreePath: string) {
+        const key = pathKey(worktreePath);
         if (
-          referenced.has(projectDirectory) ||
-          (yield* fs.exists(path.join(projectDirectory, ".git")))
+          reported.has(key) ||
+          referenced.has(key) ||
+          (yield* containsProjectRoot(worktreePath, projects))
         )
-          continue;
-        for (const worktreePath of yield* directories(projectDirectory)) {
-          if (
-            reported.has(worktreePath) ||
-            referenced.has(worktreePath) ||
-            (yield* containsProjectRoot(worktreePath, projects))
-          )
-            continue;
-          reported.add(worktreePath);
-          const remaining = measurementDeadline - (yield* Clock.currentTimeMillis);
-          const bytes =
-            remaining > 0
-              ? yield* measureWorktree(worktreePath).pipe(
-                  Effect.timeout(remaining),
-                  Effect.orElseSucceed(() => null),
-                )
-              : null;
-          entries.push({
-            kind: "worktree",
-            outcome: "kept",
-            reason: "No thread uses this folder",
-            path: worktreePath,
-            threadId: null,
-            threadTitle: null,
-            bytes,
-            files: null,
-          });
-        }
+          return;
+        const gitPath = path.join(worktreePath, ".git");
+        const linked = (yield* fs.exists(gitPath)) && (yield* fs.stat(gitPath)).type === "File";
+        reported.add(key);
+        const remaining = measurementDeadline - (yield* Clock.currentTimeMillis);
+        const bytes =
+          remaining > 0
+            ? yield* measureWorktree(worktreePath).pipe(
+                Effect.timeout(remaining),
+                Effect.orElseSucceed(() => null),
+              )
+            : null;
+        entries.push({
+          kind: "worktree",
+          outcome: "kept",
+          reason: linked
+            ? "No thread uses this worktree"
+            : "No thread uses this folder, and it isn't a git worktree",
+          path: worktreePath,
+          threadId: null,
+          threadTitle: null,
+          bytes,
+          files: null,
+        });
+      },
+      Effect.orElseSucceed(() => undefined),
+    );
+    for (const root of roots) {
+      // Worktrees can be <root>/<repository>/<branch> or explicitly <root>/<name>.
+      for (const projectDirectory of yield* directories(root)) {
+        yield* Effect.gen(function* () {
+          if (referenced.has(pathKey(projectDirectory))) return;
+          const gitPath = path.join(projectDirectory, ".git");
+          if (yield* fs.exists(gitPath)) {
+            if ((yield* fs.stat(gitPath)).type === "File") yield* report(projectDirectory);
+            return;
+          }
+          for (const worktreePath of yield* directories(projectDirectory)) {
+            yield* report(worktreePath);
+          }
+        }).pipe(Effect.orElseSucceed(() => undefined));
       }
     }
   });
