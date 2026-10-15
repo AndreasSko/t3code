@@ -463,6 +463,127 @@ const runCleanupTest = <A, E>(
   >,
 ) => effect.pipe(Effect.provide(cleanupTestLayer), Effect.scoped);
 
+describe("subagent worktree ownership", () => {
+  it.effect.each([
+    "idle",
+    "grandchild",
+    "running",
+    "pending",
+    "unrelated",
+    "fork",
+    "recent-activity",
+    "recent-inactive",
+    "recent-grace",
+    "recent-settle",
+    "child-settled-only",
+  ] as const)("checks the whole owner group (%s)", (scenario) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW_MS);
+      const fixture = yield* cleanupFixture();
+      fixture.setSettings({
+        storageCleanup: {
+          ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+          worktreeSettledAfterDays: scenario === "recent-inactive" ? null : 8,
+          worktreeAfterDays: scenario === "recent-inactive" ? 8 : null,
+        },
+      });
+      const root = shell({
+        branch: "feature",
+        worktreePath: fixture.worktree,
+        settledAt: scenario === "child-settled-only" ? null : at(-20 * DAY_MS),
+      });
+      const child = shell({
+        id: ThreadId.make("child"),
+        branch: "feature",
+        worktreePath: fixture.worktree,
+        lineage: {
+          parentThreadId: root.id,
+          rootThreadId: root.id,
+          relationshipToParent:
+            scenario === "fork" ? "fork" : scenario === "unrelated" ? null : "subagent",
+        },
+        status: scenario === "running" ? "running" : "completed",
+        pendingBackgroundTasks: scenario === "pending" ? [{ taskId: "task", kind: "command" }] : [],
+        latestRunCompletedAt:
+          scenario === "recent-activity" || scenario === "recent-inactive"
+            ? at(-2 * DAY_MS)
+            : scenario === "recent-grace"
+              ? at(-30_000)
+              : null,
+        settledAt: scenario === "child-settled-only" ? at(-20 * DAY_MS) : null,
+      });
+      const grandchild = {
+        ...child,
+        id: ThreadId.make("grandchild"),
+        lineage: { ...child.lineage, parentThreadId: child.id },
+      };
+      // The root can follow its children in the snapshot.
+      fixture.setThreads(scenario === "grandchild" ? [grandchild, child, root] : [child, root]);
+      if (scenario === "recent-settle") fixture.setThreads([{ ...child, settledAt: at(0) }, root]);
+      const report = yield* fixture.service.runNow;
+      const removed = ["idle", "grandchild", "recent-settle"].includes(scenario);
+      expect(yield* fixture.fs.exists(fixture.worktree)).toBe(!removed);
+      expect(report.entries[0]).toMatchObject({
+        threadId: scenario === "unrelated" || scenario === "fork" ? child.id : root.id,
+        outcome: removed ? "removed" : "kept",
+        reason: removed
+          ? "Settled for 20 days"
+          : scenario === "running" || scenario === "pending"
+            ? "Thread is running or has pending work"
+            : scenario === "unrelated" || scenario === "fork"
+              ? "Shared by 2 threads"
+              : scenario === "recent-activity"
+                ? "Settled for 2 of 8 days"
+                : scenario === "recent-inactive"
+                  ? "Inactive for 2 of 8 days"
+                  : scenario === "recent-grace"
+                    ? "Settled moments ago"
+                    : "Not settled",
+      });
+    }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
+  );
+
+  it.live.each(["running", "pending", "activity", "unrelated"] as const)(
+    "cancels removal when a child changes during measurement (%s)",
+    (change) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* pausedMeasurementFixture();
+          const root = shell({ branch: "feature", worktreePath: fixture.worktree });
+          const child = {
+            ...root,
+            id: ThreadId.make("child"),
+            lineage: {
+              parentThreadId: root.id,
+              rootThreadId: root.id,
+              relationshipToParent: "subagent" as const,
+            },
+          };
+          fixture.setThreads([child, root]);
+          const run = yield* fixture.service.runNow.pipe(Effect.forkChild);
+          yield* Deferred.await(fixture.measuring);
+          fixture.setThreads([
+            root,
+            {
+              ...child,
+              status: change === "running" ? "running" : "idle",
+              pendingBackgroundTasks:
+                change === "pending" ? [{ taskId: "task", kind: "command" }] : [],
+              latestRunCompletedAt: change === "activity" ? at(-DAY_MS) : null,
+            },
+            ...(change === "unrelated" ? [shell({ ...root, id: ThreadId.make("other") })] : []),
+          ]);
+          yield* Deferred.succeed(fixture.resume, undefined);
+          expect((yield* Fiber.join(run)).entries[0]).toMatchObject({
+            outcome: "kept",
+            reason: "Thread activity or shared worktree changed since check",
+          });
+          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+        }),
+      ),
+  );
+});
+
 describe("storage cleanup reports and local file policies", () => {
   it.live("measures nested regular files without following symlinks", () =>
     runCleanupTest(
