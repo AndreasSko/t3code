@@ -405,7 +405,7 @@ function CleanupSection() {
                 {report ? (
                   <CollapsibleTrigger
                     render={<Button variant="ghost-muted" size="xs" />}
-                    aria-label={`Cleanup details for ${environment.label}`}
+                    aria-label={`Cleanup details for ${labels.primary}${labels.secondary ? ` (${labels.secondary})` : ""}`}
                   >
                     Details
                     <ChevronRightIcon

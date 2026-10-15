@@ -285,10 +285,17 @@ function DeviceHostList({
         <p className="py-2 text-sm text-muted-foreground">No device hosts.</p>
       ) : null}
       {rows.map(({ host, members }) => {
-        const results = members.map((member) => {
+        const hostChecks = checks[deviceHostConnectionKey(host)];
+        const checkedMembers = scopeEnvironments.flatMap((environment) =>
+          hostChecks?.[environment.environmentId] &&
+          !members.some((member) => member.environmentId === environment.environmentId)
+            ? [{ environmentId: environment.environmentId, label: environment.label, host }]
+            : [],
+        );
+        const results = [...members, ...checkedMembers].map((member) => {
           const state = states.get(member.environmentId);
           const status = state?.hostStatuses[member.host.id];
-          const check = checks[deviceHostConnectionKey(member.host)]?.[member.environmentId];
+          const check = hostChecks?.[member.environmentId];
           const summary = state?.hosts.find((value) => value.id === member.host.id);
           const error =
             check?.status === "failed"
@@ -298,7 +305,15 @@ function DeviceHostList({
                 : status?.status === "failed"
                   ? status.detail
                   : undefined;
-          return { ...member, state, status, check, summary, error };
+          return {
+            ...member,
+            label: environmentLabels.get(member.environmentId)?.primary ?? member.label,
+            state,
+            status,
+            check,
+            summary,
+            error,
+          };
         });
         const first = results[0];
         if (!first) return null;
@@ -395,7 +410,7 @@ function DeviceHostList({
                       ) : pending ? (
                         "Checking connections…"
                       ) : ready ? (
-                        "Connected from every machine"
+                        "Connected or available locally on each listed machine"
                       ) : (
                         "Test the connection to check access from each machine"
                       )}
@@ -441,7 +456,7 @@ function DeviceHostList({
                       render={<InlineButton tone="muted" />}
                     >
                       <span className="line-clamp-1 break-all text-left">
-                        {summarizeLabels(members.map((member) => member.label))}
+                        {summarizeLabels(results.map((result) => result.label))}
                       </span>
                       <ChevronDownIcon className="size-3 shrink-0" />
                     </CollapsibleTrigger>
@@ -454,6 +469,11 @@ function DeviceHostList({
                           {environmentLabels.get(result.environmentId)?.secondary ? (
                             <p className="truncate text-xs text-muted-foreground">
                               {environmentLabels.get(result.environmentId)?.secondary}
+                            </p>
+                          ) : null}
+                          {result.error ? (
+                            <p role="status" className="text-xs text-destructive">
+                              {result.error}
                             </p>
                           ) : null}
                           <DeviceToolVersions

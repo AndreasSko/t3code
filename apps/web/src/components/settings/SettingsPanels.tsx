@@ -3451,7 +3451,7 @@ export function ArchivedThreadsPanel() {
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(scope.environmentIds);
 
-  const archivedGroups = useMemo(() => {
+  const { groups: archivedGroups, hasMultipleEnvironments } = useMemo(() => {
     const selectedProjectKeys =
       scope.kind === "project" || scope.kind === "checkout"
         ? new Set(scope.members.map((member) => `${member.environmentId}:${member.id}`))
@@ -3484,10 +3484,18 @@ export function ArchivedThreadsPanel() {
         },
       })),
     );
+    const hasMultipleEnvironments =
+      new Set(
+        threads
+          .filter((thread) =>
+            projectsByEnvironmentAndId.has(`${thread.environmentId}:${thread.projectId}`),
+          )
+          .map((thread) => thread.environmentId),
+      ).size > 1;
     const logicalGroupsByProjectKey = new Map(
       projectGroups.flatMap((group) =>
-        group.memberProjects.map(
-          (member) => [`${member.environmentId}:${member.id}`, group] as const,
+        group.memberProjectRefs.map(
+          (member) => [`${member.environmentId}:${member.projectId}`, group] as const,
         ),
       ),
     );
@@ -3510,7 +3518,9 @@ export function ArchivedThreadsPanel() {
       }
       if (projectThreads.length > 0) {
         const physicalProjectKey = `${project.environmentId}:${project.id}` as const;
-        const logicalGroup = logicalGroupsByProjectKey.get(physicalProjectKey);
+        const logicalGroup = hasMultipleEnvironments
+          ? logicalGroupsByProjectKey.get(physicalProjectKey)
+          : undefined;
         const groupKey = logicalGroup?.projectKey ?? physicalProjectKey;
         const group = groups.get(groupKey);
         if (group) {
@@ -3524,7 +3534,7 @@ export function ArchivedThreadsPanel() {
         }
       }
     }
-    return Array.from(groups, ([key, group]) => ({
+    const sortedGroups = Array.from(groups, ([key, group]) => ({
       ...group,
       key,
       threads: group.threads.toSorted((left, right) => {
@@ -3533,6 +3543,7 @@ export function ArchivedThreadsPanel() {
         return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
       }),
     }));
+    return { groups: sortedGroups, hasMultipleEnvironments };
   }, [archivedSnapshots, environments, projectGroups, scope]);
 
   const handleArchivedThreadContextMenu = useCallback(
@@ -3650,20 +3661,24 @@ export function ArchivedThreadsPanel() {
                 }}
                 title={thread.title}
                 description={
-                  <span className={scope.environmentIds.length > 1 ? "block truncate" : undefined}>
-                    {scope.environmentIds.length > 1 ? (
-                      <>
-                        {thread.environmentLabels.primary}
-                        {thread.environmentLabels.secondary
-                          ? ` (${thread.environmentLabels.secondary})`
-                          : ""}
-                        {" · "}
-                      </>
-                    ) : null}
-                    Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
-                    {" \u00b7 Created "}
-                    {formatRelativeTimeLabel(thread.createdAt)}
-                  </span>
+                  hasMultipleEnvironments ? (
+                    <span className="block truncate">
+                      {thread.environmentLabels.primary}
+                      {thread.environmentLabels.secondary
+                        ? ` (${thread.environmentLabels.secondary})`
+                        : ""}
+                      {" · "}
+                      Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
+                      {" \u00b7 Created "}
+                      {formatRelativeTimeLabel(thread.createdAt)}
+                    </span>
+                  ) : (
+                    <>
+                      Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
+                      {" \u00b7 Created "}
+                      {formatRelativeTimeLabel(thread.createdAt)}
+                    </>
+                  )
                 }
                 control={
                   <Button

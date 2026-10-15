@@ -445,6 +445,16 @@ function ProjectDetail({
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
       {Array.from(checkoutsByEnvironment, ([environmentId, members]) => {
+        if (checkoutsByEnvironment.size === 1) {
+          return members.map((member) => (
+            <SettingsRow
+              key={member.physicalProjectKey}
+              title={member.environmentLabel ?? "Environment"}
+              description={member.workspaceRoot}
+              control={checkoutRemoveButton(member)}
+            />
+          ));
+        }
         const firstMember = members[0]!;
         const hasMultiple = members.length > 1;
         const environment = environmentById.get(environmentId);

@@ -191,6 +191,7 @@ export function SettingInheritance({
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const key = keys[0];
   if (!key || targets.length === 0) return null;
+  const hasMultipleEnvironments = new Set(targets.map((target) => target.environmentId)).size > 1;
   const overrideSummary =
     overridingProjects.length > 0
       ? `${summary} · ${overridingProjects.length} project ${overridingProjects.length === 1 ? "override" : "overrides"}`
@@ -216,6 +217,7 @@ export function SettingInheritance({
         secondary,
         environment: { ...environment, serverConfig: environment.serverConfig },
         machine: resolveEnvironmentMachineKind(environment.serverConfig),
+        layers: settingInheritanceLayers(target, environment.serverConfig.settings, key),
       },
     ];
   });
@@ -233,10 +235,8 @@ export function SettingInheritance({
         ),
       )
     : undefined;
-  const selected = chains.find(({ id }) => id === selectedTargetId) ?? differing ?? primary;
-  const layers = selected
-    ? settingInheritanceLayers(selected.target, selected.environment.serverConfig.settings, key)
-    : [];
+  const selected = chains.find(({ id }) => id === selectedTargetId) ?? primary;
+  const visibleChains = hasMultipleEnvironments ? (selected ? [selected] : []) : chains;
   return (
     <Popover
       onOpenChange={(open) => {
@@ -268,7 +268,7 @@ export function SettingInheritance({
         <TooltipPopup side="top">{overrideSummary}</TooltipPopup>
       </Tooltip>
       <PopoverPopup align="start" width="md" padding="none">
-        {chains.length > 1 && selected ? (
+        {hasMultipleEnvironments && selected ? (
           <div className="space-y-1.5 px-3 pt-2.5">
             <Select
               items={chains.map(({ id, target, path }) => ({
@@ -329,26 +329,19 @@ export function SettingInheritance({
           </div>
         ) : null}
         <div className="divide-y divide-border/60">
-          {(selected ? [selected] : []).map(({ target, labels, environment, machine }) => (
+          {visibleChains.map(({ target, environment, machine, layers }) => (
             <section
               key={`${target.environmentId}:${target.projectId ?? ""}`}
               className="px-3 py-2.5"
             >
-              {chains.length === 1 ? (
+              {!hasMultipleEnvironments ? (
                 <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
                   <EnvironmentMachineIcon
                     aria-hidden
                     kind={machine}
                     className="size-3.5 shrink-0"
                   />
-                  <span className="min-w-0">
-                    <span className="block truncate">{labels.primary}</span>
-                    {labels.secondary ? (
-                      <span className="block truncate font-normal text-muted-foreground">
-                        {labels.secondary}
-                      </span>
-                    ) : null}
-                  </span>
+                  <span className="min-w-0 truncate">{target.label}</span>
                 </h4>
               ) : null}
               <ol role="list" className="text-sm">
@@ -394,9 +387,10 @@ export function SettingInheritance({
                 );
                 if (overriding.length === 0) return null;
                 const overrides = environment.serverConfig.settings.projectSettingsOverrides;
+                const foldOverrides = hasMultipleEnvironments && overriding.length > 3;
                 const header = (
                   <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
-                    {overriding.length > 3 ? (
+                    {foldOverrides ? (
                       <CollapsibleTrigger render={<InlineButton tone="muted" />}>
                         <ChevronRightIcon
                           aria-hidden
@@ -417,10 +411,7 @@ export function SettingInheritance({
                 const projects = (
                   <ul
                     role="list"
-                    className={cn(
-                      "mt-0.5 text-sm",
-                      overriding.length > 3 && "max-h-48 overflow-y-auto",
-                    )}
+                    className={cn("mt-0.5 text-sm", foldOverrides && "max-h-48 overflow-y-auto")}
                   >
                     {overriding.map((project) => (
                       <li
@@ -441,7 +432,7 @@ export function SettingInheritance({
                 );
                 return (
                   <div className="mt-2 border-t border-border/60 pt-2">
-                    {overriding.length > 3 ? (
+                    {foldOverrides ? (
                       <Collapsible>
                         {header}
                         <CollapsiblePanel>{projects}</CollapsiblePanel>
