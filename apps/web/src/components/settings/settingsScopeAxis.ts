@@ -3,6 +3,13 @@ import type { ResolvedSettingsScope, SettingsScopeSearch } from "./settingsScope
 
 type ScopeEnvironment = Pick<EnvironmentPresentation, "environmentId" | "label" | "displayUrl">;
 
+export function settingsScopeEnvironmentLabels(environment: ScopeEnvironment) {
+  return {
+    primary: environment.label,
+    secondary: environment.displayUrl ?? environment.environmentId,
+  };
+}
+
 export function settingsScopeEnvironmentLabel(
   environment: ScopeEnvironment,
   environments: readonly ScopeEnvironment[],
@@ -11,9 +18,8 @@ export function settingsScopeEnvironmentLabel(
     (other) =>
       other.environmentId !== environment.environmentId && other.label === environment.label,
   );
-  return duplicate
-    ? `${environment.label} · ${environment.displayUrl ?? environment.environmentId}`
-    : environment.label;
+  const { primary, secondary } = settingsScopeEnvironmentLabels(environment);
+  return duplicate ? `${primary} · ${secondary}` : primary;
 }
 
 export const ALL_ENVIRONMENTS_VALUE = "all";
